@@ -162,8 +162,7 @@ function render(payload) {
             ? `${esc(model)} · idle ${fmtDur(now - a.lastActivityAt)}`
             : `${esc(model)} · —`;
       const dotColor = burn !== undefined && burn > 8 ? 'var(--crit)' : a.state === 'live' ? 'var(--good)' : 'var(--idle)';
-      const tip = burn !== undefined ? 'agentBurn' : a.state === 'idle' ? 'idle' : 'model';
-      return `<div class="row" data-tip="${tip}"><span class="dot" style="background:${dotColor}"></span><span class="name">${esc(proj)}</span><span class="meta">${metaStr}</span></div>`;
+      return `<div class="row" data-agent="${esc(a.id)}"><span class="dot" style="background:${dotColor}"></span><span class="name">${esc(proj)}</span><span class="meta">${metaStr}</span></div>`;
     });
   $('agents').innerHTML = rows.join('') || '<div class="empty">None</div>';
 
@@ -190,10 +189,51 @@ function render(payload) {
 let EXPL = {};
 let PROV_NOTE = {};
 let tipTimer = null;
+/** Last payload, so per-agent tooltips can resolve an id at hover time. */
+let lastPayload = null;
 
 function hideTip() {
   clearTimeout(tipTimer);
   $('tip').classList.remove('on');
+}
+
+/** A row of the little key/value table used by both detail cards. */
+function ctxRows(rows) {
+  let html = '<table class="ctx">';
+  for (const [k, v] of rows) {
+    if (v === null || v === undefined || v === '') continue;
+    html += `<tr><td>${esc(k)}</td><td>${v}</td></tr>`;
+  }
+  return html + '</table>';
+}
+
+/** A directory is long and matters in full — give it its own wrapping line. */
+const pathCell = (p) => `<span class="path">${esc(p)}</span>`;
+
+/** Everything known about one running agent. */
+function agentDetailHtml(agent, burn) {
+  const now = lastPayload?.state?.generatedAt ?? Date.now();
+  const tot = agent.totals;
+  const all = tot.input + tot.cacheWrite + tot.cacheRead + tot.output;
+  const state =
+    agent.state === 'live' ? 'Live' : agent.state === 'idle' ? `Idle ${fmtDur(now - agent.lastActivityAt)}` : 'Ended';
+
+  let html = `<span class="t">${esc(agent.projectPath ? agent.projectPath.split(/[\\/]/).pop() : agent.label)}</span>`;
+  html += esc([state, agent.model, agent.effort].filter(Boolean).join(' · '));
+  html += ctxRows([
+    ['Directory', agent.projectPath ? pathCell(agent.projectPath) : null],
+    ['Branch', agent.gitBranch ? esc(agent.gitBranch) : null],
+    ['Session', esc(agent.label)],
+    ['Backend', esc(agent.backend) + (agent.entrypoint ? ` · ${esc(agent.entrypoint)}` : '')],
+    ['Started', agent.startedAt ? `${clockOf(agent.startedAt)} · ${fmtDur(now - agent.startedAt)} ago` : null],
+    ['Last turn', agent.lastActivityAt ? `${fmtDur(now - agent.lastActivityAt)} ago` : null],
+    ['Burn', burn !== undefined ? `<b>≈${burn.toFixed(1)} %/h</b>` : '—'],
+    ['Tokens', `${esc(fmtTok(all))} · ${esc(fmtTok(tot.cacheRead))} cached · ${esc(fmtTok(tot.output))} out`],
+  ]);
+  if (burn !== undefined) {
+    html += `<span class="pn">${esc(PROV_NOTE.derived || '')}</span>`;
+  }
+  return html;
 }
 
 /** Full state at the moment an alarm fired — the "what was I doing?" answer. */
@@ -236,6 +276,9 @@ function alarmDetailHtml(a) {
       html +=
         `<span class="ag"><b>${esc(g.project || g.label)}</b>` +
         (g.branch ? `<span class="br">${esc(g.branch)}</span>` : '') +
+        // The directory is the point: two checkouts of one repo look identical
+        // by name, and a notification read later has to say which one.
+        (g.projectPath ? `<span class="path">${esc(g.projectPath)}</span>` : '') +
         `<span class="mt">${esc(bits)} · ${esc(rate)} · ${esc(fmtTok(g.tokens))} tok</span></span>`;
     }
   } else if (c) {
@@ -249,6 +292,17 @@ function alarmDetailHtml(a) {
 
 function showTip(target) {
   const tip = $('tip');
+
+  // Agent rows resolve to the live agent rather than a dictionary key.
+  const agentId = target.getAttribute('data-agent');
+  if (agentId !== null) {
+    const agent = lastPayload?.state?.agents.find((a) => a.id === agentId);
+    if (!agent) return;
+    const burn = lastPayload.state.agentBurns.find((b) => b.agentId === agentId)?.pctPerHour;
+    tip.innerHTML = agentDetailHtml(agent, burn);
+    positionTip(target, tip);
+    return;
+  }
 
   // Notification rows carry their own record rather than a dictionary key.
   const alarmIdx = target.getAttribute('data-alarm');
@@ -285,7 +339,7 @@ function positionTip(target, tip) {
   tip.style.left = `${Math.round(left)}px`;
 }
 
-const TIP_SEL = '[data-tip],[data-alarm]';
+const TIP_SEL = '[data-tip],[data-alarm],[data-agent]';
 document.addEventListener('mouseover', (ev) => {
   const t = ev.target.closest ? ev.target.closest(TIP_SEL) : null;
   if (!t) return;
@@ -447,6 +501,7 @@ function reportRenderError(where, err) {
 }
 
 window.adjent.onState((payload) => {
+  lastPayload = payload;
   if (payload.explanations) EXPL = payload.explanations;
   if (payload.provenanceNote) PROV_NOTE = payload.provenanceNote;
   current = payload.settings || current;

@@ -403,6 +403,14 @@ a free, continuous check — see [the free consistency
 check](GLOSSARY.md#the-free-consistency-check). When they drift apart, confidence
 drops and the UI says so.
 
+### Agent rows have their own detail
+
+Hovering an agent row shows that agent rather than a generic definition:
+directory, branch, session name, backend and entrypoint, when it started, when
+it last took a turn, its derived burn, and its token split. The **directory in
+full** is the point — sibling worktrees of the same repository share a folder
+name, so `adjent` and `adjent-core` are only distinguishable by path.
+
 ## Progressive disclosure
 
 | Tier | Surface | Contains |
@@ -454,9 +462,10 @@ the panel header.
 * **Clear** empties the log — an explicit user action, never automatic.
 * **Hovering a row reveals the full state at fire time**: the limit and how
   full it was then, burn rate against the pace line, runway left, projected
-  exhaustion — and the agents that were running, with project, branch, model,
-  effort and their derived share. A notification read the next morning should
-  answer "what was I doing?" without the reader reconstructing it.
+  exhaustion — and the agents that were running, each with its **full project
+  directory**, branch, model, effort and derived share. A notification read the
+  next morning should answer "what was I doing?" without the reader
+  reconstructing it.
 
 ## Copy rules
 

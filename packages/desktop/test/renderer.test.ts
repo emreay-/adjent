@@ -69,7 +69,13 @@ class El {
   querySelectorAll() {
     return [] as El[];
   }
-  closest() {
+  closest(sel: string) {
+    // Enough for these tests: an element matches when it carries one of the
+    // attributes named in the selector list.
+    for (const part of sel.split(',')) {
+      const m = /\[([a-z-]+)\]/.exec(part.trim());
+      if (m && this.attrs[m[1]!] !== undefined) return this;
+    }
     return null;
   }
   appendChild(c: El) {
@@ -85,6 +91,7 @@ interface Harness {
   els: Map<string, El>;
   onState: (payload: unknown) => void;
   errors: unknown[];
+  hover: (el: El) => string;
 }
 
 /** Load panel.js with a fake document/window and return a handle to drive it. */
@@ -98,12 +105,15 @@ function loadPanel(): Harness {
   const errors: unknown[] = [];
   let onState: (p: unknown) => void = () => {};
 
+  const listeners: Record<string, ((ev: unknown) => void)[]> = {};
   const documentShim = {
     getElementById: (id: string) => els.get(id) ?? null,
     createElement: () => new El(),
     querySelectorAll: () => [] as El[],
     querySelector: () => new El(),
-    addEventListener: () => {},
+    addEventListener: (t: string, cb: (ev: unknown) => void) => {
+      (listeners[t] ??= []).push(cb);
+    },
   };
   const windowShim = {
     innerWidth: 380,
@@ -133,12 +143,18 @@ function loadPanel(): Harness {
     consoleShim,
     windowShim.localStorage,
     (cb: () => void) => {
-      void cb;
+      cb();
       return 0;
     },
     () => {},
   );
-  return { els, onState, errors };
+  // setTimeout runs inline in the shim, so a mouseover resolves the tooltip
+  // synchronously and the test can read it straight back.
+  const hover = (el: El): string => {
+    for (const cb of listeners['mouseover'] ?? []) cb({ target: el });
+    return els.get('tip')!.innerHTML;
+  };
+  return { els, onState, errors, hover };
 }
 
 // -------------------------------------------------------------------- state
@@ -252,5 +268,68 @@ describe('panel renderer', () => {
     empty.state.agentBurns = [];
     h.onState(empty);
     expect(h.errors).toHaveLength(0);
+  });
+});
+
+describe('hover detail', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  it('an agent row resolves to that agent and shows its project directory', () => {
+    h.onState(payload());
+    expect(h.els.get('agents')!.innerHTML).toContain('data-agent="claude:a1"');
+
+    const row = new El();
+    row.setAttribute('data-agent', 'claude:a1');
+    const tip = h.hover(row);
+
+    expect(tip, 'directory missing from agent hover').toContain('/w/demo');
+    expect(tip).toContain('Directory');
+    expect(tip).toContain('main');           // branch
+    expect(tip).toContain('model-x');        // model
+    expect(tip).toContain('4.2 %/h');        // derived burn
+  });
+
+  it('a notification hover lists each agent with its full directory', () => {
+    const withAlarm = payload({
+      alarmHistory: [
+        {
+          id: 'a1', ruleId: 'steps', severity: 'warn', title: 'Crossed 80%', body: 'B',
+          firedAt: T0, backend: 'claude', limitKey: '5h', agentId: null,
+          context: {
+            limitLabel: 'Claude \u00b7 5h', utilization: 85, burnPctPerHour: 12,
+            paceLinePct: 40, resetsAt: T0 + H, exhaustsAt: null, plan: 'demo',
+            fitConfidence: 'high',
+            agents: [
+              {
+                label: 'one', project: 'adjent-core',
+                projectPath: 'C:\\dev\\checkout-two\\adjent-core',
+                branch: 'work/core', model: 'model-x', effort: 'high',
+                pctPerHour: 4.2, tokens: 1000,
+              },
+            ],
+          },
+        },
+      ],
+    });
+    h.onState(withAlarm);
+
+    const row = new El();
+    row.setAttribute('data-alarm', '0');
+    const tip = h.hover(row);
+
+    // Two checkouts of one repo share a basename; the path is what tells them apart.
+    expect(tip, 'directory missing from notification hover').toContain('checkout-two');
+    expect(tip).toContain('work/core');
+    expect(tip).toContain('Claude');
+  });
+
+  it('a dictionary tooltip still works alongside the per-record ones', () => {
+    h.onState(payload());
+    const el = new El();
+    el.setAttribute('data-tip', 'hero');
+    expect(h.hover(el)).toContain('H');
   });
 });

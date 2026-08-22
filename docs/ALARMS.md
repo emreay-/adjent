@@ -135,7 +135,7 @@ itself:
 | `burnPctPerHour`, `paceLinePct` | how fast, against where even spending would have been |
 | `resetsAt`, `exhaustsAt` | how much runway was left, and whether it was projected to run out first |
 | `plan` | which tier the limit belonged to |
-| `agents[]` | **what you were actually doing**: project, git branch, model, effort, derived %/h and token total, most expensive first |
+| `agents[]` | **what you were actually doing**: project directory (full path, not just the folder name — two checkouts of one repo are indistinguishable otherwise), git branch, model, effort, derived %/h and token total, most expensive first |
 | `fitConfidence` | how much to trust the derived figures in the snapshot |
 
 For an `agent_burn` alarm the snapshot narrows to the offending agent; for

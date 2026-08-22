@@ -164,7 +164,10 @@ export type Severity = 'info' | 'warn' | 'critical';
 /** Who was running when an alarm fired — the "what was I doing?" answer. */
 export interface AlarmAgentSnapshot {
   label: string;
+  /** Directory name only — what the compact rows show. */
   project: string | null;
+  /** Full working directory, so a notification read later says *which* checkout. */
+  projectPath: string | null;
   branch: string | null;
   model: string | null;
   effort: string | null;
