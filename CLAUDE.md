@@ -53,6 +53,41 @@ Nothing from the development machine may enter version control:
 (Existing docs predating this rule contain illustrative examples from the
 design investigation; do not add more, and scrub them if they are ever edited.)
 
+## Working alongside other agents
+
+More than one agent works in this repo at once. They are **not** isolated by
+default: a plain clone means one working directory, one HEAD and one index, so a
+branch switch by either agent moves the ground under the other, and `git add -A`
+commits whatever the other one happens to have half-finished. Both of those have
+already happened here.
+
+**Each agent gets its own worktree and its own long-lived branch.**
+
+```sh
+git worktree add -b <area>/<topic> ../adjent-<area> main
+cd ../adjent-<area> && pnpm install      # a fresh worktree has no node_modules
+```
+
+Current split — check `git worktree list` before assuming:
+
+| Worktree | Branch | Area |
+| --- | --- | --- |
+| `adjent/` | `main` | integration; brand and design work |
+| `adjent-core/` | `work/core` | core, CLI and desktop logic |
+
+Rules that follow from sharing a repo:
+
+1. **Never `git add -A`.** Stage explicit paths. This is the single rule that
+   would have prevented every cross-contamination so far.
+2. **Never switch branches in a directory you do not own**, and never commit
+   files you did not write. If another agent's work is uncommitted in your tree,
+   leave it and say so.
+3. **Merge `main` in often** rather than letting branches drift — the packages
+   are small and conflicts are cheap when caught early.
+4. Worktrees live *outside* the repo directory, so nothing needs gitignoring.
+5. `dist/` and `node_modules/` are per-worktree. Never build or run the Electron
+   app from a directory another agent is editing.
+
 ## Conventions
 
 - TypeScript strict; pnpm workspaces (`core/`, `cli/`, `desktop/` under
