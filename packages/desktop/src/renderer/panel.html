@@ -61,6 +61,10 @@
   .alarm { font-size:11.5px; color:var(--ink2); padding:3px 0; }
   .alarm b { font-weight:600; }
   .empty { color:var(--muted); font-size:12px; padding:4px 0; }
+  #renderError {
+    background:var(--crit-bg); color:var(--crit); font-size:11px; padding:6px 14px;
+    border-bottom:1px solid var(--line);
+  }
   .iconbtn {
     -webkit-app-region:no-drag; background:none; border:none; color:var(--muted);
     font-size:14px; cursor:pointer; padding:0 2px; line-height:1;
@@ -160,6 +164,7 @@
 </head>
 <body>
   <header><span>Adjent</span><span class="live" id="liveCount" data-tip="liveCount"></span><button id="bell" class="iconbtn" title="Notifications">&#128276;<span id="bellDot"></span></button><button id="gear" class="iconbtn" title="Settings">&#9881;</button></header>
+  <div id="renderError" hidden></div>
   <main>
     <section id="primary">
       <span class="chip idle" id="verdict" data-tip="verdict">Waiting for data</span>

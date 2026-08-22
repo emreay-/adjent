@@ -37,7 +37,7 @@ function esc(s) {
 function renderChart(a, now, history) {
   const svg = $('chart');
   const W = 352, H = 120, L = 6, R = 346, TOP = 12, BASE = 104;
-  const w = a.window;
+  const w = a.limit;
   const color = (VERDICT[a.verdict] || VERDICT.idle).color;
   const parts = [];
 
@@ -111,7 +111,13 @@ function render(payload) {
   const stale = now - binding.limit.observedAt > 10 * 60000 ? `as of ${fmtTime(binding.limit.observedAt)}` : '';
   $('heroMeta').setAttribute('data-tip', stale ? 'stale' : 'binding');
   $('heroMeta').innerHTML = `${esc(binding.limit.label)}<br>${esc(stale || resetIn)}`;
-  renderChart(binding, now, payload.history);
+  try {
+    renderChart(binding, now, payload.history);
+  } catch (err) {
+    // A chart that cannot draw must not blank the numbers around it.
+    $('chart').innerHTML = '';
+    reportRenderError('chart', err);
+  }
 
   // token line: exact totals across live agents (this window's exact split comes with history)
   const tot = live.reduce(
@@ -425,6 +431,21 @@ $('widgetTask').addEventListener('change', (e) => set({ widgetTaskbarButton: e.t
 $('pauseAlarms').addEventListener('change', (e) => set({ alarmsPaused: e.target.checked }));
 $('openTaskbarSettings').addEventListener('click', () => window.adjent.openTaskbarSettings());
 
+/**
+ * Renderer failures used to be invisible: the panel simply stopped updating
+ * partway down and looked like "no data". Show them instead.
+ */
+function reportRenderError(where, err) {
+  const msg = err && err.message ? err.message : String(err);
+  // eslint-disable-next-line no-console
+  console.error(`[adjent] render failed in ${where}:`, err);
+  const bar = $('renderError');
+  if (bar) {
+    bar.textContent = `Display error in ${where}: ${msg}`;
+    bar.hidden = false;
+  }
+}
+
 window.adjent.onState((payload) => {
   if (payload.explanations) EXPL = payload.explanations;
   if (payload.provenanceNote) PROV_NOTE = payload.provenanceNote;
@@ -435,7 +456,14 @@ window.adjent.onState((payload) => {
     updateBellDot();
     if (activeView === 'notifications') renderNotifications();
   }
-  if (activeView === null) render(payload);
+  if (activeView === null) {
+    try {
+      $('renderError').hidden = true;
+      render(payload);
+    } catch (err) {
+      reportRenderError('panel', err);
+    }
+  }
 });
 window.adjent.onView((view) => showView(view));
 
