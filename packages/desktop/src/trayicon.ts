@@ -40,9 +40,19 @@ const DATUM_X = 34;
 const MEASURED_X0 = 20;
 const MEASURED_TRAVEL = 0.32;
 
-/** Coarse cut (16px slot) and fine cut (32px and up), interpolated by size. */
-const COARSE = { solid: 11, datum: 6, dash: [20, 8, 4, 8] as const };
-const FINE = { solid: 8, datum: 4, dash: [12, 4, 2, 4] as const };
+/**
+ * Coarse cut (tray sizes) and fine cut (32px and up), interpolated by size.
+ *
+ * The dash-dot is the first thing to fail as the plate shrinks: below 32px the
+ * marks land on two or three pixels and read as dirt on the glyph rather than
+ * as a datum. So the tray cut keeps the second rule and drops its dashes — the
+ * weight difference still says which rule is the reference — and the dash-dot
+ * returns at brand sizes where it can be drawn properly.
+ */
+const DASH_MIN_PX = 32;
+const COARSE = { solid: 9, datum: 5 };
+const FINE = { solid: 8, datum: 4 };
+const DASH = [12, 4, 2, 4] as const;
 
 export interface TrayIconOptions {
   utilization: number;
@@ -70,13 +80,13 @@ export function renderTrayBuffer(o: TrayIconOptions): { buf: Buffer; px: number 
   const buf = Buffer.alloc(px * px * 4);
   const rgb = VERDICT_RGB[o.verdict] ?? VERDICT_RGB['idle']!;
 
-  // Below 16px the rules would silt up, so take the coarse cut; above 32px the fine one.
-  const t = clamp((o.logicalSize - 16) / 16, 0, 1);
+  // At tray sizes the rules would silt up, so take the coarse cut; above 32px the fine one.
+  const t = clamp((o.logicalSize - 16) / (DASH_MIN_PX - 16), 0, 1);
   const weight = clamp(o.thickness / 0.28, 0.7, 1.6);
   const wSolid = lerp(COARSE.solid, FINE.solid, t) * weight;
   const wDatum = lerp(COARSE.datum, FINE.datum, t) * weight;
-  const dash = COARSE.dash.map((d, i) => lerp(d, FINE.dash[i]!, t));
-  const period = dash.reduce((a, b) => a + b, 0);
+  const dashed = o.logicalSize >= DASH_MIN_PX;
+  const period = DASH.reduce((a, b) => a + b, 0);
 
   // Idle means nothing is being measured: the datum stands alone.
   const measured = o.verdict !== 'idle';
@@ -99,10 +109,11 @@ export function renderTrayBuffer(o: TrayIconOptions): { buf: Buffer; px: number 
       if (measured && Math.abs(k - kSolid) <= wSolid / 2) continue;
 
       if (withDatum && Math.abs(k - kDatum) <= wDatum / 2) {
+        if (!dashed) continue;
         // Position along the datum, wrapped into one dash-dot period.
         const s = DIR[0] * (u - DATUM_X) + DIR[1] * (v - RULE_Y);
         const m = ((s % period) + period) % period;
-        if (m < dash[0]! || (m >= dash[0]! + dash[1]! && m < dash[0]! + dash[1]! + dash[2]!)) continue;
+        if (m < DASH[0] || (m >= DASH[0] + DASH[1] && m < DASH[0] + DASH[1] + DASH[2])) continue;
       }
 
       const idx = Math.floor(y / SS) * px + Math.floor(x / SS);
