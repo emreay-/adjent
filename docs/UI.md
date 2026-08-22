@@ -54,7 +54,10 @@ renderer zoom factor *and* the window dimensions together, so the panel grows
 with its type rather than clipping it. The tray glyph is separate: Windows
 fixes the slot at 16 logical px, so "bigger" there means rendering at a higher
 scale factor for crispness and letting `trayThickness` (0.18–0.5 of radius)
-and `trayStyle` (`ring` | `disc`) use more of the slot. All of it lives in
+and `trayStyle` (`ring` | `disc`) use more of the slot. Appearance is a third
+setting — auto (follow the OS), light, or dark — applied through Electron's
+`nativeTheme.themeSource`, so the existing `prefers-color-scheme` stylesheets
+respond with no per-window theming code. All of it lives in
 `~/.adjent/settings.json` and applies live.
 
 **Notifications are native OS toasts, routed by severity.** Windows Action
@@ -413,6 +416,26 @@ drops and the UI says so.
 
 Nothing from tier 3 or below is ever promoted to the resting surface "because it
 is interesting". Interesting is not the bar; *actionable right now* is.
+
+## Hover explanations
+
+Clarity is the design goal, so nothing on the panel should require guessing
+what it means. Every metric carries a hover explanation: what it is, what it
+means for a decision, and — explicitly — whether it is **measured**, **exact**,
+or **derived**.
+
+* The copy lives in **one place**, `packages/core/src/explain.ts`, condensed
+  from this doc set. The panel, the widget and `adjent explain <term>` all read
+  the same table, so a wrong explanation is fixed once.
+* Explainable elements carry a dotted underline on hover, so the help is
+  discoverable rather than hidden.
+* Tooltips appear after a short delay, are keyed to the *current* context —
+  a stale Codex reading explains staleness, a scoped window explains scoping —
+  and clamp to the panel edge so nothing is cut off.
+* The provenance tag is part of the tooltip, not decoration: it is how a reader
+  learns that `≈12.0 %/h` is a model output and `72%` is not.
+* The widget uses native titles instead of the tooltip layer: the strip is too
+  small to overlay without covering what it explains.
 
 ## Copy rules
 

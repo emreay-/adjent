@@ -4,6 +4,7 @@
  *   adjent status      one snapshot: backends, quota windows, agents
  *   adjent watch       continuous loop with alarms to the console
  *   adjent statusline  one line for Claude Code's statusLine setting
+ *   adjent explain     plain-language definition of any metric shown
  *
  * Rendering follows docs/UI.md: measured values plain, derived values with ≈,
  * the binding limit leads, verdict words carry the meaning.
@@ -12,7 +13,10 @@ import {
   ClaudeProvider,
   CodexProvider,
   ConsoleSink,
+  EXPLANATIONS,
+  EXPLANATION_KEYS,
   Monitor,
+  PROVENANCE_NOTE,
   fmtDur,
   fmtTime,
   loadConfig,
@@ -110,8 +114,47 @@ function statusline(state: AppState): string {
   return `${mark} ${b.window.label} ${Math.round(b.window.utilization)}%${rate}${reset}`;
 }
 
+/** Wrap prose to a readable width without pulling in a dependency. */
+function wrap(text: string, width = 76, indent = '  '): string {
+  const out: string[] = [];
+  let line = '';
+  for (const word of text.split(/\s+/)) {
+    if (line.length + word.length + 1 > width) {
+      out.push(indent + line);
+      line = word;
+    } else line = line ? `${line} ${word}` : word;
+  }
+  if (line) out.push(indent + line);
+  return out.join('\n');
+}
+
+function explainCmd(term: string | undefined): void {
+  if (!term) {
+    console.log('Explains any number Adjent shows. Same words as the panel tooltips.\n');
+    console.log('  adjent explain <term>\n');
+    console.log('terms: ' + EXPLANATION_KEYS.join(', '));
+    return;
+  }
+  const e = EXPLANATIONS[term];
+  if (!e) {
+    console.error(`unknown term: ${term}\nterms: ${EXPLANATION_KEYS.join(', ')}`);
+    process.exitCode = 2;
+    return;
+  }
+  console.log(`\n  ${e.title}\n`);
+  console.log(wrap(e.body));
+  if (e.provenance) {
+    console.log(`\n  [${e.provenance}] ${PROVENANCE_NOTE[e.provenance]}`);
+  }
+  console.log('');
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2] ?? 'status';
+  if (cmd === 'explain') {
+    explainCmd(process.argv[3]);
+    return;
+  }
   const monitor = await makeMonitor();
 
   switch (cmd) {
@@ -140,7 +183,7 @@ async function main(): Promise<void> {
       }
     }
     default:
-      console.error(`unknown command: ${cmd}\nusage: adjent [status|watch|statusline]`);
+      console.error(`unknown command: ${cmd}\nusage: adjent [status|watch|statusline|explain]`);
       process.exitCode = 2;
   }
 }

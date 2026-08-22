@@ -8,7 +8,7 @@
  *  - this package is CJS because Electron's require hook needs it; the ESM
  *    core is reached through a dynamic import().
  */
-import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, screen, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, screen, shell } from 'electron';
 import type { BrowserWindow as BrowserWindowType, Tray as TrayType } from 'electron';
 import * as path from 'node:path';
 import type { Alarm, AppState, Monitor, Settings, Sink } from '@adjent/core' with { 'resolution-mode': 'import' };
@@ -174,7 +174,7 @@ function syncWidget(): void {
 function pushState(): void {
   const s = monitor?.state;
   if (!s) return;
-  const payload = { state: s, alarms: recentAlarms.slice(-5), settings };
+  const payload = { state: s, alarms: recentAlarms.slice(-5), settings, explanations: core.EXPLANATIONS, provenanceNote: core.PROVENANCE_NOTE };
   for (const win of [panel, widget]) {
     if (win && !win.isDestroyed() && win.isVisible()) win.webContents.send('state', payload);
   }
@@ -184,6 +184,8 @@ async function applySettings(patch: Partial<Settings>, opts: { rebuildWidget?: b
   const prev = settings;
   settings = core.coerceSettings({ ...settings, ...patch });
   await core.saveSettings(settings);
+
+  if (settings.theme !== prev.theme) nativeTheme.themeSource = settings.theme;
 
   const scaleChanged = settings.uiScale !== prev.uiScale;
   if (scaleChanged) {
@@ -252,6 +254,9 @@ async function start(): Promise<void> {
 
   core = await coreImport;
   settings = await core.loadSettings();
+  // Drives prefers-color-scheme in every renderer — the stylesheets already
+  // key off it, so no per-window theming code is needed.
+  nativeTheme.themeSource = settings.theme;
   const config = await core.loadConfig();
   monitor = new core.Monitor({ providers: [new core.ClaudeProvider(), new core.CodexProvider()], config });
   monitor.router.register(new ToastSink());

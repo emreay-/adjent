@@ -24,4 +24,12 @@ export {
   DEFAULT_SETTINGS,
   type Settings,
   type TrayStyle,
+  type Theme,
 } from './settings.js';
+export {
+  EXPLANATIONS,
+  EXPLANATION_KEYS,
+  PROVENANCE_NOTE,
+  explain,
+  type Explanation,
+} from './explain.js';

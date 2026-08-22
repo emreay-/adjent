@@ -89,25 +89,46 @@
     display:block; margin-top:6px; background:none; border:none; padding:0;
     color:var(--good); font-size:11px; cursor:pointer; text-decoration:underline;
   }
+  /* Hover explanations. A dotted underline marks anything explainable, so the
+     help is discoverable rather than hidden (docs/UI.md: clarity is the goal). */
+  [data-tip] { cursor:help; }
+  [data-tip]:hover { text-decoration:underline dotted var(--muted) 1px; text-underline-offset:3px; }
+  #tip {
+    position:fixed; z-index:99; max-width:280px; pointer-events:none; opacity:0;
+    transition:opacity .12s ease; background:var(--surface); color:var(--ink2);
+    border:1px solid var(--line); border-radius:5px; padding:9px 11px;
+    box-shadow:0 4px 20px -6px rgba(0,0,0,.45); font-size:11.5px; line-height:1.5;
+  }
+  #tip.on { opacity:1; }
+  #tip .t { display:block; font-weight:700; color:var(--ink); font-size:11.5px; margin-bottom:3px; }
+  #tip .p {
+    display:inline-block; margin-top:6px; padding:1.5px 6px; border-radius:3px;
+    font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  }
+  #tip .p.measured { background:var(--good-bg); color:var(--good); }
+  #tip .p.exact    { background:var(--good-bg); color:var(--good); }
+  #tip .p.derived  { background:var(--warn-bg); color:var(--warn); }
+  #tip .pn { display:block; margin-top:4px; color:var(--muted); font-size:10.5px; }
   h2 { font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:4px; }
 </style>
 </head>
 <body>
-  <header><span>Adjent</span><span class="live" id="liveCount"></span><button id="gear" class="iconbtn" title="Settings">&#9881;</button></header>
+  <header><span>Adjent</span><span class="live" id="liveCount" data-tip="liveCount"></span><button id="gear" class="iconbtn" title="Settings">&#9881;</button></header>
   <main>
     <section id="primary">
-      <span class="chip idle" id="verdict">Waiting for data</span>
+      <span class="chip idle" id="verdict" data-tip="verdict">Waiting for data</span>
       <div class="heroRow">
-        <span class="hero" id="hero">–</span>
-        <span class="rate" id="heroRate"></span>
-        <span class="heroMeta" id="heroMeta"></span>
+        <span class="hero" id="hero" data-tip="hero">–</span>
+        <span class="rate" id="heroRate" data-tip="burnRate"></span>
+        <span class="heroMeta" id="heroMeta" data-tip="binding"></span>
       </div>
-      <svg class="pace" id="chart" viewBox="0 0 352 120" aria-label="Utilization against the pace line"></svg>
-      <div class="tokline" id="tokline"></div>
+      <svg class="pace" id="chart" data-tip="chart" viewBox="0 0 352 120" aria-label="Utilization against the pace line"></svg>
+      <div class="tokline" id="tokline" data-tip="tokens"></div>
     </section>
-    <section><h2>Other windows</h2><div id="windows"><div class="empty">–</div></div></section>
-    <section><h2>Agents</h2><div id="agents"><div class="empty">–</div></div></section>
-    <section><h2>Recent alarms</h2><div id="alarms"><div class="empty">None</div></div></section>
+    <section><h2 data-tip="otherWindows">Other windows</h2><div id="windows"><div class="empty">–</div></div></section>
+    <section><h2 data-tip="agentBurn">Agents</h2><div id="agents"><div class="empty">–</div></div></section>
+    <section><h2>Recent alarms</h2><div id="alarms"><div class="empty">None</div></div>
+      <div class="tokline" id="conf" data-tip="confidence" style="margin-top:8px"></div></section>
     <section id="settingsView" hidden>
       <h2>Display</h2>
       <div class="setRow">
@@ -116,6 +137,12 @@
           <button data-scale="-">&minus;</button>
           <span id="scaleVal">100%</span>
           <button data-scale="+">+</button>
+        </div>
+      </div>
+      <div class="setRow">
+        <label>Appearance</label>
+        <div class="seg" id="theme">
+          <button data-theme="system">Auto</button><button data-theme="light">Light</button><button data-theme="dark">Dark</button>
         </div>
       </div>
       <div class="setRow">
@@ -161,6 +188,7 @@
       </div>
     </section>
   </main>
+  <div id="tip" role="tooltip"></div>
   <script src="panel.js"></script>
 </body>
 </html>

@@ -36,3 +36,33 @@ describe('settings', () => {
     }
   });
 });
+
+describe('explanations', () => {
+  it('every UI tip key resolves and is written to the copy rules', async () => {
+    const { EXPLANATIONS, EXPLANATION_KEYS, PROVENANCE_NOTE, explain } = await import('../src/explain.js');
+    // Keys referenced by the panel/widget renderers must all exist.
+    const used = [
+      'hero', 'binding', 'burnRate', 'resets', 'verdict', 'paceLine', 'chart',
+      'exhausts', 'tokens', 'agentBurn', 'otherWindows', 'scoped', 'stale',
+      'confidence', 'epsilon', 'effort', 'model', 'idle', 'liveCount',
+    ];
+    for (const k of used) expect(EXPLANATION_KEYS, k).toContain(k);
+
+    for (const [key, e] of Object.entries(EXPLANATIONS)) {
+      expect(e.title.length, key).toBeGreaterThan(3);
+      expect(e.body.length, key).toBeGreaterThan(40);
+      // No raw field names leaking into user-facing copy (docs/UI.md copy rules).
+      expect(e.body, key).not.toMatch(/resets_at|used_percent|window_minutes/);
+      if (e.provenance) expect(PROVENANCE_NOTE[e.provenance]).toBeTruthy();
+    }
+    expect(explain('nope')).toBeNull();
+  });
+
+  it('theme is clamped to the three valid values', async () => {
+    const { coerceSettings } = await import('../src/settings.js');
+    expect(coerceSettings({ theme: 'light' }).theme).toBe('light');
+    expect(coerceSettings({ theme: 'dark' }).theme).toBe('dark');
+    expect(coerceSettings({ theme: 'neon' }).theme).toBe('system');
+    expect(coerceSettings({}).theme).toBe('system');
+  });
+});

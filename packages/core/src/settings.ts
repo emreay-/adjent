@@ -11,10 +11,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 export type TrayStyle = 'ring' | 'disc';
+export type Theme = 'system' | 'light' | 'dark';
 
 export interface Settings {
   /** Panel/widget zoom. 1 = design size. Clamped to [0.8, 2.0]. */
   uiScale: number;
+  /** Follow the OS, or pin light/dark. Drives prefers-color-scheme directly. */
+  theme: Theme;
   /** Tray glyph: a filled arc ring, or a solid disc with a progress wedge. */
   trayStyle: TrayStyle;
   /** Ring thickness as a fraction of the icon radius. Clamped to [0.18, 0.5]. */
@@ -31,6 +34,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   uiScale: 1,
+  theme: 'system',
   trayStyle: 'ring',
   trayThickness: 0.34,
   widgetEnabled: false,
@@ -49,8 +53,10 @@ export function coerceSettings(raw: unknown): Settings {
   const r = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
   const pos = r['widgetPosition'];
   const p = typeof pos === 'object' && pos !== null ? (pos as Record<string, unknown>) : null;
+  const theme = r['theme'];
   return {
     uiScale: clamp(r['uiScale'], 0.8, 2.0, DEFAULT_SETTINGS.uiScale),
+    theme: theme === 'light' || theme === 'dark' ? theme : 'system',
     trayStyle: r['trayStyle'] === 'disc' ? 'disc' : 'ring',
     trayThickness: clamp(r['trayThickness'], 0.18, 0.5, DEFAULT_SETTINGS.trayThickness),
     widgetEnabled: r['widgetEnabled'] === true,

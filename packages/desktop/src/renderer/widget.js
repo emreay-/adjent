@@ -19,7 +19,14 @@ function fmtDur(ms) {
   return `${m}m`;
 }
 
+let EXPL = {};
+const tipFor = (key) => {
+  const e = EXPL[key];
+  return e ? `${e.title}\n\n${e.body}` : '';
+};
+
 window.adjent.onState((payload) => {
+  if (payload.explanations) EXPL = payload.explanations;
   const state = payload.state;
   const now = state.generatedAt;
   const b = state.windows.find((w) => w.binding);
@@ -35,6 +42,13 @@ window.adjent.onState((payload) => {
       : '';
   const reset = b.window.resetsAt !== null ? `↺ ${fmtDur(b.window.resetsAt - now)}` : '';
   $('meta').innerHTML = `${b.window.label}<br>${reset}`;
+
+  // The strip is too small for a tooltip layer, so use native titles.
+  $('hero').title = tipFor('hero');
+  $('rate').title = tipFor('burnRate');
+  $('verdict').title = tipFor('verdict');
+  $('meta').title = tipFor('binding');
+  document.querySelector('.bar').title = tipFor('paceLine');
 
   const fill = $('fill');
   fill.style.width = `${Math.min(100, Math.max(0, b.window.utilization))}%`;
@@ -52,6 +66,7 @@ window.adjent.onState((payload) => {
     $('hot').querySelector('.dot').style.background = top.pctPerHour > 8 ? 'var(--crit)' : 'var(--warn)';
     $('hot').querySelector('.n').textContent = proj;
     $('hot').querySelector('.v').textContent = `≈${top.pctPerHour.toFixed(1)} %/h`;
+    $('hot').title = tipFor('agentBurn');
   }
 });
 

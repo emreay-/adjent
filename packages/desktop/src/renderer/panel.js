@@ -98,6 +98,7 @@ function render(payload) {
       : '';
   const resetIn = binding.window.resetsAt !== null ? `resets in ${fmtDur(binding.window.resetsAt - now)}` : '';
   const stale = now - binding.window.observedAt > 10 * 60000 ? `as of ${fmtTime(binding.window.observedAt)}` : '';
+  $('heroMeta').setAttribute('data-tip', stale ? 'stale' : 'binding');
   $('heroMeta').innerHTML = `${esc(binding.window.label)}<br>${esc(stale || resetIn)}`;
   renderChart(binding, now);
 
@@ -123,7 +124,8 @@ function render(payload) {
       .map((a) => {
         const vv = VERDICT[a.verdict] || VERDICT.idle;
         const staleW = now - a.window.observedAt > 10 * 60000 ? ` · as of ${fmtTime(a.window.observedAt)}` : '';
-        return `<div class="row"><span class="dot" style="background:${vv.color}"></span><span class="name">${esc(a.window.label)}</span><span class="meta"><b>${Math.round(a.window.utilization)}%</b>${a.window.severity === 'warning' ? ' ⚠' : ''}${esc(staleW)}</span></div>`;
+        const tip = staleW ? 'stale' : a.window.scope ? 'scoped' : 'otherWindows';
+        return `<div class="row" data-tip="${tip}"><span class="dot" style="background:${vv.color}"></span><span class="name">${esc(a.window.label)}</span><span class="meta"><b>${Math.round(a.window.utilization)}%</b>${a.window.severity === 'warning' ? ' ⚠' : ''}${esc(staleW)}</span></div>`;
       })
       .join('') || '<div class="empty">None</div>';
 
@@ -143,15 +145,74 @@ function render(payload) {
             ? `${esc(model)} · idle ${fmtDur(now - a.lastActivityAt)}`
             : `${esc(model)} · —`;
       const dotColor = burn !== undefined && burn > 8 ? 'var(--crit)' : a.state === 'live' ? 'var(--good)' : 'var(--idle)';
-      return `<div class="row"><span class="dot" style="background:${dotColor}"></span><span class="name">${esc(proj)}</span><span class="meta">${metaStr}</span></div>`;
+      const tip = burn !== undefined ? 'agentBurn' : a.state === 'idle' ? 'idle' : 'model';
+      return `<div class="row" data-tip="${tip}"><span class="dot" style="background:${dotColor}"></span><span class="name">${esc(proj)}</span><span class="meta">${metaStr}</span></div>`;
     });
   $('agents').innerHTML = rows.join('') || '<div class="empty">None</div>';
+
+  const conf = $('conf');
+  if (conf) {
+    conf.innerHTML =
+      state.epsilon !== null
+        ? `fit confidence <b>${esc(state.fitConfidence)}</b> · ε ${state.epsilon.toFixed(2)} %/h`
+        : `fit confidence <b>${esc(state.fitConfidence)}</b> · learning`;
+  }
 
   const alarms = (payload.alarms || []).slice(-4).reverse();
   $('alarms').innerHTML =
     alarms.map((a) => `<div class="alarm"><b>${esc(a.title)}</b> — ${esc(a.body)}</div>`).join('') ||
     '<div class="empty">None</div>';
 }
+
+
+// --------------------------------------------------------------------------
+// Hover explanations. Copy comes from core (one source of truth, shared with
+// the CLI's `adjent explain`). Delegated listeners so rows re-rendered every
+// tick keep working without rebinding.
+// --------------------------------------------------------------------------
+let EXPL = {};
+let PROV_NOTE = {};
+let tipTimer = null;
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  $('tip').classList.remove('on');
+}
+
+function showTip(target) {
+  const key = target.getAttribute('data-tip');
+  const e = EXPL[key];
+  if (!e) return;
+  const tip = $('tip');
+  const prov = e.provenance
+    ? `<span class="p ${e.provenance}">${e.provenance}</span><span class="pn">${esc(PROV_NOTE[e.provenance] || '')}</span>`
+    : '';
+  tip.innerHTML = `<span class="t">${esc(e.title)}</span>${esc(e.body)}${prov}`;
+
+  // Position above the element when there is room, else below; clamp to the
+  // window so a tooltip near an edge is never cut off.
+  tip.classList.add('on');
+  const r = target.getBoundingClientRect();
+  const tr = tip.getBoundingClientRect();
+  let top = r.top - tr.height - 8;
+  if (top < 6) top = r.bottom + 8;
+  let left = r.left + r.width / 2 - tr.width / 2;
+  left = Math.max(6, Math.min(left, window.innerWidth - tr.width - 6));
+  tip.style.top = `${Math.round(top)}px`;
+  tip.style.left = `${Math.round(left)}px`;
+}
+
+document.addEventListener('mouseover', (ev) => {
+  const t = ev.target.closest ? ev.target.closest('[data-tip]') : null;
+  if (!t) return;
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => showTip(t), 320);
+});
+document.addEventListener('mouseout', (ev) => {
+  const t = ev.target.closest ? ev.target.closest('[data-tip]') : null;
+  if (t) hideTip();
+});
+document.addEventListener('scroll', hideTip, true);
 
 // --------------------------------------------------------------------------
 // Settings view. Every control writes through to the main process, which
@@ -179,6 +240,9 @@ function syncSettingsUI(s) {
   for (const b of document.querySelectorAll('#trayStyle button')) {
     b.classList.toggle('on', b.dataset.style === s.trayStyle);
   }
+  for (const b of document.querySelectorAll('#theme button')) {
+    b.classList.toggle('on', b.dataset.theme === (s.theme || 'system'));
+  }
 }
 
 const set = (patch) => window.adjent.setSettings(patch);
@@ -204,6 +268,9 @@ document.querySelectorAll('[data-tick]').forEach((b) =>
 document.querySelectorAll('#trayStyle button').forEach((b) =>
   b.addEventListener('click', () => set({ trayStyle: b.dataset.style })),
 );
+document.querySelectorAll('#theme button').forEach((b) =>
+  b.addEventListener('click', () => set({ theme: b.dataset.theme })),
+);
 $('thick').addEventListener('input', (e) => set({ trayThickness: Number(e.target.value) }));
 $('widgetOn').addEventListener('change', (e) => set({ widgetEnabled: e.target.checked }));
 $('widgetTask').addEventListener('change', (e) => set({ widgetTaskbarButton: e.target.checked }));
@@ -211,6 +278,8 @@ $('pauseAlarms').addEventListener('change', (e) => set({ alarmsPaused: e.target.
 $('openTaskbarSettings').addEventListener('click', () => window.adjent.openTaskbarSettings());
 
 window.adjent.onState((payload) => {
+  if (payload.explanations) EXPL = payload.explanations;
+  if (payload.provenanceNote) PROV_NOTE = payload.provenanceNote;
   current = payload.settings || current;
   syncSettingsUI(current);
   if (!showingSettings) render(payload);
