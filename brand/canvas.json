@@ -1,11 +1,54 @@
 {
   "artboards": [
-    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 780 },
-    { "file": "Plate.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 760 },
-    { "file": "Usage.dc.html", "x": 0, "y": 900, "w": 1120, "h": 800 },
-    { "file": "Device.dc.html", "x": 1240, "y": 900, "w": 1120, "h": 600 },
-    { "file": "System.dc.html", "x": 0, "y": 1820, "w": 1120, "h": 800 },
-    { "file": "DirectionI.dc.html", "x": 1240, "y": 1820, "w": 1120, "h": 660 }
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1120,
+      "h": 780
+    },
+    {
+      "file": "Plate.dc.html",
+      "x": 1240,
+      "y": 0,
+      "w": 1120,
+      "h": 760
+    },
+    {
+      "file": "TrayCut.dc.html",
+      "x": 2480,
+      "y": 0,
+      "w": 1120,
+      "h": 760
+    },
+    {
+      "file": "Usage.dc.html",
+      "x": 0,
+      "y": 900,
+      "w": 1120,
+      "h": 800
+    },
+    {
+      "file": "Device.dc.html",
+      "x": 1240,
+      "y": 900,
+      "w": 1120,
+      "h": 600
+    },
+    {
+      "file": "System.dc.html",
+      "x": 0,
+      "y": 1820,
+      "w": 1120,
+      "h": 800
+    },
+    {
+      "file": "DirectionI.dc.html",
+      "x": 1240,
+      "y": 1820,
+      "w": 1120,
+      "h": 660
+    }
   ],
   "annotations": [
     {
@@ -17,11 +60,13 @@
     },
     {
       "id": "assets-note",
-      "x": 2480,
-      "y": 620,
+      "x": 3720,
+      "y": 0,
       "w": 430,
-      "text": "Files in the repo\n\nbrand/assets/ holds the mark as SVG: the square plate, the reversed plate, the r13 launcher icon, and the coarsened 16px cut whose thicker strokes keep the knockout open at tray size.\n\nThe tray renderer draws the plate directly into an RGBA buffer rather than loading these — same geometry, expressed twice, so the SVGs stay the reference and packages/desktop/src/trayicon.ts stays dependency-free."
+      "text": "Files in the repo\n\nbrand/assets/ holds the mark as SVG: the square plate, the reversed plate, the r13 launcher icon, and — separately — the 16px tray cut, which is the two rules alone on the pixel grid.\n\nThe renderer in packages/desktop/src/trayicon.ts builds that same mask in code and upscales it by an integer factor, so the glyph stays crisp at every device scale rather than being resampled."
     }
   ],
-  "launch": { "view": "canvas" }
+  "launch": {
+    "view": "canvas"
+  }
 }
