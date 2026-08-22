@@ -1,0 +1,69 @@
+# Adjent — agent instructions
+
+Cross-platform (Windows/Linux) tray-resident app that monitors local AI coding
+agents (Claude Code, Codex): live agents, models, projects, quota utilization,
+and rule-driven alarms. Design-first repo: read the docs before writing code.
+
+## Doc map — read in this order for context
+
+| Doc | Authority on |
+| --- | --- |
+| [README.md](README.md) | principles; the six rules everything else follows |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | stack, module layout, provider interface, packaging |
+| [docs/DATA-SOURCES.md](docs/DATA-SOURCES.md) | verified vendor on-disk formats and the quota endpoint |
+| [docs/GLOSSARY.md](docs/GLOSSARY.md) | terminology; the exchange-rate model, derived step by step |
+| [docs/UI.md](docs/UI.md) | form factor, component budget, hero number, mockups |
+| [docs/ALARMS.md](docs/ALARMS.md) | the three rule types, config schema, sinks |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | milestones, expansion, risks |
+
+## Hard rules (from the design; do not relax without discussion)
+
+1. **Read-only toward vendors.** Never write into `~/.claude` or `~/.codex`.
+   Never write `.credentials.json`; never run an OAuth refresh flow. A `401` is
+   a normal state (back off, serve stale-marked data), not an error to fix.
+2. **Metadata only.** Parsers must never load message bodies into application
+   state, logs, or UI. Extract usage/model/path/timestamp keys and discard the
+   rest.
+3. **Provenance is typed.** Every displayed number is `reported`, `exact`, or
+   `derived`. Derived values render with `≈`; measured values never do. The
+   hero number is always vendor-reported utilization of the binding limit.
+4. **No native Node modules.** Use `node:sqlite`, Electron's built-in
+   `Notification`, in-memory + JSONL storage. If a dependency needs
+   node-gyp/prebuilds, find another way.
+5. **Core stays UI-agnostic.** `packages/core` imports no Electron and no DOM.
+   CLI and desktop are thin shells over it.
+6. **Degrade per provider.** A format change or endpoint failure disables one
+   backend's data, never the app. Parsers are additive-tolerant: unknown fields
+   ignored, missing optionals null, never throw on shape drift.
+
+## No personal/sensitive data in the repo — hard rule
+
+Nothing from the development machine may enter version control:
+
+- No usernames, home-directory paths, hostnames, or machine names. Use
+  placeholders: `~`, `<user>`, `C:\Users\<user>\...`.
+- No tokens, keys, cookies, org/account UUIDs, or session IDs — not even
+  truncated or expired ones.
+- No real usage numbers, plan/tier strings, or quota percentages from a real
+  account in code, tests, or committed docs. Fixtures use synthetic values.
+- Test fixtures derived from real vendor files must be redacted by hand:
+  regenerate IDs, zero the paths, invent the numbers, keep only the *shape*.
+- Before any commit: scan the diff for the above. When in doubt, leave it out.
+
+(Existing docs predating this rule contain illustrative examples from the
+design investigation; do not add more, and scrub them if they are ever edited.)
+
+## Conventions
+
+- TypeScript strict; pnpm workspaces (`core/`, `cli/`, `desktop/` under
+  `packages/`) per ARCHITECTURE.md.
+- Vocabulary in code follows GLOSSARY.md: `utilization`, `window`,
+  `bindingLimit`, `bucket`, `burnRate` — do not invent synonyms.
+- Line endings are LF, enforced by `.gitattributes`.
+- Math in docs is KaTeX-compatible `$…$`/`$$…$$`. When editing it
+  programmatically, never pass LaTeX through bash heredocs or Python string
+  layers that interpret escapes (`\f`, `\t`, `\b`, `\a` get eaten — this bit us
+  twice); write via file tools or scripts with raw/UTF-8 handling, and re-check
+  for control characters afterwards.
+- Commits: imperative subject, structured body (motivation → changes →
+  consequences → validation). Do not amend or force-push unless asked.

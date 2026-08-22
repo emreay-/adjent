@@ -1,0 +1,50 @@
+# --- Node / pnpm ---------------------------------------------------------
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# --- Build output --------------------------------------------------------
+dist/
+out/
+build/
+release/           # electron-builder artifacts
+coverage/
+.vite/
+.turbo/
+
+# --- Logs & debug --------------------------------------------------------
+*.log
+npm-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Environment / secrets — never commit, no exceptions -----------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials*.json
+
+# --- Local app state (Adjent's own runtime data) -------------------------
+.adjent/
+
+# --- Editors & IDEs ------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+*.swp
+*.swo
+
+# --- OS noise ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Scratch / local-only ------------------------------------------------
+scratch/
+*.local.*
+TODO.local.md
