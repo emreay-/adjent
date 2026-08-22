@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #4B5CC4; } a:hover { color: #3A49A6; }
+  </style>
+</helmet>
+<div style="width: 1120px; height: 480px; box-sizing: border-box; background: #F3F5F7; font-family: Chivo, 'Helvetica Neue', Arial, sans-serif; color: #12171D; padding: 48px 64px; display: flex; flex-direction: column; gap: 26px;">
+
+  <div style="display: flex; align-items: baseline; gap: 16px; border-bottom: 1px solid #D9DFE6; padding-bottom: 16px;">
+    <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #65727F;">Marks not chosen</div>
+    <div style="margin-left: auto; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; color: #8593A0;">05 &middot; alternates, each with its 16px cut</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px; flex-grow: 1;">
+
+    <div style="background: #FFFFFF; border: 1px solid #D9DFE6; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; align-items: flex-end; gap: 22px;">
+        <svg width="74" height="74" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="22" stroke="#12171D" stroke-width="9"></circle>
+          <line x1="32" y1="3" x2="32" y2="19" stroke="#12171D" stroke-width="5" stroke-linecap="round"></line>
+          <line x1="57.1" y1="46.5" x2="43.2" y2="38.5" stroke="#12171D" stroke-width="5" stroke-linecap="round"></line>
+        </svg>
+        <svg width="16" height="16" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="21" stroke="#12171D" stroke-width="11"></circle>
+          <line x1="32" y1="2" x2="32" y2="18" stroke="#12171D" stroke-width="7" stroke-linecap="round"></line>
+          <line x1="58" y1="47" x2="44" y2="39" stroke="#12171D" stroke-width="7" stroke-linecap="round"></line>
+        </svg>
+      </div>
+      <div style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em;">B &mdash; Pace ticks</div>
+      <div style="font-size: 13px; line-height: 1.55; color: #3C4752; text-wrap: pretty;">A closed ring cut by the two marks that matter in the chart: now, and the pace line. Reads as an instrument face rather than a progress bar.</div>
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; line-height: 1.75; color: #65727F; margin-top: auto; text-wrap: pretty;">Tradeoff: the ticks touch the ring at 16px and it silts up into a blob. It also cannot animate with utilization, so the tray would need a second, unrelated shape.</div>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #D9DFE6; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; align-items: flex-end; gap: 22px;">
+        <svg width="74" height="74" viewBox="0 0 64 64" fill="none">
+          <path d="M32 32 L32 5 A27 27 0 1 1 8.6 45.5 Z" fill="#12171D"></path>
+        </svg>
+        <svg width="16" height="16" viewBox="0 0 64 64" fill="none">
+          <path d="M32 32 L32 4 A28 28 0 1 1 7.8 46 Z" fill="#12171D"></path>
+        </svg>
+      </div>
+      <div style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em;">C &mdash; Consumed</div>
+      <div style="font-size: 13px; line-height: 1.55; color: #3C4752; text-wrap: pretty;">A solid disc with the spent wedge cut out. The most legible of the three at any size, and unmistakably about a quantity being used up.</div>
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; line-height: 1.75; color: #65727F; margin-top: auto; text-wrap: pretty;">Tradeoff: a filled pie is heavy in a tray of thin system glyphs, and it inverts the app's own drawing &mdash; the shipped tray fills a ring, not a disc.</div>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #D9DFE6; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; align-items: flex-end; gap: 22px;">
+        <svg width="74" height="74" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="25" stroke="#12171D" stroke-width="6" stroke-linecap="round" stroke-dasharray="110 157" transform="rotate(-90 32 32)"></circle>
+          <circle cx="32" cy="32" r="16" stroke="#12171D" stroke-width="6" stroke-linecap="round" stroke-dasharray="60 100" transform="rotate(-90 32 32)"></circle>
+          <circle cx="32" cy="32" r="7" stroke="#12171D" stroke-width="6" stroke-linecap="round" stroke-dasharray="18 44" transform="rotate(-90 32 32)"></circle>
+        </svg>
+        <svg width="16" height="16" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="25" stroke="#12171D" stroke-width="8" stroke-linecap="round" stroke-dasharray="110 157" transform="rotate(-90 32 32)"></circle>
+          <circle cx="32" cy="32" r="12" stroke="#12171D" stroke-width="8" stroke-linecap="round" stroke-dasharray="45 75" transform="rotate(-90 32 32)"></circle>
+        </svg>
+      </div>
+      <div style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em;">D &mdash; Nested windows</div>
+      <div style="font-size: 13px; line-height: 1.55; color: #3C4752; text-wrap: pretty;">Three concentric arcs for the three things stacked at once: session, weekly, per-model. The only mark here that says <em>many limits</em> rather than one.</div>
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; line-height: 1.75; color: #65727F; margin-top: auto; text-wrap: pretty;">Tradeoff: it argues against the product's own editorial rule. Adjent shows one hero number; a mark that promises three is a promise the panel deliberately does not keep.</div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 760 },
+    { "file": "Mark.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 720 },
+    { "file": "System.dc.html", "x": 0, "y": 880, "w": 1120, "h": 800 },
+    { "file": "Usage.dc.html", "x": 1240, "y": 880, "w": 1120, "h": 760 },
+    { "file": "Alternates.dc.html", "x": 0, "y": 1800, "w": 1120, "h": 480 }
+  ],
+  "annotations": [
+    {
+      "id": "premise",
+      "x": 1240,
+      "y": 1800,
+      "w": 460,
+      "text": "The premise: Adjent already has a logo, it just hasn't been named one.\n\nThe tray draws an arc whose sweep is utilization and whose colour is the verdict. The identity is that same drawing, held still — so the icon on the download page and the icon in the notification area are literally one shape, and every rule about it is a rule the product already follows.\n\nColour is reserved for meaning: the brand is monochrome, and green/amber/red never appear outside a verdict."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

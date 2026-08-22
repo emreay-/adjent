@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #4B5CC4; } a:hover { color: #3A49A6; }
+  </style>
+</helmet>
+<div style="width: 1120px; height: 800px; box-sizing: border-box; background: #F3F5F7; font-family: Chivo, 'Helvetica Neue', Arial, sans-serif; color: #12171D; padding: 56px 64px; display: flex; flex-direction: column; gap: 30px;">
+
+  <div style="display: flex; align-items: baseline; gap: 16px; border-bottom: 1px solid #D9DFE6; padding-bottom: 18px;">
+    <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #65727F;">System</div>
+    <div style="margin-left: auto; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; color: #8593A0;">03 &middot; colour &amp; typography</div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 12px;">
+    <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8593A0;">Neutrals &mdash; lifted from the app tokens, light then dark</div>
+    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px;">
+      <div style="display: flex; flex-direction: column;"><div style="height: 60px; background: #F3F5F7; border: 1px solid #D9DFE6;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">bg<br>#F3F5F7</div></div>
+      <div style="display: flex; flex-direction: column;"><div style="height: 60px; background: #FFFFFF; border: 1px solid #D9DFE6;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">surface<br>#FFFFFF</div></div>
+      <div style="display: flex; flex-direction: column;"><div style="height: 60px; background: #D9DFE6;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">line<br>#D9DFE6</div></div>
+      <div style="display: flex; flex-direction: column;"><div style="height: 60px; background: #65727F;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">muted<br>#65727F</div></div>
+      <div style="display: flex; flex-direction: column;"><div style="height: 60px; background: #3C4752;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">ink2<br>#3C4752</div></div>
+      <div style="display: flex; flex-direction: column;"><div style="height: 60px; background: #12171D;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">ink &middot; brand<br>#12171D</div></div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px;">
+      <div style="display: flex; flex-direction: column;"><div style="height: 40px; background: #0D1116;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px;">#0D1116</div></div>
+      <div style="display: flex; flex-direction: column;"><div style="height: 40px; background: #151B22;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px;">#151B22</div></div>
+      <div style="display: flex; flex-direction: column;"><div style="height: 40px; background: #2A333D;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px;">#2A333D</div></div>
+      <div style="display: flex; flex-direction: column;"><div style="height: 40px; background: #8593A0;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px;">#8593A0</div></div>
+      <div style="display: flex; flex-direction: column;"><div style="height: 40px; background: #B4BFCA;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px;">#B4BFCA</div></div>
+      <div style="display: flex; flex-direction: column;"><div style="height: 40px; background: #E3E9EF; border: 1px solid #D9DFE6;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px;">#E3E9EF</div></div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px;">
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8593A0;">Semantic &mdash; meaning only, never branding</div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;">
+        <div style="display: flex; flex-direction: column;"><div style="height: 52px; background: #0CA30C;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">on pace<br>#0CA30C</div></div>
+        <div style="display: flex; flex-direction: column;"><div style="height: 52px; background: #FAB219;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">ahead<br>#FAB219</div></div>
+        <div style="display: flex; flex-direction: column;"><div style="height: 52px; background: #D03B3B;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">over<br>#D03B3B</div></div>
+        <div style="display: flex; flex-direction: column;"><div style="height: 52px; background: #8693A0;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">idle<br>#8693A0</div></div>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8593A0;">Accent &mdash; site and docs only</div>
+      <div style="display: flex; gap: 12px; align-items: stretch;">
+        <div style="width: 116px; display: flex; flex-direction: column;"><div style="height: 52px; background: #4B5CC4;"></div><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; color: #65727F; padding-top: 7px; line-height: 1.6;">accent<br>#4B5CC4</div></div>
+        <div style="flex-grow: 1; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; line-height: 1.8; color: #65727F; text-wrap: pretty;">Indigo sits clear of green, amber and red, so it can carry links, focus rings and marketing emphasis without ever reading as a verdict. It never appears on the resting surface.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; flex-grow: 1;">
+    <div style="background: #FFFFFF; border: 1px solid #D9DFE6; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8593A0;">Chivo &mdash; wordmark, headings, verdicts</div>
+      <div style="font-size: 50px; font-weight: 900; letter-spacing: -0.04em; line-height: 1;">Ahead of pace</div>
+      <div style="font-size: 21px; font-weight: 700; letter-spacing: -0.02em;">Should I change what I am doing?</div>
+      <div style="font-size: 15px; font-weight: 400; line-height: 1.55; color: #3C4752; text-wrap: pretty;">Adjent watches the agents you already run, and tells you before the wall what your quota is actually doing.</div>
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; color: #65727F; margin-top: auto; line-height: 1.7;">900 wordmark &middot; 700 headings &middot; 400 body<br>fallback: Helvetica Neue, Arial</div>
+    </div>
+    <div style="background: #0D1116; border: 1px solid #2A333D; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8593A0;">IBM Plex Mono &mdash; every number, always</div>
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 40px; font-weight: 500; color: #E3E9EF; letter-spacing: -0.02em;">72%&nbsp; +20 %/h</div>
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 13px; color: #B4BFCA; line-height: 1.7;">15.0M tokens &middot; 13.5M cached<br>resets in 2h 30m &middot; &#8776;12.0 %/h derived</div>
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; color: #8593A0; margin-top: auto; line-height: 1.7;">Tabular figures line up column-wise, which is the whole point.<br>In-app fallback stays Consolas, as shipped.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

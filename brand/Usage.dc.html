@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #4B5CC4; } a:hover { color: #3A49A6; }
+  </style>
+</helmet>
+<div style="width: 1120px; height: 760px; box-sizing: border-box; background: #F3F5F7; font-family: Chivo, 'Helvetica Neue', Arial, sans-serif; color: #12171D; padding: 56px 64px; display: flex; flex-direction: column; gap: 30px;">
+
+  <div style="display: flex; align-items: baseline; gap: 16px; border-bottom: 1px solid #D9DFE6; padding-bottom: 18px;">
+    <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #65727F;">In place</div>
+    <div style="margin-left: auto; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; color: #8593A0;">04 &middot; usage</div>
+  </div>
+
+  <div style="display: flex; gap: 28px; align-items: stretch;">
+
+    <div style="display: flex; flex-direction: column; gap: 12px; width: 300px;">
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8593A0;">Windows notification area, 16px</div>
+      <div style="background: #1F1F1F; border: 1px solid #2A333D; padding: 0 14px; height: 44px; display: flex; align-items: center; gap: 14px;">
+        <svg width="16" height="16" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="21" stroke="#5A6068" stroke-width="13"></circle><circle cx="32" cy="32" r="21" stroke="#FAB219" stroke-width="13" stroke-linecap="round" stroke-dasharray="103 132" transform="rotate(-90 32 32)"></circle></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8CDD3" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8CDD3" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle></svg>
+        <div style="margin-left: auto; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; color: #C8CDD3;">19:00</div>
+      </div>
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; line-height: 1.8; color: #65727F; text-wrap: pretty;">Beside real system glyphs at true size &mdash; the sweep still reads, and the gap keeps it from turning into a dot.</div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px; flex-grow: 1;">
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8593A0;">Panel header &amp; pinned widget</div>
+      <div style="display: flex; gap: 20px;">
+        <div style="width: 300px; background: #FFFFFF; border: 1px solid #D9DFE6;">
+          <div style="display: flex; align-items: center; gap: 9px; padding: 11px 14px; border-bottom: 1px solid #D9DFE6;">
+            <svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="21" stroke="#D9DFE6" stroke-width="13"></circle><circle cx="32" cy="32" r="21" stroke="#12171D" stroke-width="13" stroke-linecap="round" stroke-dasharray="95 132" transform="rotate(-90 32 32)"></circle></svg>
+            <div style="font-size: 14px; font-weight: 700; letter-spacing: -0.02em;">adjent</div>
+            <div style="margin-left: auto; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; color: #65727F;">4 live</div>
+          </div>
+          <div style="padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; background: #FBF0D8; color: #7A5405; padding: 3px 9px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;">AHEAD OF PACE</div>
+            <div style="display: flex; align-items: baseline; gap: 10px;">
+              <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 34px; font-weight: 500; letter-spacing: -0.03em;">72%</div>
+              <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 13px; font-weight: 500; color: #3C4752;">+20 %/h</div>
+              <div style="margin-left: auto; text-align: right; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; color: #65727F; line-height: 1.5;">Claude &middot; 5h<br>resets in 2h 30m</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="width: 340px; height: 96px; background: #0D1116; border: 1px solid #2A333D; padding: 12px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 9px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <svg width="15" height="15" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="21" stroke="#2A333D" stroke-width="13"></circle><circle cx="32" cy="32" r="21" stroke="#FAB219" stroke-width="13" stroke-linecap="round" stroke-dasharray="103 132" transform="rotate(-90 32 32)"></circle></svg>
+            <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 19px; font-weight: 500; color: #E3E9EF;">72%</div>
+            <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 12px; color: #B4BFCA;">+20 %/h</div>
+            <div style="margin-left: auto; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; color: #8593A0;">Claude &middot; 5h</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="flex-grow: 1; height: 6px; background: #2A333D; position: relative;"><div style="position: absolute; left: 0; top: 0; bottom: 0; width: 72%; background: #FAB219;"></div><div style="position: absolute; left: 62%; top: -3px; bottom: -3px; width: 1px; background: #E3E9EF;"></div></div>
+            <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; color: #8593A0;">2h 30m</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; color: #FAB219;">demo-api</div>
+            <div style="margin-left: auto; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 11px; color: #B4BFCA;">&#8776;12.0 %/h</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 28px; flex-grow: 1;">
+
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8593A0;">App icon &mdash; light, dark, monochrome</div>
+      <div style="display: flex; gap: 16px;">
+        <div style="width: 104px; height: 104px; background: #FFFFFF; border: 1px solid #D9DFE6; display: flex; align-items: center; justify-content: center;">
+          <svg width="60" height="60" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="22" stroke="#D9DFE6" stroke-width="9"></circle><circle cx="32" cy="32" r="22" stroke="#12171D" stroke-width="9" stroke-linecap="round" stroke-dasharray="99.5 138.2" transform="rotate(-90 32 32)"></circle><circle cx="10.4" cy="36.1" r="6.6" fill="#12171D"></circle></svg>
+        </div>
+        <div style="width: 104px; height: 104px; background: #12171D; display: flex; align-items: center; justify-content: center;">
+          <svg width="60" height="60" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="22" stroke="#2A333D" stroke-width="9"></circle><circle cx="32" cy="32" r="22" stroke="#E3E9EF" stroke-width="9" stroke-linecap="round" stroke-dasharray="99.5 138.2" transform="rotate(-90 32 32)"></circle><circle cx="10.4" cy="36.1" r="6.6" fill="#E3E9EF"></circle></svg>
+        </div>
+        <div style="width: 104px; height: 104px; background: #65727F; display: flex; align-items: center; justify-content: center;">
+          <svg width="60" height="60" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="22" stroke="#FFFFFF" stroke-width="9" stroke-opacity="0.28"></circle><circle cx="32" cy="32" r="22" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" stroke-dasharray="99.5 138.2" transform="rotate(-90 32 32)"></circle><circle cx="10.4" cy="36.1" r="6.6" fill="#FFFFFF"></circle></svg>
+        </div>
+      </div>
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; line-height: 1.8; color: #65727F; max-width: 340px; text-wrap: pretty;">No rounded-square plate, no gradient: the ring is the icon, and the OS supplies the plate. Ships as .ico / .png at 16, 24, 32, 48, 256.</div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px; flex-grow: 1;">
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #8593A0;">Toast &mdash; the voice</div>
+      <div style="background: #FFFFFF; border: 1px solid #D9DFE6; padding: 16px 18px; display: flex; gap: 14px;">
+        <svg width="26" height="26" viewBox="0 0 64 64" fill="none" style="flex-shrink: 0; margin-top: 2px;"><circle cx="32" cy="32" r="21" stroke="#D9DFE6" stroke-width="13"></circle><circle cx="32" cy="32" r="21" stroke="#FAB219" stroke-width="13" stroke-linecap="round" stroke-dasharray="103 132" transform="rotate(-90 32 32)"></circle></svg>
+        <div style="display: flex; flex-direction: column; gap: 7px; flex-grow: 1;">
+          <div style="font-size: 14px; font-weight: 700; letter-spacing: -0.01em;">Adjent &mdash; ahead of pace</div>
+          <div style="font-size: 13px; line-height: 1.5; color: #3C4752; text-wrap: pretty;">Claude 5h at 72% with 2h 30m left. At this rate it runs out at 20:24.</div>
+          <div style="display: flex; gap: 10px; margin-top: 5px;">
+            <div style="border: 1px solid #12171D; padding: 6px 14px; font-size: 12px; font-weight: 700;">Open panel</div>
+            <div style="border: 1px solid #D9DFE6; padding: 6px 14px; font-size: 12px; font-weight: 500; color: #3C4752;">Snooze 1h</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; line-height: 1.8; color: #65727F; text-wrap: pretty;">What happened, what it means, at most two actions. Sentence case, no exclamation, never a word the number already said.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

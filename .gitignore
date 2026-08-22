@@ -44,6 +44,13 @@ credentials*.json
 Thumbs.db
 Desktop.ini
 
+# --- Design canvas -------------------------------------------------------
+# Artboard sources (brand/*.dc.html) and canvas.json are checked in; the
+# published bundle is generated output that embeds the whole editor (~2 MB).
+brand/*-brand-identity.html
+brand/_*.txt
+brand/support.js
+
 # --- Scratch / local-only ------------------------------------------------
 scratch/
 *.local.*
