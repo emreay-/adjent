@@ -1,0 +1,23 @@
+{
+  "name": "@adjent/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Adjent desktop shell: tray, popover panel, native toasts.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "electron .",
+    "test": "echo no desktop tests yet",
+    "dist": "electron-builder --config electron-builder.yml"
+  },
+  "dependencies": {
+    "@adjent/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.0"
+  }
+}

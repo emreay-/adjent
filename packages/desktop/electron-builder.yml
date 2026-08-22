@@ -1,0 +1,21 @@
+# Packaging (docs/ARCHITECTURE.md): Windows NSIS + portable, Linux AppImage + deb.
+# Unsigned to start; SmartScreen warning documented in the README.
+appId: dev.adjent.app
+productName: Adjent
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+win:
+  target:
+    - nsis
+    - portable
+nsis:
+  oneClick: true
+  perMachine: false
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility

@@ -1,0 +1,23 @@
+{
+  "name": "@adjent/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Adjent headless CLI: status | watch | statusline.",
+  "bin": {
+    "adjent": "dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "test": "echo no cli tests yet"
+  },
+  "dependencies": {
+    "@adjent/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
