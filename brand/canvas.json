@@ -1,19 +1,43 @@
 {
+  "pages": [
+    { "id": "page-1", "name": "Directions" },
+    { "id": "page-2", "name": "System" },
+    { "id": "page-3", "name": "v2 · A B C" },
+    { "id": "page-4", "name": "v1 · ring" }
+  ],
   "artboards": [
-    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 760 },
-    { "file": "Mark.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 720 },
-    { "file": "System.dc.html", "x": 0, "y": 880, "w": 1120, "h": 800 },
-    { "file": "Usage.dc.html", "x": 1240, "y": 880, "w": 1120, "h": 760 },
-    { "file": "Alternates.dc.html", "x": 0, "y": 1800, "w": 1120, "h": 480 }
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 700, "page": "page-1" },
+    { "file": "DirectionD.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 640, "page": "page-1" },
+    { "file": "DirectionE.dc.html", "x": 0, "y": 820, "w": 1120, "h": 640, "page": "page-1" },
+    { "file": "DirectionF.dc.html", "x": 1240, "y": 820, "w": 1120, "h": 640, "page": "page-1" },
+
+    { "file": "System.dc.html", "x": 0, "y": 0, "w": 1120, "h": 800, "page": "page-2" },
+
+    { "file": "DirectionA.dc.html", "x": 0, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "DirectionB.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "DirectionC.dc.html", "x": 2480, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
+
+    { "file": "Mark.dc.html", "x": 0, "y": 0, "w": 1120, "h": 720, "page": "page-4" },
+    { "file": "Usage.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 760, "page": "page-4" },
+    { "file": "Alternates.dc.html", "x": 0, "y": 880, "w": 1120, "h": 480, "page": "page-4" }
   ],
   "annotations": [
     {
-      "id": "premise",
-      "x": 1240,
-      "y": 1800,
-      "w": 460,
-      "text": "The premise: Adjent already has a logo, it just hasn't been named one.\n\nThe tray draws an arc whose sweep is utilization and whose colour is the verdict. The identity is that same drawing, held still — so the icon on the download page and the icon in the notification area are literally one shape, and every rule about it is a rule the product already follows.\n\nColour is reserved for meaning: the brand is monochrome, and green/amber/red never appear outside a verdict."
+      "id": "what-changed",
+      "x": 2480,
+      "y": 0,
+      "w": 420,
+      "page": "page-1",
+      "text": "What changed\n\nA is retired. The phallic read came from its construction, not its framing: one heavy shaft with a round cap, rising on a diagonal. Nothing survives that.\n\nD keeps A's idea and removes the cause — the composition is horizontal, both lines are rules rather than strokes, and a perpendicular tick turns the gap into a measurement.\n\nE and F are both B, given craft. E carves the margin out of solid form; F gives the approach a cadence. Neither floats a lone stick next to a box any more."
+    },
+    {
+      "id": "shortlist-2",
+      "x": 2480,
+      "y": 430,
+      "w": 420,
+      "page": "page-1",
+      "text": "Where I'd land: E, then D.\n\nE is the only one that is a composition rather than a diagram — solid, confident at 16px, and the closing channel is a genuinely good animation. It costs you legibility of meaning: it needs the wordmark to explain itself once.\n\nD is the most articulate and the least striking. F is the most legible and the most conventional — it will always be read as a bar chart first.\n\nSay which and I'll build it out: icon set, lockups, panel and widget redrawn around it."
     }
   ],
-  "launch": { "view": "canvas" }
+  "launch": { "view": "canvas", "page": "page-1" }
 }

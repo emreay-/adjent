@@ -109,11 +109,34 @@
   #tip .p.exact    { background:var(--good-bg); color:var(--good); }
   #tip .p.derived  { background:var(--warn-bg); color:var(--warn); }
   #tip .pn { display:block; margin-top:4px; color:var(--muted); font-size:10.5px; }
+  header .iconbtn { position:relative; }
+  #bellDot {
+    position:absolute; top:-1px; right:-1px; width:6px; height:6px; border-radius:50%;
+    background:var(--crit); display:none;
+  }
+  #bellDot.on { display:block; }
+  .notifHead { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .notif { padding:8px 0; border-bottom:1px solid var(--line); display:flex; gap:8px; }
+  .notif:last-child { border-bottom:none; }
+  .notif .sev {
+    flex:none; width:3px; border-radius:2px; align-self:stretch;
+  }
+  .notif .body { flex:1; min-width:0; }
+  .notif .t { font-weight:600; font-size:12px; display:block; }
+  .notif .b { font-size:11.5px; color:var(--ink2); display:block; margin-top:1px; }
+  .notif .when {
+    font-family:Consolas, monospace; font-size:10px; color:var(--muted);
+    display:block; margin-top:3px;
+  }
+  .daySep {
+    font-family:Consolas, monospace; font-size:10px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--muted); padding:10px 0 4px; font-weight:600;
+  }
   h2 { font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:4px; }
 </style>
 </head>
 <body>
-  <header><span>Adjent</span><span class="live" id="liveCount" data-tip="liveCount"></span><button id="gear" class="iconbtn" title="Settings">&#9881;</button></header>
+  <header><span>Adjent</span><span class="live" id="liveCount" data-tip="liveCount"></span><button id="bell" class="iconbtn" title="Notifications">&#128276;<span id="bellDot"></span></button><button id="gear" class="iconbtn" title="Settings">&#9881;</button></header>
   <main>
     <section id="primary">
       <span class="chip idle" id="verdict" data-tip="verdict">Waiting for data</span>
@@ -129,6 +152,13 @@
     <section><h2 data-tip="agentBurn">Agents</h2><div id="agents"><div class="empty">–</div></div></section>
     <section><h2>Recent alarms</h2><div id="alarms"><div class="empty">None</div></div>
       <div class="tokline" id="conf" data-tip="confidence" style="margin-top:8px"></div></section>
+    <section id="notificationsView" hidden>
+      <div class="notifHead">
+        <h2 style="margin:0">Notification history</h2>
+        <button id="clearAlarms" class="linkbtn" style="margin:0">Clear</button>
+      </div>
+      <div id="notifList"><div class="empty">No notifications yet.</div></div>
+    </section>
     <section id="settingsView" hidden>
       <h2>Display</h2>
       <div class="setRow">

@@ -291,6 +291,21 @@ export class CodexProvider implements ProviderAdapter {
     return out;
   }
 
+
+  // ---- persistence -------------------------------------------------------
+  getTailOffsets(): Record<string, number> {
+    return { ...this.tail.offsets };
+  }
+
+  setTailOffsets(offsets: Record<string, number>): void {
+    Object.assign(this.tail.offsets, offsets);
+  }
+
+  /** Seed the dedup set from a restored ledger so replays are suppressed. */
+  seedSeen(ids: Iterable<string>): void {
+    for (const id of ids) this.seenEventIds.add(id);
+  }
+
   // -------------------------------------------------------------------------
   async quota(): Promise<QuotaWindow[]> {
     // Ensure we have scanned at least once even if collectUsage was not called.

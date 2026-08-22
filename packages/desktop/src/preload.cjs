@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('adjent', {
   setSettings: (patch) => ipcRenderer.send('settings:set', patch),
   openPanel: () => ipcRenderer.send('widget:open-panel'),
   openTaskbarSettings: () => ipcRenderer.send('help:taskbar'),
+  clearAlarms: () => ipcRenderer.send('alarms:clear'),
 });

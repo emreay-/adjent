@@ -27,6 +27,35 @@ export class WindowAssessor {
   private bindingKey: string | null = null;
   private challenger: { key: string; polls: number } | null = null;
 
+  /** Serialize burn tracks + binding choice so a restart keeps its bearings. */
+  toJSON(): unknown {
+    return {
+      tracks: [...this.tracks.entries()],
+      bindingKey: this.bindingKey,
+    };
+  }
+
+  static fromJSON(raw: unknown): WindowAssessor {
+    const a = new WindowAssessor();
+    if (typeof raw !== 'object' || raw === null) return a;
+    const o = raw as Record<string, unknown>;
+    if (Array.isArray(o['tracks'])) {
+      for (const entry of o['tracks'] as unknown[]) {
+        if (!Array.isArray(entry) || typeof entry[0] !== 'string') continue;
+        const t = entry[1] as Partial<WindowTrack> | undefined;
+        if (!t || typeof t !== 'object') continue;
+        a.tracks.set(entry[0], {
+          samples: Array.isArray(t.samples) ? (t.samples as WindowTrack['samples']) : [],
+          ewma: typeof t.ewma === 'number' ? t.ewma : null,
+          ewmaAt: typeof t.ewmaAt === 'number' ? t.ewmaAt : null,
+          lastResetsAt: typeof t.lastResetsAt === 'number' ? t.lastResetsAt : null,
+        });
+      }
+    }
+    if (typeof o['bindingKey'] === 'string') a.bindingKey = o['bindingKey'];
+    return a;
+  }
+
   /** Feed the latest reading of every window; returns full assessments. */
   assess(windows: QuotaWindow[], now: number): WindowAssessment[] {
     const out: WindowAssessment[] = [];

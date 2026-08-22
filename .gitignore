@@ -55,3 +55,6 @@ brand/support.js
 scratch/
 *.local.*
 TODO.local.md
+
+# --- Internal, non-public notes ------------------------------------------
+docs/internal/

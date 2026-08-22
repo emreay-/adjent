@@ -34,7 +34,7 @@ function esc(s) {
 }
 
 // --------------------------------------------------------------------------
-function renderChart(a, now) {
+function renderChart(a, now, history) {
   const svg = $('chart');
   const W = 352, H = 120, L = 6, R = 346, TOP = 12, BASE = 104;
   const w = a.window;
@@ -51,11 +51,22 @@ function renderChart(a, now) {
   // pace line
   parts.push(`<line x1="${L}" y1="${BASE}" x2="${R}" y2="${TOP}" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 4" opacity=".5"/>`);
 
-  // measured curve: linear 0 → current (history buffer lives main-side later)
+  // Measured curve from persisted samples. With no history yet (first run) this
+  // degrades to a single segment rather than inventing a shape.
   const xNow = Math.min(R, Math.max(L, xOf(now)));
   const yNow = yOf(w.utilization);
-  parts.push(`<path d="M${L},${BASE} L${xNow},${yNow} L${xNow},${BASE} Z" fill="${color}" opacity=".10"/>`);
-  parts.push(`<path d="M${L},${BASE} L${xNow},${yNow}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`);
+  const pts = (history || [])
+    .filter((h) => h.t >= start && h.t <= now)
+    .map((h) => [Math.min(R, Math.max(L, xOf(h.t))), yOf(h.u)]);
+  pts.push([xNow, yNow]);
+  // Anchor at the window start only when the earliest sample is close to it;
+  // otherwise begin at the first thing we actually observed.
+  const first = pts[0];
+  const anchored = first[0] - L < 12 ? [[L, BASE]] : [];
+  const all = anchored.concat(pts);
+  const line = all.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  parts.push(`<path d="${line} L${xNow},${BASE} L${all[0][0].toFixed(1)},${BASE} Z" fill="${color}" opacity=".10"/>`);
+  parts.push(`<path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`);
 
   // projection to exhaustion or reset edge
   if (a.exhaustsAt !== null && a.burn && a.burn.pctPerHour > 0) {
@@ -100,7 +111,7 @@ function render(payload) {
   const stale = now - binding.window.observedAt > 10 * 60000 ? `as of ${fmtTime(binding.window.observedAt)}` : '';
   $('heroMeta').setAttribute('data-tip', stale ? 'stale' : 'binding');
   $('heroMeta').innerHTML = `${esc(binding.window.label)}<br>${esc(stale || resetIn)}`;
-  renderChart(binding, now);
+  renderChart(binding, now, payload.history);
 
   // token line: exact totals across live agents (this window's exact split comes with history)
   const tot = live.reduce(
@@ -214,20 +225,86 @@ document.addEventListener('mouseout', (ev) => {
 });
 document.addEventListener('scroll', hideTip, true);
 
+
+// --------------------------------------------------------------------------
+// Notifications view. Toasts vanish; this is the durable log, read from
+// ~/.adjent/alarms.jsonl via the main process.
+// --------------------------------------------------------------------------
+const SEV = { info: 'var(--idle)', warn: 'var(--warn)', critical: 'var(--crit)' };
+let alarmHistory = [];
+let lastSeenAlarmAt = Number(localStorage.getItem('adjent.lastSeenAlarm') || 0);
+
+function dayLabel(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const y = new Date(today.getTime() - 86400000);
+  const same = (a, b) => a.toDateString() === b.toDateString();
+  if (same(d, today)) return 'Today';
+  if (same(d, y)) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function clockOf(ts) {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function renderNotifications() {
+  const list = $('notifList');
+  if (alarmHistory.length === 0) {
+    list.innerHTML = '<div class="empty">No notifications yet.</div>';
+    return;
+  }
+  const out = [];
+  let day = null;
+  for (const a of alarmHistory) {
+    const d = dayLabel(a.firedAt);
+    if (d !== day) {
+      out.push(`<div class="daySep">${esc(d)}</div>`);
+      day = d;
+    }
+    out.push(
+      `<div class="notif">` +
+        `<span class="sev" style="background:${SEV[a.severity] || SEV.info}"></span>` +
+        `<span class="body"><span class="t">${esc(a.title)}</span>` +
+        `<span class="b">${esc(a.body)}</span>` +
+        `<span class="when">${esc(clockOf(a.firedAt))} · ${esc(a.severity)}</span></span>` +
+      `</div>`,
+    );
+  }
+  list.innerHTML = out.join('');
+}
+
+function updateBellDot() {
+  const newest = alarmHistory[0]?.firedAt ?? 0;
+  $('bellDot').classList.toggle('on', newest > lastSeenAlarmAt);
+}
+
 // --------------------------------------------------------------------------
 // Settings view. Every control writes through to the main process, which
 // persists to ~/.adjent/settings.json and applies live.
 // --------------------------------------------------------------------------
-const DATA_SECTIONS = () => [...document.querySelectorAll('main > section:not(#settingsView)')];
-let showingSettings = false;
+const OVERLAYS = ['settingsView', 'notificationsView'];
+const DATA_SECTIONS = () =>
+  [...document.querySelectorAll('main > section')].filter((el) => !OVERLAYS.includes(el.id));
+let activeView = null; // null = the dashboard
 let current = null;
 
-function showSettings(on) {
-  showingSettings = on;
-  DATA_SECTIONS().forEach((el) => { el.hidden = on; });
-  $('settingsView').hidden = !on;
-  $('gear').classList.toggle('on', on);
+function showView(view) {
+  activeView = view;
+  DATA_SECTIONS().forEach((el) => { el.hidden = view !== null; });
+  $('settingsView').hidden = view !== 'settings';
+  $('notificationsView').hidden = view !== 'notifications';
+  $('gear').classList.toggle('on', view === 'settings');
+  $('bell').classList.toggle('on', view === 'notifications');
+  if (view === 'notifications') {
+    lastSeenAlarmAt = Date.now();
+    localStorage.setItem('adjent.lastSeenAlarm', String(lastSeenAlarmAt));
+    renderNotifications();
+    updateBellDot();
+  }
 }
+const showSettings = (on) => showView(on ? 'settings' : null);
 
 function syncSettingsUI(s) {
   if (!s) return;
@@ -247,7 +324,9 @@ function syncSettingsUI(s) {
 
 const set = (patch) => window.adjent.setSettings(patch);
 
-$('gear').addEventListener('click', () => showSettings(!showingSettings));
+$('gear').addEventListener('click', () => showView(activeView === 'settings' ? null : 'settings'));
+$('bell').addEventListener('click', () => showView(activeView === 'notifications' ? null : 'notifications'));
+$('clearAlarms').addEventListener('click', () => window.adjent.clearAlarms());
 document.querySelectorAll('[data-scale]').forEach((b) =>
   b.addEventListener('click', () => {
     const step = b.dataset.scale === '+' ? 0.1 : -0.1;
@@ -282,12 +361,17 @@ window.adjent.onState((payload) => {
   if (payload.provenanceNote) PROV_NOTE = payload.provenanceNote;
   current = payload.settings || current;
   syncSettingsUI(current);
-  if (!showingSettings) render(payload);
+  if (payload.alarmHistory) {
+    alarmHistory = payload.alarmHistory;
+    updateBellDot();
+    if (activeView === 'notifications') renderNotifications();
+  }
+  if (activeView === null) render(payload);
 });
-window.adjent.onView((view) => showSettings(view === 'settings'));
+window.adjent.onView((view) => showView(view));
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  if (showingSettings) showSettings(false);
+  if (activeView !== null) showView(null);
   else window.adjent.close();
 });

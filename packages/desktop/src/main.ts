@@ -64,6 +64,7 @@ function buildTrayMenu(): void {
         checked: settings.widgetEnabled,
         click: (item) => void applySettings({ widgetEnabled: item.checked }),
       },
+      { label: 'Notifications…', click: () => togglePanel('notifications') },
       { label: 'Settings…', click: () => togglePanel('settings') },
       { type: 'separator' },
       {
@@ -105,7 +106,7 @@ function createPanel(): BrowserWindowType {
   return win;
 }
 
-function togglePanel(view?: 'settings'): void {
+function togglePanel(view?: 'settings' | 'notifications'): void {
   if (!panel || panel.isDestroyed()) panel = createPanel();
   if (panel.isVisible() && !view) {
     panel.hide();
@@ -174,7 +175,18 @@ function syncWidget(): void {
 function pushState(): void {
   const s = monitor?.state;
   if (!s) return;
-  const payload = { state: s, alarms: recentAlarms.slice(-5), settings, explanations: core.EXPLANATIONS, provenanceNote: core.PROVENANCE_NOTE };
+  const binding = s.windows.find((w) => w.binding);
+  const payload = {
+    state: s,
+    // Recent few for the summary strip; the full log for the notifications tab.
+    alarms: recentAlarms.slice(-5),
+    alarmHistory: monitor.alarms(),
+    // Real utilization samples so the chart draws the measured curve.
+    history: binding ? monitor.historyFor(`${binding.window.backend}:${binding.window.key}`) : [],
+    settings,
+    explanations: core.EXPLANATIONS,
+    provenanceNote: core.PROVENANCE_NOTE,
+  };
   for (const win of [panel, widget]) {
     if (win && !win.isDestroyed() && win.isVisible()) win.webContents.send('state', payload);
   }
@@ -281,6 +293,9 @@ async function start(): Promise<void> {
   ipcMain.on('panel:refresh', () => void monitor.tick());
   ipcMain.on('widget:open-panel', () => togglePanel());
   ipcMain.on('settings:set', (_e, patch: Partial<Settings>) => void applySettings(patch));
+  ipcMain.on('alarms:clear', () => {
+    void monitor.clearAlarmHistory().then(pushState);
+  });
   ipcMain.on('help:taskbar', () => {
     // Windows owns tray-icon promotion; deep-link to the exact settings page.
     if (process.platform === 'win32') void shell.openExternal('ms-settings:taskbar');
@@ -288,6 +303,11 @@ async function start(): Promise<void> {
 
   syncWidget();
   restartLoop();
+
+  // Flush durable state on the way out so the next launch is not a cold start.
+  app.on('before-quit', () => {
+    void monitor.flush();
+  });
 }
 
 const gotLock = app.requestSingleInstanceLock();

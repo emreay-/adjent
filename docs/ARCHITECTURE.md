@@ -26,9 +26,9 @@ No `better-sqlite3`, no `node-notifier`. Native modules are the number one cause
 of "easy to build" quietly becoming false (electron-rebuild, prebuild matrices,
 glibc variance). Instead:
 
-* **Storage** — in-memory ring buffer of recent events plus append-only daily
-  rollup JSONL under `~/.adjent/history/`. Adequate for 5h/7d windows and
-  sparklines. If real history queries appear later, use `node:sqlite` (built into
+* **Storage** — an in-memory ring buffer of recent events, backed by plain JSON
+  and JSONL files under `~/.adjent/` (see below). Adequate for 5h/7d windows and
+  the chart. If real history queries appear later, use `node:sqlite` (built into
   Node 22+ and Electron 32+) — still no native dependency.
 * **Reading Codex SQLite** — also `node:sqlite`, opened read-only.
 * **Notifications** — Electron's built-in `Notification`.
@@ -55,6 +55,36 @@ adjent/
 ```
 
 `cli` and `desktop` are both thin. Everything testable lives in `core`.
+
+## What is persisted, and where
+
+Adjent writes **only** under `~/.adjent/` — never into a vendor directory
+(README principle 3). Every file is best-effort: corrupt or missing degrades to
+"no history", never to an error, and state writes are atomic (tmp + rename) so a
+crash mid-write cannot leave a half-parsed file.
+
+| File | Holds | Retention |
+| --- | --- | --- |
+| `settings.json` | user preferences (scale, theme, tray, widget, cadence) | forever |
+| `alarms.yaml` | user-authored rules — **read-only**, Adjent never writes it | n/a |
+| `state.json` | tail byte-offsets per file, the fitted exchange rate, alarm memory (cooldowns, fired levels), burn-rate EWMAs, binding choice, plan tiers | latest snapshot |
+| `ledger.jsonl` | recent usage events, so per-agent burn survives a restart | 48 h |
+| `history.jsonl` | utilization samples — what the chart's measured curve is drawn from | 14 d |
+| `alarms.jsonl` | the notification log behind the notifications view | 90 d / 500 |
+
+Cadence: `state.json` and `ledger.jsonl` are rewritten at most once a minute and
+flushed on quit; `history.jsonl` takes a sample only when utilization changes or
+every five minutes, which keeps it to a few hundred KB a fortnight.
+
+**Why persist at all.** Without it every launch is a cold start: offsets reset,
+so every transcript is re-read; the fit re-bootstraps, so per-agent rates read
+*learning* for the first stretch of every session; and alarm cooldowns forget
+themselves, so a threshold already crossed fires again. With it, a warm start
+resumes from the recorded offsets in under a second.
+
+**What is deliberately not persisted.** Anything derived that is cheap to
+recompute — assessments, verdicts, projections — and the `AppState` snapshot
+itself. Message content is never stored, in memory or on disk.
 
 ## Domain model
 

@@ -412,6 +412,7 @@ drops and the UI says so.
 | 2 | Panel, at rest | verdict · hero · chart · other windows · agent rows |
 | 3 | Click a window | that window's history, token breakdown by model and kind |
 | 4 | Click an agent | its session timeline, subagent tree, per-turn tokens |
+| 4½ | Notifications | the durable alarm log, grouped by day — toasts vanish, this does not |
 | 5 | Settings | interface size, tray glyph, widget/taskbar, poll cadence, pause alarms; alarm rules and sinks in `~/.adjent/alarms.yaml` |
 
 Nothing from tier 3 or below is ever promoted to the resting surface "because it
@@ -436,6 +437,21 @@ or **derived**.
   learns that `≈12.0 %/h` is a model output and `72%` is not.
 * The widget uses native titles instead of the tooltip layer: the strip is too
   small to overlay without covering what it explains.
+
+## Notifications view
+
+Native toasts are transient by design — they respect do-not-disturb and get out
+of the way. That makes them a poor record, so every alarm is also appended to
+`~/.adjent/alarms.jsonl` and rendered in a notifications view behind the bell in
+the panel header.
+
+* Newest first, grouped by day (*Today* / *Yesterday* / date), each row carrying
+  a severity stripe, the alarm's title and body verbatim, and the time it fired.
+* An unread dot sits on the bell when the newest alarm postdates the last time
+  the view was opened.
+* It survives restarts and outlives the toast, which is the whole point: the
+  reason a limit was hit at 02:00 should still be readable at 09:00.
+* **Clear** empties the log — an explicit user action, never automatic.
 
 ## Copy rules
 

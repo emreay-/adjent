@@ -86,6 +86,55 @@ export class ExchangeRateFit {
     }
   }
 
+  /** Serialize the learned state so a restart is not a cold start. */
+  toJSON(): unknown {
+    const rows = (level: FitLevel) =>
+      this.rowsByLevel[level].map((r) => ({ du: r.du, x: [...r.x.entries()] }));
+    return {
+      s0: this.s0,
+      lastPoll: this.lastPoll,
+      rows: { blended: rows('blended'), kind: rows('kind'), modelKind: rows('modelKind') },
+    };
+  }
+
+  /** Restore from toJSON(). Bad shapes are ignored, leaving a cold start. */
+  static fromJSON(raw: unknown, prior?: PriceRatioTable): ExchangeRateFit {
+    const fit = new ExchangeRateFit(prior);
+    if (typeof raw !== 'object' || raw === null) return fit;
+    const o = raw as Record<string, unknown>;
+    if (typeof o['s0'] === 'number' && Number.isFinite(o['s0'])) fit.s0 = o['s0'];
+    const lp = o['lastPoll'];
+    if (typeof lp === 'object' && lp !== null) {
+      const l = lp as Record<string, unknown>;
+      if (typeof l['utilization'] === 'number' && typeof l['at'] === 'number') {
+        fit.lastPoll = { utilization: l['utilization'], at: l['at'] };
+      }
+    }
+    const rows = o['rows'];
+    if (typeof rows === 'object' && rows !== null) {
+      for (const level of ['blended', 'kind', 'modelKind'] as const) {
+        const arr = (rows as Record<string, unknown>)[level];
+        if (!Array.isArray(arr)) continue;
+        for (const r of arr) {
+          if (typeof r !== 'object' || r === null) continue;
+          const rr = r as Record<string, unknown>;
+          if (typeof rr['du'] !== 'number' || !Array.isArray(rr['x'])) continue;
+          const x = new Map<string, number>();
+          for (const pair of rr['x'] as unknown[]) {
+            if (Array.isArray(pair) && typeof pair[0] === 'string' && typeof pair[1] === 'number') {
+              x.set(pair[0], pair[1]);
+            }
+          }
+          fit.rowsByLevel[level].push({ du: rr['du'], x });
+        }
+        // Respect the same cap the live path enforces.
+        const rowsRef = fit.rowsByLevel[level];
+        if (rowsRef.length > MAX_ROWS) fit.rowsByLevel[level] = rowsRef.slice(-MAX_ROWS);
+      }
+    }
+    return fit;
+  }
+
   /** Invalidate on plan change: ratios survive, the scale does not. */
   rebootstrap(): void {
     this.rowsByLevel = { blended: [], kind: [], modelKind: [] };

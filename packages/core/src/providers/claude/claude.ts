@@ -292,6 +292,21 @@ export class ClaudeProvider implements ProviderAdapter {
     return out;
   }
 
+
+  // ---- persistence -------------------------------------------------------
+  getTailOffsets(): Record<string, number> {
+    return { ...this.tail.offsets };
+  }
+
+  setTailOffsets(offsets: Record<string, number>): void {
+    Object.assign(this.tail.offsets, offsets);
+  }
+
+  /** Seed the dedup set from a restored ledger so replays are suppressed. */
+  seedSeen(ids: Iterable<string>): void {
+    for (const id of ids) this.seenRequestIds.add(id);
+  }
+
   // -------------------------------------------------------------------------
   async quota(): Promise<QuotaWindow[]> {
     const now = this.now();

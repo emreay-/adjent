@@ -33,3 +33,10 @@ export {
   explain,
   type Explanation,
 } from './explain.js';
+export {
+  Store,
+  STORE_VERSION,
+  RETENTION,
+  type HistorySample,
+  type PersistedState,
+} from './persist.js';

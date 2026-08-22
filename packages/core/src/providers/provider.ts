@@ -20,6 +20,10 @@ export interface ProviderAdapter {
 
   /** Reported quota windows. [] when the vendor exposes none (API-key auth etc.). */
   quota(): Promise<QuotaWindow[]>;
+
+  /** Byte offsets consumed so far, so a restart resumes instead of re-reading. */
+  getTailOffsets(): Record<string, number>;
+  setTailOffsets(offsets: Record<string, number>): void;
 }
 
 /** Cross-platform pid liveness. */

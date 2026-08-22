@@ -87,6 +87,17 @@ export class UsageLedger {
     return this.events.length;
   }
 
+  /** Snapshot for persistence (sorted, oldest first). */
+  all(): UsageEvent[] {
+    this.ensureSorted();
+    return this.events;
+  }
+
+  /** Which requestIds are already held — restores dedup across a restart. */
+  requestIds(): string[] {
+    return this.events.map((e) => e.requestId);
+  }
+
   lastEventTs(): number | null {
     this.ensureSorted();
     const last = this.events[this.events.length - 1];
