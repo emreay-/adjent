@@ -8,6 +8,8 @@
 import type {
   AgentBurnRule,
   Alarm,
+  AlarmAgentSnapshot,
+  AlarmContext,
   AppState,
   FireLog,
   PaceRule,
@@ -44,7 +46,8 @@ function rearmOnReset(state: AppState, memory: FireLog): void {
     if (resetsAt === null) continue;
     const prev = memory.lastResetsAt[key];
     if (prev !== undefined && resetsAt > prev + 60_000) {
-      delete memory.firedLevels[key];
+      // Empty, not deleted: `undefined` must keep meaning "never observed".
+      memory.firedLevels[key] = [];
       delete memory.paceLatched[key];
     }
     memory.lastResetsAt[key] = resetsAt;
@@ -52,6 +55,41 @@ function rearmOnReset(state: AppState, memory: FireLog): void {
 }
 
 const wkey = (a: WindowAssessment): string => `${a.window.backend}:${a.window.key}`;
+
+const MAX_CONTEXT_AGENTS = 4;
+
+/** Snapshot the agents that were actually running, most expensive first. */
+function agentSnapshots(state: AppState, only?: string): AlarmAgentSnapshot[] {
+  const burnOf = new Map(state.agentBurns.map((b) => [b.agentId, b.pctPerHour]));
+  const pool = state.agents.filter((a) => (only ? a.id === only : a.state !== 'ended'));
+  return pool
+    .map((a) => ({
+      label: a.label,
+      project: a.projectPath ? (a.projectPath.split(/[\\/]/).pop() ?? a.projectPath) : null,
+      branch: a.gitBranch,
+      model: a.model,
+      effort: a.effort,
+      pctPerHour: burnOf.get(a.id) ?? null,
+      tokens: a.totals.input + a.totals.cacheWrite + a.totals.cacheRead + a.totals.output,
+    }))
+    .sort((x, y) => (y.pctPerHour ?? -1) - (x.pctPerHour ?? -1))
+    .slice(0, MAX_CONTEXT_AGENTS);
+}
+
+function windowContext(state: AppState, a: WindowAssessment, only?: string): AlarmContext {
+  const backend = state.backends.find((b) => b.id === a.window.backend);
+  return {
+    windowLabel: a.window.label,
+    utilization: a.window.utilization,
+    burnPctPerHour: a.burn?.pctPerHour ?? null,
+    paceLinePct: a.paceLinePct,
+    resetsAt: a.window.resetsAt,
+    exhaustsAt: a.exhaustsAt,
+    plan: backend?.plan ?? null,
+    fitConfidence: state.fitConfidence,
+    agents: agentSnapshots(state, only),
+  };
+}
 
 const matches = (rule: PaceRule | ThresholdRule, a: WindowAssessment): boolean =>
   (rule.backend === 'any' || rule.backend === a.window.backend) &&
@@ -101,6 +139,7 @@ function evalPace(rule: PaceRule, state: AppState, memory: FireLog, now: number)
         backend: a.window.backend,
         windowKey: a.window.key,
         agentId: null,
+        context: windowContext(state, a),
       });
     }
   }
@@ -113,24 +152,55 @@ function evalThreshold(rule: ThresholdRule, state: AppState, memory: FireLog, no
   for (const a of state.windows) {
     if (!matches(rule, a)) continue;
     const key = wkey(a);
+    // `undefined` means this window has never been observed. Distinguishing
+    // that from an empty array is what stops a first sight at 100% announcing
+    // every level below it.
+    const firstSight = memory.firedLevels[key] === undefined;
     const fired = (memory.firedLevels[key] ??= []);
-    for (const level of rule.levels) {
-      if (a.window.utilization < level || fired.includes(level)) continue;
-      fired.push(level); // edge-triggered: once per level per window occupancy
-      const severity: Severity = rule.severity[level] ?? 'info';
-      const resetIn = a.window.resetsAt !== null ? fmtDur(a.window.resetsAt - now) : 'unknown';
+
+    const crossed = rule.levels.filter((l) => a.window.utilization >= l && !fired.includes(l));
+    if (crossed.length === 0) continue;
+    fired.push(...crossed); // arm every crossed level, announce at most one
+
+    // Only the highest level is informative: 95% already implies 25/50/80, and
+    // it carries the most severe routing. Announcing the rest is noise.
+    const level = Math.max(...crossed);
+    const severity: Severity = rule.severity[level] ?? 'info';
+    const resetIn = a.window.resetsAt !== null ? fmtDur(a.window.resetsAt - now) : 'unknown';
+    const u = a.window.utilization;
+
+    if (firstSight) {
+      // We joined mid-window: nothing "crossed" while we were watching, so
+      // saying so would be false. Stay silent unless the state is bad enough
+      // that silence is worse, and then say what is true — "already at".
+      if (severity === 'info') continue;
       out.push({
-        id: `${rule.id}:${key}:${level}`,
+        id: `${rule.id}:${key}:already`,
         ruleId: rule.id,
         severity,
-        title: `${a.window.label} crossed ${level}%`,
-        body: `${a.window.label} is at ${a.window.utilization.toFixed(0)}% with ${resetIn} until reset.`,
+        title: `${a.window.label} is already at ${u.toFixed(0)}%`,
+        body: `Adjent started with this window past ${level}%. ${resetIn} until reset.`,
         firedAt: now,
         backend: a.window.backend,
         windowKey: a.window.key,
         agentId: null,
+        context: windowContext(state, a),
       });
+      continue;
     }
+
+    out.push({
+      id: `${rule.id}:${key}:${level}`,
+      ruleId: rule.id,
+      severity,
+      title: `${a.window.label} crossed ${level}%`,
+      body: `${a.window.label} is at ${u.toFixed(0)}% with ${resetIn} until reset.`,
+      firedAt: now,
+      backend: a.window.backend,
+      windowKey: a.window.key,
+      agentId: null,
+      context: windowContext(state, a),
+    });
   }
   return out;
 }
@@ -173,6 +243,23 @@ function evalAgentBurn(rule: AgentBurnRule, state: AppState, memory: FireLog, no
       backend: agent?.backend ?? null,
       windowKey: null,
       agentId: b.agentId,
+      // Scope the snapshot to the offending agent, plus the binding window's
+      // state so the alarm still says how much room was left.
+      context: {
+        ...(state.windows.find((w) => w.binding)
+          ? windowContext(state, state.windows.find((w) => w.binding) as WindowAssessment, b.agentId)
+          : {
+              windowLabel: null,
+              utilization: null,
+              burnPctPerHour: null,
+              paceLinePct: null,
+              resetsAt: null,
+              exhaustsAt: null,
+              plan: null,
+              fitConfidence: state.fitConfidence,
+              agents: agentSnapshots(state, b.agentId),
+            }),
+      },
     });
   }
   return out;

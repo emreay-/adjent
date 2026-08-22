@@ -190,37 +190,104 @@ function hideTip() {
   $('tip').classList.remove('on');
 }
 
+/** Full state at the moment an alarm fired — the "what was I doing?" answer. */
+function alarmDetailHtml(a) {
+  const c = a.context;
+  const when = new Date(a.firedAt);
+  const rows = [];
+  const add = (k, v) => { if (v !== null && v !== undefined && v !== '') rows.push([k, v]); };
+
+  add('Fired', when.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
+  if (c) {
+    add('Window', c.windowLabel);
+    add('Utilization', c.utilization !== null ? `${c.utilization.toFixed(0)}%` : null);
+    add(
+      'Burn rate',
+      c.burnPctPerHour !== null && c.burnPctPerHour !== undefined
+        ? `${c.burnPctPerHour >= 0 ? '+' : ''}${c.burnPctPerHour.toFixed(1)} %/h`
+        : null,
+    );
+    add('Pace line', c.paceLinePct !== null && c.paceLinePct !== undefined ? `${c.paceLinePct.toFixed(0)}%` : null);
+    add('Resets', c.resetsAt ? `${clockOf(c.resetsAt)} · in ${fmtDur(c.resetsAt - a.firedAt)}` : null);
+    add(
+      'Projected out',
+      c.exhaustsAt ? `${clockOf(c.exhaustsAt)}${c.resetsAt && c.exhaustsAt < c.resetsAt ? ' — before reset' : ''}` : null,
+    );
+    add('Plan', c.plan);
+  }
+
+  let html = `<span class="t">${esc(a.title)}</span>${esc(a.body)}`;
+  html += '<table class="ctx">';
+  for (const [k, v] of rows) html += `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`;
+  html += '</table>';
+
+  const agents = c?.agents ?? [];
+  if (agents.length > 0) {
+    html += `<span class="ctxh">${agents.length === 1 ? 'Agent' : 'Running then'}</span>`;
+    for (const g of agents) {
+      const bits = [g.model, g.effort].filter(Boolean).join(' · ');
+      const rate = g.pctPerHour !== null && g.pctPerHour !== undefined ? `≈${g.pctPerHour.toFixed(1)} %/h` : '—';
+      html +=
+        `<span class="ag"><b>${esc(g.project || g.label)}</b>` +
+        (g.branch ? `<span class="br">${esc(g.branch)}</span>` : '') +
+        `<span class="mt">${esc(bits)} · ${esc(rate)} · ${esc(fmtTok(g.tokens))} tok</span></span>`;
+    }
+  } else if (c) {
+    html += '<span class="ctxh">No agents were running</span>';
+  }
+  if (c?.fitConfidence) {
+    html += `<span class="pn">Derived values from a fit with ${esc(c.fitConfidence)} confidence.</span>`;
+  }
+  return html;
+}
+
 function showTip(target) {
+  const tip = $('tip');
+
+  // Notification rows carry their own record rather than a dictionary key.
+  const alarmIdx = target.getAttribute('data-alarm');
+  if (alarmIdx !== null) {
+    const a = alarmHistory[Number(alarmIdx)];
+    if (!a) return;
+    tip.innerHTML = alarmDetailHtml(a);
+    positionTip(target, tip);
+    return;
+  }
+
   const key = target.getAttribute('data-tip');
   const e = EXPL[key];
   if (!e) return;
-  const tip = $('tip');
   const prov = e.provenance
     ? `<span class="p ${e.provenance}">${e.provenance}</span><span class="pn">${esc(PROV_NOTE[e.provenance] || '')}</span>`
     : '';
   tip.innerHTML = `<span class="t">${esc(e.title)}</span>${esc(e.body)}${prov}`;
 
-  // Position above the element when there is room, else below; clamp to the
-  // window so a tooltip near an edge is never cut off.
+  positionTip(target, tip);
+}
+
+/** Above when there is room, else below; always clamped inside the panel. */
+function positionTip(target, tip) {
   tip.classList.add('on');
   const r = target.getBoundingClientRect();
   const tr = tip.getBoundingClientRect();
   let top = r.top - tr.height - 8;
-  if (top < 6) top = r.bottom + 8;
+  if (top < 6) top = Math.min(r.bottom + 8, window.innerHeight - tr.height - 6);
+  if (top < 6) top = 6;
   let left = r.left + r.width / 2 - tr.width / 2;
   left = Math.max(6, Math.min(left, window.innerWidth - tr.width - 6));
   tip.style.top = `${Math.round(top)}px`;
   tip.style.left = `${Math.round(left)}px`;
 }
 
+const TIP_SEL = '[data-tip],[data-alarm]';
 document.addEventListener('mouseover', (ev) => {
-  const t = ev.target.closest ? ev.target.closest('[data-tip]') : null;
+  const t = ev.target.closest ? ev.target.closest(TIP_SEL) : null;
   if (!t) return;
   clearTimeout(tipTimer);
   tipTimer = setTimeout(() => showTip(t), 320);
 });
 document.addEventListener('mouseout', (ev) => {
-  const t = ev.target.closest ? ev.target.closest('[data-tip]') : null;
+  const t = ev.target.closest ? ev.target.closest(TIP_SEL) : null;
   if (t) hideTip();
 });
 document.addEventListener('scroll', hideTip, true);
@@ -263,12 +330,14 @@ function renderNotifications() {
       out.push(`<div class="daySep">${esc(d)}</div>`);
       day = d;
     }
+    const i = alarmHistory.indexOf(a);
+    const more = a.context ? '<span class="more">details on hover</span>' : '';
     out.push(
-      `<div class="notif">` +
+      `<div class="notif" data-alarm="${i}">` +
         `<span class="sev" style="background:${SEV[a.severity] || SEV.info}"></span>` +
         `<span class="body"><span class="t">${esc(a.title)}</span>` +
         `<span class="b">${esc(a.body)}</span>` +
-        `<span class="when">${esc(clockOf(a.firedAt))} · ${esc(a.severity)}</span></span>` +
+        `<span class="when">${esc(clockOf(a.firedAt))} · ${esc(a.severity)}${more}</span></span>` +
       `</div>`,
     );
   }

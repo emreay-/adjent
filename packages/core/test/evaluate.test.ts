@@ -104,7 +104,9 @@ describe('pace rule', () => {
 describe('threshold rule', () => {
   it('fires each level once, not on oscillation', () => {
     const log = emptyFireLog();
-    const seq = [45, 52, 49, 51, 53]; // crosses 50, then oscillates around it
+    // Starts low so the window is observed from the beginning; a first sight
+    // already past a level is a separate case (see coalescing tests below).
+    const seq = [5, 45, 52, 49, 51, 53]; // crosses 25 then 50, then oscillates
     let fired = 0;
     for (const [i, u] of seq.entries()) {
       const now = T0 + i * 60_000;
@@ -116,7 +118,16 @@ describe('threshold rule', () => {
 
   it('rearms after a window reset', () => {
     const log = emptyFireLog();
-    let now = T0 + H;
+    let now = T0;
+    // Observe the window low first, so later crossings are genuine crossings.
+    evaluate(
+      state([assess(win({ utilization: 5, observedAt: now, resetsAt: T0 + 5 * H }), now, 5)]),
+      [thresholdRule],
+      log,
+      now,
+    );
+
+    now = T0 + H;
     let w = win({ utilization: 85, observedAt: now, resetsAt: T0 + 5 * H });
     const first = evaluate(state([assess(w, now, 5)]), [thresholdRule], log, now);
     expect(first.map((a) => a.id).some((id) => id.endsWith(':80'))).toBe(true);
@@ -135,7 +146,9 @@ describe('threshold rule', () => {
 
   it('severity mapping is honored', () => {
     const log = emptyFireLog();
-    const now = T0 + H;
+    let now = T0;
+    evaluate(state([assess(win({ utilization: 5, observedAt: now }), now, 5)]), [thresholdRule], log, now);
+    now = T0 + H;
     const w = win({ utilization: 96, observedAt: now });
     const alarms = evaluate(state([assess(w, now, 5)]), [thresholdRule], log, now);
     const at95 = alarms.find((a) => a.id.endsWith(':95'));
@@ -193,5 +206,97 @@ describe('agent_burn rule', () => {
     expect(evaluate(state([], burns), [burnRule], log, T0)).toHaveLength(1);
     expect(evaluate(state([], burns), [burnRule], log, T0 + 5 * 60_000)).toHaveLength(0);
     expect(evaluate(state([], burns), [burnRule], log, T0 + 20 * 60_000)).toHaveLength(1);
+  });
+});
+
+describe('threshold coalescing (regression: four alarms for one window)', () => {
+  it('a window first seen at 100% announces once, not once per level', () => {
+    const log = emptyFireLog();
+    const now = T0 + H;
+    const w = win({ utilization: 100, observedAt: now, label: 'Codex · 7d', key: '7d' });
+    const alarms = evaluate(state([assess(w, now, 5)]), [thresholdRule], log, now);
+    // Previously: 25, 50, 80 and 95 all fired at the same instant.
+    expect(alarms).toHaveLength(1);
+    expect(alarms[0]!.severity).toBe('critical');
+    expect(alarms[0]!.title).toMatch(/already at 100%/);
+    // Every level is armed, so nothing re-announces on the next tick.
+    const again = evaluate(state([assess(w, now + 60_000, 5)]), [thresholdRule], log, now + 60_000);
+    expect(again).toHaveLength(0);
+  });
+
+  it('a first sight below any warn level stays completely silent', () => {
+    const log = emptyFireLog();
+    const now = T0 + H;
+    const w = win({ utilization: 60, observedAt: now });
+    expect(evaluate(state([assess(w, now, 5)]), [thresholdRule], log, now)).toHaveLength(0);
+  });
+
+  it('a jump across several levels in one tick announces only the highest', () => {
+    const log = emptyFireLog();
+    // Observed low first, so the window is no longer "first sight".
+    let now = T0 + H;
+    evaluate(state([assess(win({ utilization: 10, observedAt: now }), now, 5)]), [thresholdRule], log, now);
+
+    now += 30 * 60_000;
+    const alarms = evaluate(
+      state([assess(win({ utilization: 96, observedAt: now }), now, 40)]),
+      [thresholdRule],
+      log,
+      now,
+    );
+    expect(alarms).toHaveLength(1);
+    expect(alarms[0]!.title).toContain('crossed 95%');
+    expect(alarms[0]!.severity).toBe('critical');
+  });
+
+  it('still fires level by level when they are crossed one at a time', () => {
+    const log = emptyFireLog();
+    let now = T0 + H;
+    evaluate(state([assess(win({ utilization: 10, observedAt: now }), now, 5)]), [thresholdRule], log, now);
+    const titles: string[] = [];
+    for (const u of [30, 55, 85, 97]) {
+      now += 10 * 60_000;
+      for (const a of evaluate(state([assess(win({ utilization: u, observedAt: now }), now, 5)]), [thresholdRule], log, now)) {
+        titles.push(a.title);
+      }
+    }
+    expect(titles).toHaveLength(4);
+    expect(titles.join(' ')).toMatch(/25%.*50%.*80%.*95%/s);
+  });
+});
+
+describe('alarm context', () => {
+  it('captures the window state and the agents that were running', () => {
+    const log = emptyFireLog();
+    let now = T0 + H;
+    evaluate(state([assess(win({ utilization: 10, observedAt: now }), now, 5)]), [thresholdRule], log, now);
+    now += 10 * 60_000;
+    const st = state(
+      [assess(win({ utilization: 85, observedAt: now }), now, 20)],
+      [{ agentId: 'claude:a1', pctPerHour: 9, confidence: 'high' }],
+    );
+    const alarms = evaluate(st, [thresholdRule], log, now);
+    const ctx = alarms[0]!.context!;
+    expect(ctx.utilization).toBe(85);
+    expect(ctx.burnPctPerHour).toBe(20);
+    expect(ctx.paceLinePct).not.toBeNull();
+    expect(ctx.agents.length).toBeGreaterThan(0);
+    // Most expensive agent first, with the detail a reader would want.
+    expect(ctx.agents[0]!.pctPerHour).toBe(9);
+    expect(ctx.agents[0]!.model).toBe('model-x');
+    expect(ctx.agents[0]!.label).toBe('proj-one');
+  });
+
+  it('an agent_burn alarm scopes its snapshot to the offending agent', () => {
+    const log = emptyFireLog();
+    const st = state(
+      [{ ...assess(win({ utilization: 50, observedAt: T0 }), T0, 12), binding: true }],
+      [{ agentId: 'claude:a2', pctPerHour: 14, confidence: 'high' }],
+    );
+    const alarms = evaluate(st, [burnRule], log, T0);
+    expect(alarms).toHaveLength(1);
+    const ctx = alarms[0]!.context!;
+    expect(ctx.agents).toHaveLength(1);
+    expect(ctx.agents[0]!.label).toBe('proj-two');
   });
 });

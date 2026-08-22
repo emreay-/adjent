@@ -50,6 +50,19 @@ all of them.
   usage oscillates around 50%.
 * **Rearms on window reset** (detected by `resets_at` moving forward), so a new
   5-hour window gives a fresh set of 25/50/80/95 notifications.
+* **At most one alarm per window per evaluation.** When several levels are
+  crossed at once — a jump from 20% to 96%, or the app starting up against an
+  already-full window — every crossed level is armed but only the **highest** is
+  announced. 95% already implies 25/50/80, and it carries the most severe
+  routing, so the rest are pure noise.
+* **First sight is not a crossing.** A window observed for the first time
+  already past a level did not cross it while we were watching, and saying it
+  did would be false. Adjent arms silently instead — unless the level is a
+  `warn` or `critical` one, where silence is worse than an imperfect message, and
+  then it says what is actually true: *"Codex · 7d is already at 100%"*.
+
+  This distinction needs `firedLevels[key] === undefined` to mean "never
+  observed", so the reset path empties the array rather than deleting the key.
 
 ## 3. `agent_burn` — per-agent model
 
@@ -108,6 +121,26 @@ routing:
 
 `scope`, `severity` and `routing` are separate axes on purpose: adding a Slack or
 ntfy destination later is a routing-table edit, not a rule change.
+
+## What an alarm carries
+
+The body stays short enough to fit a toast, so every alarm also captures an
+`AlarmContext` snapshot of the moment it fired — the notifications view reveals
+it on hover, which is what makes a notification read hours later still explain
+itself:
+
+| Field | Why it is worth keeping |
+| --- | --- |
+| `windowLabel`, `utilization` | which limit, and how full it was *then* — not now |
+| `burnPctPerHour`, `paceLinePct` | how fast, against where even spending would have been |
+| `resetsAt`, `exhaustsAt` | how much runway was left, and whether it was projected to run out first |
+| `plan` | which tier the limit belonged to |
+| `agents[]` | **what you were actually doing**: project, git branch, model, effort, derived %/h and token total, most expensive first |
+| `fitConfidence` | how much to trust the derived figures in the snapshot |
+
+For an `agent_burn` alarm the snapshot narrows to the offending agent; for
+window alarms it lists the top few contributors. The snapshot is written into
+`~/.adjent/alarms.jsonl` with the alarm, so it survives restarts.
 
 ## Delivery
 

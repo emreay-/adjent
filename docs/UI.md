@@ -452,6 +452,11 @@ the panel header.
 * It survives restarts and outlives the toast, which is the whole point: the
   reason a limit was hit at 02:00 should still be readable at 09:00.
 * **Clear** empties the log — an explicit user action, never automatic.
+* **Hovering a row reveals the full state at fire time**: the window and how
+  full it was then, burn rate against the pace line, runway left, projected
+  exhaustion — and the agents that were running, with project, branch, model,
+  effort and their derived share. A notification read the next morning should
+  answer "what was I doing?" without the reader reconstructing it.
 
 ## Copy rules
 

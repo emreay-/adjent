@@ -161,6 +161,36 @@ export interface AppState {
 
 export type Severity = 'info' | 'warn' | 'critical';
 
+/** Who was running when an alarm fired — the "what was I doing?" answer. */
+export interface AlarmAgentSnapshot {
+  label: string;
+  project: string | null;
+  branch: string | null;
+  model: string | null;
+  effort: string | null;
+  /** Derived %/h at fire time, null when the fit had nothing to say. */
+  pctPerHour: number | null;
+  tokens: number;
+}
+
+/**
+ * State captured at the moment an alarm fired. The alarm body stays short;
+ * this is what the notifications view reveals on hover, so a notification read
+ * hours later still explains itself.
+ */
+export interface AlarmContext {
+  windowLabel: string | null;
+  utilization: number | null;
+  burnPctPerHour: number | null;
+  paceLinePct: number | null;
+  resetsAt: number | null;
+  exhaustsAt: number | null;
+  plan: string | null;
+  fitConfidence: Confidence | null;
+  /** Top contributors at fire time, most expensive first. */
+  agents: AlarmAgentSnapshot[];
+}
+
 export interface Alarm {
   id: string; // rule id + discriminator (window key / agent id / level)
   ruleId: string;
@@ -172,6 +202,7 @@ export interface Alarm {
   backend: BackendId | null;
   windowKey: string | null;
   agentId: string | null;
+  context?: AlarmContext;
 }
 
 export interface PaceRule {
