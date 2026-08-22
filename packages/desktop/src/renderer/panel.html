@@ -29,6 +29,7 @@
     color:var(--muted); -webkit-app-region:drag;
   }
   header .live { font-variant-numeric:tabular-nums; }
+  header .brand { display:flex; align-items:center; gap:7px; }
   main { flex:1; overflow-y:auto; }
   section { padding:12px 14px; border-bottom:1px solid var(--line); }
 
@@ -163,7 +164,7 @@
 </style>
 </head>
 <body>
-  <header><span>Adjent</span><span class="live" id="liveCount" data-tip="liveCount"></span><button id="bell" class="iconbtn" title="Notifications">&#128276;<span id="bellDot"></span></button><button id="gear" class="iconbtn" title="Settings">&#9881;</button></header>
+  <header><span class="brand"><svg width="13" height="13" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" fill="var(--ink)"/><path d="M34 76 L74 -4" stroke="var(--surface)" stroke-width="6" stroke-dasharray="20 8 4 8" fill="none"/><path d="M6 76 L46 -4" stroke="var(--surface)" stroke-width="11" fill="none"/></svg>Adjent</span><span class="live" id="liveCount" data-tip="liveCount"></span><button id="bell" class="iconbtn" title="Notifications">&#128276;<span id="bellDot"></span></button><button id="gear" class="iconbtn" title="Settings">&#9881;</button></header>
   <div id="renderError" hidden></div>
   <main>
     <section id="primary">

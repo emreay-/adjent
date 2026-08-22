@@ -1,27 +1,11 @@
 {
-  "pages": [
-    { "id": "page-1", "name": "Identity" },
-    { "id": "page-2", "name": "System" },
-    { "id": "page-3", "name": "Explorations" }
-  ],
   "artboards": [
-    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 780, "page": "page-1" },
-    { "file": "Plate.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 760, "page": "page-1" },
-    { "file": "Usage.dc.html", "x": 0, "y": 900, "w": 1120, "h": 800, "page": "page-1" },
-    { "file": "Device.dc.html", "x": 1240, "y": 900, "w": 1120, "h": 600, "page": "page-1" },
-
-    { "file": "System.dc.html", "x": 0, "y": 0, "w": 1120, "h": 800, "page": "page-2" },
-
-    { "file": "DirectionG.dc.html", "x": 0, "y": 0, "w": 1120, "h": 660, "page": "page-3" },
-    { "file": "DirectionH.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 660, "page": "page-3" },
-    { "file": "DirectionD.dc.html", "x": 2480, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
-    { "file": "DirectionE.dc.html", "x": 3720, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
-    { "file": "DirectionF.dc.html", "x": 4960, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
-    { "file": "DirectionA.dc.html", "x": 0, "y": 900, "w": 1120, "h": 640, "page": "page-3" },
-    { "file": "DirectionB.dc.html", "x": 1240, "y": 900, "w": 1120, "h": 640, "page": "page-3" },
-    { "file": "DirectionC.dc.html", "x": 2480, "y": 900, "w": 1120, "h": 640, "page": "page-3" },
-    { "file": "Mark.dc.html", "x": 3720, "y": 900, "w": 1120, "h": 720, "page": "page-3" },
-    { "file": "Alternates.dc.html", "x": 4960, "y": 900, "w": 1120, "h": 480, "page": "page-3" }
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 780 },
+    { "file": "Plate.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 760 },
+    { "file": "Usage.dc.html", "x": 0, "y": 900, "w": 1120, "h": 800 },
+    { "file": "Device.dc.html", "x": 1240, "y": 900, "w": 1120, "h": 600 },
+    { "file": "System.dc.html", "x": 0, "y": 1820, "w": 1120, "h": 800 },
+    { "file": "DirectionI.dc.html", "x": 1240, "y": 1820, "w": 1120, "h": 660 }
   ],
   "annotations": [
     {
@@ -29,17 +13,15 @@
       "x": 2480,
       "y": 0,
       "w": 430,
-      "page": "page-1",
-      "text": "The mark, settled\n\nTwo rules at a 1:2 slope, offset 28, knocked out of a solid plate and cropped by its edges — so neither line has an end, and the plate reads as a detail of a larger drawing.\n\nThe heavy rule is measured. The dash-dot one is the datum, borrowing the drafting convention for a reference line. That is the whole idea, and it is the same relationship the pace chart already draws.\n\nCorner rule: the plate is a hard square everywhere the app controls its own edge — tray, header, print, web, Windows. Only the macOS and Linux launcher icon gets r13 of 64, because those grids mask every icon and a square there reads as a mistake."
+      "text": "The mark\n\nTwo rules at a 1:2 slope, offset 28, knocked out of a solid plate and cropped by its edges — so neither line has an end, and the plate reads as a detail of a larger drawing.\n\nThe heavy rule is measured. The dash-dot one is the datum, borrowing the drafting convention for a reference line. That is the whole idea, and it is the same relationship the pace chart already draws.\n\nCorner rule: the plate is a hard square everywhere the app controls its own edge — tray, header, print, web, Windows. Only the macOS and Linux launcher icon gets r13 of 64, because those grids mask every icon and a square there reads as a mistake."
     },
     {
       "id": "assets-note",
       "x": 2480,
       "y": 620,
       "w": 430,
-      "page": "page-1",
-      "text": "Files in the repo\n\nbrand/assets/ now holds the mark as SVG: the square plate, the reversed plate, the r13 launcher icon, and the coarsened 16px cut whose thicker strokes keep the knockout open at tray size.\n\nStill to do when you want it: raster the .ico and .png set, and point the tray renderer at the plate instead of the arc — that one is a real code change in packages/desktop/src/trayicon.ts, not a brand decision."
+      "text": "Files in the repo\n\nbrand/assets/ holds the mark as SVG: the square plate, the reversed plate, the r13 launcher icon, and the coarsened 16px cut whose thicker strokes keep the knockout open at tray size.\n\nThe tray renderer draws the plate directly into an RGBA buffer rather than loading these — same geometry, expressed twice, so the SVGs stay the reference and packages/desktop/src/trayicon.ts stays dependency-free."
     }
   ],
-  "launch": { "view": "canvas", "page": "page-1" }
+  "launch": { "view": "canvas" }
 }
