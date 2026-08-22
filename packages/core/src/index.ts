@@ -16,3 +16,12 @@ export { evaluate, fmtDur, fmtTime } from './rules/evaluate.js';
 export { loadConfig, configPath, DEFAULT_CONFIG, type AlarmConfig, type Routing } from './rules/config.js';
 export { ConsoleSink, WebhookSink, SinkRouter, type Sink } from './sinks/sink.js';
 export { Monitor, type MonitorOptions } from './monitor.js';
+export {
+  loadSettings,
+  saveSettings,
+  coerceSettings,
+  settingsPath,
+  DEFAULT_SETTINGS,
+  type Settings,
+  type TrayStyle,
+} from './settings.js';

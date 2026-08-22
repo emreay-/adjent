@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'">
+<title>Adjent</title>
+<style>
+  :root {
+    --bg:#FFFFFF; --line:#D9DFE6; --ink:#12171D; --ink2:#3C4752; --muted:#65727F;
+    --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+    --good-bg:#E4F3E4; --warn-bg:#FBF0D8; --crit-bg:#F7E2E2; --idle:#808890; --track:#E4E9EE;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#151B22; --line:#2A333D; --ink:#E3E9EF; --ink2:#B4BFCA; --muted:#8593A0;
+      --good-bg:#132615; --warn-bg:#2C2411; --crit-bg:#2E1817; --track:#232C35;
+    }
+  }
+  * { box-sizing:border-box; margin:0; }
+  body {
+    background:var(--bg); color:var(--ink); font:12px/1.4 "Segoe UI", system-ui, sans-serif;
+    height:100vh; padding:9px 11px; display:flex; flex-direction:column; gap:5px;
+    overflow:hidden; user-select:none; border:1px solid var(--line); border-radius:7px;
+    -webkit-app-region:drag; cursor:default;
+  }
+  .top { display:flex; align-items:baseline; gap:7px; }
+  .chip {
+    display:inline-flex; align-items:center; padding:1px 6px; border-radius:3px;
+    font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  }
+  .chip.good { background:var(--good-bg); color:var(--good); }
+  .chip.warn { background:var(--warn-bg); color:var(--warn); }
+  .chip.crit { background:var(--crit-bg); color:var(--crit); }
+  .chip.idle { background:var(--line); color:var(--muted); }
+  .hero { font-size:26px; font-weight:600; line-height:1; letter-spacing:-.02em; }
+  .rate { font-family:Consolas, monospace; font-size:11.5px; font-weight:600; color:var(--ink2); }
+  .meta { margin-left:auto; text-align:right; font-family:Consolas, monospace; font-size:9.5px; color:var(--muted); line-height:1.4; }
+  .bar { height:5px; border-radius:3px; background:var(--track); overflow:hidden; position:relative; }
+  .bar i { position:absolute; inset:0 auto 0 0; border-radius:3px; }
+  .bar .pace { position:absolute; top:-2px; bottom:-2px; width:1px; background:var(--muted); opacity:.65; }
+  .agent { display:flex; align-items:baseline; gap:6px; font-size:11px; color:var(--ink2); }
+  .agent .dot { width:6px; height:6px; border-radius:50%; flex:none; align-self:center; }
+  .agent .n { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .agent .v { margin-left:auto; font-family:Consolas, monospace; font-size:10px; white-space:nowrap; }
+  #open { -webkit-app-region:no-drag; cursor:pointer; }
+</style>
+</head>
+<body id="open" title="Click to open the Adjent panel">
+  <div class="top">
+    <span class="chip idle" id="verdict">…</span>
+    <span class="hero" id="hero">–</span>
+    <span class="rate" id="rate"></span>
+    <span class="meta" id="meta"></span>
+  </div>
+  <div class="bar"><i id="fill"></i><span class="pace" id="pace"></span></div>
+  <div class="agent" id="hot" hidden>
+    <span class="dot"></span><span class="n"></span><span class="v"></span>
+  </div>
+  <script src="widget.js"></script>
+</body>
+</html>

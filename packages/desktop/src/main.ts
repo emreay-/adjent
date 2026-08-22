@@ -1,73 +1,90 @@
 /**
- * Electron main: tray icon (one arc, one status colour), popover panel
- * (frameless 380×560, closes on blur), native toasts routed by severity.
- * Form factor per docs/UI.md. One deliberate deviation from ARCHITECTURE.md:
- * the renderer is plain HTML/JS rather than React+Vite for now — the IPC
- * contract (one AppState push) is identical, so swapping later is contained.
+ * Electron main: tray glyph, popover panel, optional always-on-top widget,
+ * native toasts. Form factor per docs/UI.md.
+ *
+ * Two stated deviations from ARCHITECTURE.md, both contained:
+ *  - the renderer is plain HTML/JS rather than React+Vite; the IPC contract
+ *    (one AppState push) is unchanged, so swapping later is local.
+ *  - this package is CJS because Electron's require hook needs it; the ESM
+ *    core is reached through a dynamic import().
  */
-import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, screen } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, screen, shell } from 'electron';
 import type { BrowserWindow as BrowserWindowType, Tray as TrayType } from 'electron';
 import * as path from 'node:path';
-// Desktop is CJS (electron's require hook needs it); core is ESM — bridge with
-// a dynamic import(), which Node16-mode TS preserves instead of lowering.
-import type { Alarm, AppState, Monitor, Sink } from '@adjent/core' with { 'resolution-mode': 'import' };
+import type { Alarm, AppState, Monitor, Settings, Sink } from '@adjent/core' with { 'resolution-mode': 'import' };
+import { makeTrayIcon } from './trayicon.js';
+
 const coreImport = import('@adjent/core');
 
-const TICK_MS = 30_000;
+/** Design sizes at uiScale = 1; both scale with the setting. */
 const PANEL_W = 380;
 const PANEL_H = 560;
+const WIDGET_W = 340;
+const WIDGET_H = 96;
 
 let tray: TrayType | null = null;
 let panel: BrowserWindowType | null = null;
+let widget: BrowserWindowType | null = null;
 let monitor: Monitor;
-let alarmsPaused = false;
+let settings: Settings;
+let core: Awaited<typeof coreImport>;
+let tickTimer: NodeJS.Timeout | null = null;
+let lastTooltip = 'Adjent';
 const recentAlarms: Alarm[] = [];
 
 // ---------------------------------------------------------------------------
-// Tray icon: drawn into an RGBA buffer — an arc filled to the binding limit's
-// utilization, coloured by verdict. No text badge (docs/UI.md).
+// Tray
 // ---------------------------------------------------------------------------
-const COLORS: Record<string, [number, number, number]> = {
-  'on-pace': [0x0c, 0xa3, 0x0c],
-  ahead: [0xfa, 0xb2, 0x19],
-  over: [0xd0, 0x3b, 0x3b],
-  idle: [0x80, 0x88, 0x90],
-};
+function updateTray(utilization: number, verdict: string, tooltip: string): void {
+  if (!tray) return;
+  lastTooltip = tooltip;
+  const dpi = Math.max(1, Math.round(screen.getPrimaryDisplay().scaleFactor));
+  tray.setImage(
+    makeTrayIcon(nativeImage, {
+      utilization,
+      verdict,
+      style: settings.trayStyle,
+      thickness: settings.trayThickness,
+      // Linux panels render larger than the Windows 16px slot.
+      logicalSize: process.platform === 'win32' ? 16 : 22,
+      scaleFactor: Math.min(3, dpi + 1), // oversample: crisp, never blurry
+    }),
+  );
+  tray.setToolTip(tooltip);
+}
 
-function trayImage(utilization: number, verdict: string, size = 16): Electron.NativeImage {
-  const rgb = COLORS[verdict] ?? COLORS['idle']!;
-  const buf = Buffer.alloc(size * size * 4);
-  const c = (size - 1) / 2;
-  const rOuter = size / 2 - 0.5;
-  const rInner = rOuter - Math.max(2.5, size / 5);
-  const sweep = (Math.max(0, Math.min(100, utilization)) / 100) * 2 * Math.PI;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = x - c;
-      const dy = y - c;
-      const dist = Math.hypot(dx, dy);
-      if (dist > rOuter || dist < rInner) continue;
-      // angle from 12 o'clock, clockwise
-      let ang = Math.atan2(dx, -dy);
-      if (ang < 0) ang += 2 * Math.PI;
-      const filled = ang <= sweep;
-      const i = (y * size + x) * 4;
-      const alpha = filled ? 255 : 70;
-      buf[i] = rgb[0]!;
-      buf[i + 1] = rgb[1]!;
-      buf[i + 2] = rgb[2]!;
-      buf[i + 3] = alpha;
-    }
-  }
-  const img = nativeImage.createFromBuffer(buf, { width: size, height: size });
-  return img;
+function buildTrayMenu(): void {
+  if (!tray) return;
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open panel', click: () => togglePanel() },
+      {
+        label: 'Pinned widget (always visible)',
+        type: 'checkbox',
+        checked: settings.widgetEnabled,
+        click: (item) => void applySettings({ widgetEnabled: item.checked }),
+      },
+      { label: 'Settings…', click: () => togglePanel('settings') },
+      { type: 'separator' },
+      {
+        label: 'Pause alarms',
+        type: 'checkbox',
+        checked: settings.alarmsPaused,
+        click: (item) => void applySettings({ alarmsPaused: item.checked }),
+      },
+      { type: 'separator' },
+      { label: 'Quit Adjent', click: () => app.quit() },
+    ]),
+  );
 }
 
 // ---------------------------------------------------------------------------
+// Panel
+// ---------------------------------------------------------------------------
 function createPanel(): BrowserWindowType {
   const win = new BrowserWindow({
-    width: PANEL_W,
-    height: PANEL_H,
+    width: Math.round(PANEL_W * settings.uiScale),
+    height: Math.round(PANEL_H * settings.uiScale),
     show: false,
     frame: false,
     resizable: false,
@@ -80,41 +97,123 @@ function createPanel(): BrowserWindowType {
     },
   });
   void win.loadFile(path.join(__dirname, 'renderer', 'panel.html'));
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.setZoomFactor(settings.uiScale);
+    pushState();
+  });
   win.on('blur', () => win.hide()); // a question you ask, not a window you manage
   return win;
 }
 
-function togglePanel(): void {
+function togglePanel(view?: 'settings'): void {
   if (!panel || panel.isDestroyed()) panel = createPanel();
-  if (panel.isVisible()) {
+  if (panel.isVisible() && !view) {
     panel.hide();
     return;
   }
   const cursor = screen.getCursorScreenPoint();
-  const display = screen.getDisplayNearestPoint(cursor);
-  const wa = display.workArea;
-  const x = Math.min(Math.max(cursor.x - PANEL_W / 2, wa.x + 8), wa.x + wa.width - PANEL_W - 8);
-  const y = cursor.y < wa.y + wa.height / 2 ? wa.y + 8 : wa.y + wa.height - PANEL_H - 8;
+  const wa = screen.getDisplayNearestPoint(cursor).workArea;
+  const w = Math.round(PANEL_W * settings.uiScale);
+  const h = Math.round(PANEL_H * settings.uiScale);
+  panel.setSize(w, h);
+  const x = Math.min(Math.max(cursor.x - w / 2, wa.x + 8), wa.x + wa.width - w - 8);
+  const y = cursor.y < wa.y + wa.height / 2 ? wa.y + 8 : wa.y + wa.height - h - 8;
   panel.setPosition(Math.round(x), Math.round(y));
   panel.show();
+  if (view) panel.webContents.send('view', view);
   pushState();
 }
 
-function pushState(): void {
-  const s = monitor.state;
-  if (s && panel && !panel.isDestroyed() && panel.isVisible()) {
-    panel.webContents.send('state', { state: s, alarms: recentAlarms.slice(-5) });
+// ---------------------------------------------------------------------------
+// Pinned widget — the answer to "visible without opening the tray flyout"
+// ---------------------------------------------------------------------------
+function createWidget(): BrowserWindowType {
+  const w = Math.round(WIDGET_W * settings.uiScale);
+  const h = Math.round(WIDGET_H * settings.uiScale);
+  const wa = screen.getPrimaryDisplay().workArea;
+  const pos = settings.widgetPosition ?? { x: wa.x + wa.width - w - 16, y: wa.y + wa.height - h - 16 };
+  const win = new BrowserWindow({
+    width: w,
+    height: h,
+    x: pos.x,
+    y: pos.y,
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    // A taskbar button gives a directly clickable entry on the lower bar,
+    // which tray-overflow promotion cannot (Windows owns that decision).
+    skipTaskbar: !settings.widgetTaskbarButton,
+    title: 'Adjent',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  void win.loadFile(path.join(__dirname, 'renderer', 'widget.html'));
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.setZoomFactor(settings.uiScale);
+    pushState();
+  });
+  win.on('moved', () => {
+    const [x = 0, y = 0] = win.getPosition();
+    void applySettings({ widgetPosition: { x, y } }, { rebuildWidget: false });
+  });
+  return win;
+}
+
+function syncWidget(): void {
+  if (widget && !widget.isDestroyed()) {
+    widget.destroy();
+    widget = null;
   }
+  if (settings.widgetEnabled) widget = createWidget();
 }
 
 // ---------------------------------------------------------------------------
-// Sinks (docs/ALARMS.md routing): tray tint is implicit in the icon; toast is
-// a native Notification; both honor the pause switch.
+function pushState(): void {
+  const s = monitor?.state;
+  if (!s) return;
+  const payload = { state: s, alarms: recentAlarms.slice(-5), settings };
+  for (const win of [panel, widget]) {
+    if (win && !win.isDestroyed() && win.isVisible()) win.webContents.send('state', payload);
+  }
+}
+
+async function applySettings(patch: Partial<Settings>, opts: { rebuildWidget?: boolean } = {}): Promise<void> {
+  const prev = settings;
+  settings = core.coerceSettings({ ...settings, ...patch });
+  await core.saveSettings(settings);
+
+  const scaleChanged = settings.uiScale !== prev.uiScale;
+  if (scaleChanged) {
+    if (panel && !panel.isDestroyed()) {
+      panel.webContents.setZoomFactor(settings.uiScale);
+      panel.setSize(Math.round(PANEL_W * settings.uiScale), Math.round(PANEL_H * settings.uiScale));
+    }
+  }
+  if (settings.trayStyle !== prev.trayStyle || settings.trayThickness !== prev.trayThickness) {
+    const b = monitor?.state?.windows.find((w) => w.binding);
+    updateTray(b?.window.utilization ?? 0, b?.verdict ?? 'idle', lastTooltip);
+  }
+  if (settings.tickIntervalSec !== prev.tickIntervalSec) restartLoop();
+  if (
+    opts.rebuildWidget !== false &&
+    (settings.widgetEnabled !== prev.widgetEnabled || settings.widgetTaskbarButton !== prev.widgetTaskbarButton || scaleChanged)
+  ) {
+    syncWidget();
+  }
+  buildTrayMenu();
+  pushState();
+}
+
+// ---------------------------------------------------------------------------
+// Sinks (docs/ALARMS.md routing)
 // ---------------------------------------------------------------------------
 class ToastSink implements Sink {
   readonly id = 'toast';
   async deliver(a: Alarm): Promise<void> {
-    if (alarmsPaused || !Notification.isSupported()) return;
+    if (settings.alarmsPaused || !Notification.isSupported()) return;
     const n = new Notification({
       title: a.title,
       body: a.body,
@@ -135,68 +234,64 @@ class TraySink implements Sink {
 }
 
 // ---------------------------------------------------------------------------
-async function start(): Promise<void> {
-  app.setAppUserModelId('dev.adjent.app'); // required for Windows toasts
-
-  const core = await coreImport;
-  const config = await core.loadConfig();
-  monitor = new core.Monitor({ providers: [new core.ClaudeProvider(), new core.CodexProvider()], config });
-  monitor.router.register(new ToastSink());
-  monitor.router.register(new TraySink());
-
-  tray = new Tray(trayImage(0, 'idle'));
-  tray.setToolTip('Adjent');
-  tray.on('click', togglePanel);
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Open panel', click: togglePanel },
-      {
-        label: 'Pause alarms',
-        type: 'checkbox',
-        checked: false,
-        click: (item) => {
-          alarmsPaused = item.checked;
-        },
-      },
-      { type: 'separator' },
-      { label: 'Quit Adjent', click: () => app.quit() },
-    ]),
-  );
-
-  monitor.on('state', (s: AppState) => {
-    const binding = s.windows.find((w) => w.binding);
-    if (tray) {
-      tray.setImage(trayImage(binding?.window.utilization ?? 0, binding?.verdict ?? 'idle'));
-      tray.setToolTip(
-        binding
-          ? `Adjent — ${binding.window.label} ${Math.round(binding.window.utilization)}%`
-          : 'Adjent — no quota data',
-      );
-    }
-    pushState();
-  });
-
-  ipcMain.on('panel:close', () => panel?.hide());
-  ipcMain.on('panel:refresh', () => void monitor.tick());
-
+function restartLoop(): void {
+  if (tickTimer) clearTimeout(tickTimer);
   const loop = async (): Promise<void> => {
     try {
       await monitor.tick();
     } catch {
       /* a bad tick never kills the shell */
     }
-    setTimeout(() => void loop(), TICK_MS);
+    tickTimer = setTimeout(() => void loop(), settings.tickIntervalSec * 1000);
   };
   void loop();
+}
+
+async function start(): Promise<void> {
+  app.setAppUserModelId('dev.adjent.app'); // required for Windows toasts
+
+  core = await coreImport;
+  settings = await core.loadSettings();
+  const config = await core.loadConfig();
+  monitor = new core.Monitor({ providers: [new core.ClaudeProvider(), new core.CodexProvider()], config });
+  monitor.router.register(new ToastSink());
+  monitor.router.register(new TraySink());
+
+  tray = new Tray(nativeImage.createEmpty());
+  updateTray(0, 'idle', 'Adjent — starting');
+  tray.on('click', () => togglePanel());
+  buildTrayMenu();
+
+  monitor.on('state', (s: AppState) => {
+    const b = s.windows.find((w) => w.binding);
+    updateTray(
+      b?.window.utilization ?? 0,
+      b?.verdict ?? 'idle',
+      b ? `Adjent — ${b.window.label} ${Math.round(b.window.utilization)}%` : 'Adjent — no quota data',
+    );
+    pushState();
+  });
+
+  ipcMain.on('panel:close', () => panel?.hide());
+  ipcMain.on('panel:refresh', () => void monitor.tick());
+  ipcMain.on('widget:open-panel', () => togglePanel());
+  ipcMain.on('settings:set', (_e, patch: Partial<Settings>) => void applySettings(patch));
+  ipcMain.on('help:taskbar', () => {
+    // Windows owns tray-icon promotion; deep-link to the exact settings page.
+    if (process.platform === 'win32') void shell.openExternal('ms-settings:taskbar');
+  });
+
+  syncWidget();
+  restartLoop();
 }
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', togglePanel);
+  app.on('second-instance', () => togglePanel());
   app.on('window-all-closed', () => {
-    /* tray app: stay resident — default would quit */
+    /* tray app: stay resident — the default would quit */
   });
   void app.whenReady().then(start);
 }

@@ -153,7 +153,72 @@ function render(payload) {
     '<div class="empty">None</div>';
 }
 
-window.adjent.onState(render);
+// --------------------------------------------------------------------------
+// Settings view. Every control writes through to the main process, which
+// persists to ~/.adjent/settings.json and applies live.
+// --------------------------------------------------------------------------
+const DATA_SECTIONS = () => [...document.querySelectorAll('main > section:not(#settingsView)')];
+let showingSettings = false;
+let current = null;
+
+function showSettings(on) {
+  showingSettings = on;
+  DATA_SECTIONS().forEach((el) => { el.hidden = on; });
+  $('settingsView').hidden = !on;
+  $('gear').classList.toggle('on', on);
+}
+
+function syncSettingsUI(s) {
+  if (!s) return;
+  $('scaleVal').textContent = `${Math.round(s.uiScale * 100)}%`;
+  $('tickVal').textContent = `${s.tickIntervalSec}s`;
+  $('thick').value = String(s.trayThickness);
+  $('widgetOn').checked = !!s.widgetEnabled;
+  $('widgetTask').checked = !!s.widgetTaskbarButton;
+  $('pauseAlarms').checked = !!s.alarmsPaused;
+  for (const b of document.querySelectorAll('#trayStyle button')) {
+    b.classList.toggle('on', b.dataset.style === s.trayStyle);
+  }
+}
+
+const set = (patch) => window.adjent.setSettings(patch);
+
+$('gear').addEventListener('click', () => showSettings(!showingSettings));
+document.querySelectorAll('[data-scale]').forEach((b) =>
+  b.addEventListener('click', () => {
+    const step = b.dataset.scale === '+' ? 0.1 : -0.1;
+    const next = Math.min(2, Math.max(0.8, Math.round(((current?.uiScale ?? 1) + step) * 10) / 10));
+    set({ uiScale: next });
+  }),
+);
+document.querySelectorAll('[data-tick]').forEach((b) =>
+  b.addEventListener('click', () => {
+    const cur = current?.tickIntervalSec ?? 30;
+    const steps = [10, 15, 30, 60, 120, 300];
+    const i = steps.indexOf(cur);
+    const base = i === -1 ? 2 : i;
+    const next = steps[Math.min(steps.length - 1, Math.max(0, base + (b.dataset.tick === '+' ? 1 : -1)))];
+    set({ tickIntervalSec: next });
+  }),
+);
+document.querySelectorAll('#trayStyle button').forEach((b) =>
+  b.addEventListener('click', () => set({ trayStyle: b.dataset.style })),
+);
+$('thick').addEventListener('input', (e) => set({ trayThickness: Number(e.target.value) }));
+$('widgetOn').addEventListener('change', (e) => set({ widgetEnabled: e.target.checked }));
+$('widgetTask').addEventListener('change', (e) => set({ widgetTaskbarButton: e.target.checked }));
+$('pauseAlarms').addEventListener('change', (e) => set({ alarmsPaused: e.target.checked }));
+$('openTaskbarSettings').addEventListener('click', () => window.adjent.openTaskbarSettings());
+
+window.adjent.onState((payload) => {
+  current = payload.settings || current;
+  syncSettingsUI(current);
+  if (!showingSettings) render(payload);
+});
+window.adjent.onView((view) => showSettings(view === 'settings'));
+
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') window.adjent.close();
+  if (e.key !== 'Escape') return;
+  if (showingSettings) showSettings(false);
+  else window.adjent.close();
 });

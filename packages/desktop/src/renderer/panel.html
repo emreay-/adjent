@@ -61,11 +61,39 @@
   .alarm { font-size:11.5px; color:var(--ink2); padding:3px 0; }
   .alarm b { font-weight:600; }
   .empty { color:var(--muted); font-size:12px; padding:4px 0; }
+  .iconbtn {
+    -webkit-app-region:no-drag; background:none; border:none; color:var(--muted);
+    font-size:14px; cursor:pointer; padding:0 2px; line-height:1;
+  }
+  .iconbtn:hover, .iconbtn.on { color:var(--ink); }
+  .setRow { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .setRow:last-child { border-bottom:none; }
+  .setRow label { flex:1; font-size:12px; display:flex; flex-direction:column; }
+  .setRow label small { color:var(--muted); font-size:10.5px; }
+  .stepper { display:flex; align-items:center; gap:4px; }
+  .stepper button, .seg button {
+    background:var(--surface); border:1px solid var(--line); color:var(--ink);
+    border-radius:3px; cursor:pointer; font-size:12px; padding:2px 8px; min-width:24px;
+  }
+  .stepper span { font-family:Consolas, monospace; font-size:11.5px; min-width:42px; text-align:center; }
+  .seg { display:flex; gap:0; }
+  .seg button { border-radius:0; }
+  .seg button:first-child { border-radius:3px 0 0 3px; }
+  .seg button:last-child { border-radius:0 3px 3px 0; border-left:none; }
+  .seg button.on { background:var(--good-bg); color:var(--good); border-color:var(--good); }
+  input[type=range] { width:120px; }
+  input[type=checkbox] { width:15px; height:15px; }
+  .hint { font-size:11px; color:var(--muted); line-height:1.5; margin-top:8px; }
+  .hint b { color:var(--ink2); }
+  .linkbtn {
+    display:block; margin-top:6px; background:none; border:none; padding:0;
+    color:var(--good); font-size:11px; cursor:pointer; text-decoration:underline;
+  }
   h2 { font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:4px; }
 </style>
 </head>
 <body>
-  <header><span>Adjent</span><span class="live" id="liveCount"></span></header>
+  <header><span>Adjent</span><span class="live" id="liveCount"></span><button id="gear" class="iconbtn" title="Settings">&#9881;</button></header>
   <main>
     <section id="primary">
       <span class="chip idle" id="verdict">Waiting for data</span>
@@ -80,6 +108,58 @@
     <section><h2>Other windows</h2><div id="windows"><div class="empty">–</div></div></section>
     <section><h2>Agents</h2><div id="agents"><div class="empty">–</div></div></section>
     <section><h2>Recent alarms</h2><div id="alarms"><div class="empty">None</div></div></section>
+    <section id="settingsView" hidden>
+      <h2>Display</h2>
+      <div class="setRow">
+        <label>Interface size</label>
+        <div class="stepper">
+          <button data-scale="-">&minus;</button>
+          <span id="scaleVal">100%</span>
+          <button data-scale="+">+</button>
+        </div>
+      </div>
+      <div class="setRow">
+        <label>Tray glyph</label>
+        <div class="seg" id="trayStyle">
+          <button data-style="ring">Ring</button><button data-style="disc">Disc</button>
+        </div>
+      </div>
+      <div class="setRow">
+        <label>Tray thickness</label>
+        <input type="range" id="thick" min="0.18" max="0.5" step="0.02">
+      </div>
+
+      <h2 style="margin-top:14px">Visibility</h2>
+      <div class="setRow">
+        <label>Pinned widget<small>Always-on-top strip</small></label>
+        <input type="checkbox" id="widgetOn">
+      </div>
+      <div class="setRow">
+        <label>Taskbar button<small>Widget appears on the taskbar</small></label>
+        <input type="checkbox" id="widgetTask">
+      </div>
+      <p class="hint">
+        Windows decides which tray icons sit on the taskbar and which hide in the
+        overflow &mdash; an app cannot promote itself. To pin Adjent:
+        <b>drag its icon out of the overflow onto the taskbar</b>, or turn it on
+        under Taskbar settings.
+        <button id="openTaskbarSettings" class="linkbtn">Open Taskbar settings</button>
+      </p>
+
+      <h2 style="margin-top:14px">Monitoring</h2>
+      <div class="setRow">
+        <label>Refresh every</label>
+        <div class="stepper">
+          <button data-tick="-">&minus;</button>
+          <span id="tickVal">30s</span>
+          <button data-tick="+">+</button>
+        </div>
+      </div>
+      <div class="setRow">
+        <label>Pause alarms</label>
+        <input type="checkbox" id="pauseAlarms">
+      </div>
+    </section>
   </main>
   <script src="panel.js"></script>
 </body>

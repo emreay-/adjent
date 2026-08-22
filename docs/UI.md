@@ -33,11 +33,29 @@ manage, a question you ask. Left-click opens the panel; right-click a short
 menu (pause alarms, pin widget, settings, quit).
 
 **Pinned mode is the "widget", and it is opt-in.** From the tray menu, a
-compact always-on-top strip (~320×88) for people who *do* want it permanently
+compact always-on-top strip (~340×96) for people who *do* want it permanently
 in view — second monitor, streaming, long agent runs. It shows only tier 1½:
-verdict, hero, rate, a thin pace bar, and the top agent row when it is hot.
-Click expands it to the full panel. It is deliberately not the default: the
+verdict, hero, rate, a thin pace bar with the pace line marked as a tick, and
+the top agent row when it is hot. Click expands it to the full panel; drag it
+anywhere and the position persists. It is deliberately not the default: the
 default posture is silence.
+
+**The widget can also carry a taskbar button.** On Windows the tray decides for
+itself whether an icon sits on the taskbar or hides in the overflow flyout, and
+**an app cannot promote its own icon** — that is a user choice (drag it out of
+the overflow, or Settings → Personalization → Taskbar → Other system tray
+icons). For anyone who wants a directly clickable taskbar entry rather than a
+two-click flyout, the widget runs with `skipTaskbar: false` by default, which
+gives exactly that. Settings links straight to the Windows page via
+`ms-settings:taskbar`.
+
+**Sizing is a setting, not a constant.** `uiScale` (0.8–2.0) drives the
+renderer zoom factor *and* the window dimensions together, so the panel grows
+with its type rather than clipping it. The tray glyph is separate: Windows
+fixes the slot at 16 logical px, so "bigger" there means rendering at a higher
+scale factor for crispness and letting `trayThickness` (0.18–0.5 of radius)
+and `trayStyle` (`ring` | `disc`) use more of the slot. All of it lives in
+`~/.adjent/settings.json` and applies live.
 
 **Notifications are native OS toasts, routed by severity.** Windows Action
 Center / libnotify — never a custom pop-over window, so they obey your OS's
@@ -52,7 +70,7 @@ most two actions.
 | --- | --- | --- | --- |
 | Tray icon | always | 16–24 px | one arc, one status colour |
 | Toast | on `warn`/`critical` alarms | OS-standard | one alarm, ≤2 actions |
-| Pinned widget | opt-in, always-on-top | ~320×88 | verdict · hero · rate · pace bar |
+| Pinned widget | opt-in, always-on-top | ~340×96 | verdict · hero · rate · pace bar (+ taskbar button) |
 | Panel | on tray click | 380×560 | the full resting surface below |
 | Detail views | on click inside panel | in-panel navigation | tiers 3–4 |
 
@@ -391,7 +409,7 @@ drops and the UI says so.
 | 2 | Panel, at rest | verdict · hero · chart · other windows · agent rows |
 | 3 | Click a window | that window's history, token breakdown by model and kind |
 | 4 | Click an agent | its session timeline, subagent tree, per-turn tokens |
-| 5 | Settings | alarm rules, sinks, units, poll cadence |
+| 5 | Settings | interface size, tray glyph, widget/taskbar, poll cadence, pause alarms; alarm rules and sinks in `~/.adjent/alarms.yaml` |
 
 Nothing from tier 3 or below is ever promoted to the resting surface "because it
 is interesting". Interesting is not the bar; *actionable right now* is.
