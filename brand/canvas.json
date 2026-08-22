@@ -1,47 +1,44 @@
 {
   "pages": [
-    { "id": "page-1", "name": "Directions" },
+    { "id": "page-1", "name": "Identity" },
     { "id": "page-2", "name": "System" },
-    { "id": "page-3", "name": "v3 · D E F" },
-    { "id": "page-4", "name": "v2 · A B C" },
-    { "id": "page-5", "name": "v1 · ring" }
+    { "id": "page-3", "name": "Explorations" }
   ],
   "artboards": [
-    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 720, "page": "page-1" },
-    { "file": "DirectionG.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 660, "page": "page-1" },
-    { "file": "DirectionH.dc.html", "x": 0, "y": 840, "w": 1120, "h": 660, "page": "page-1" },
-    { "file": "DirectionI.dc.html", "x": 1240, "y": 840, "w": 1120, "h": 660, "page": "page-1" },
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 780, "page": "page-1" },
+    { "file": "Plate.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 760, "page": "page-1" },
+    { "file": "Usage.dc.html", "x": 0, "y": 900, "w": 1120, "h": 800, "page": "page-1" },
+    { "file": "Device.dc.html", "x": 1240, "y": 900, "w": 1120, "h": 600, "page": "page-1" },
 
     { "file": "System.dc.html", "x": 0, "y": 0, "w": 1120, "h": 800, "page": "page-2" },
 
-    { "file": "DirectionD.dc.html", "x": 0, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
-    { "file": "DirectionE.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
-    { "file": "DirectionF.dc.html", "x": 2480, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
-
-    { "file": "DirectionA.dc.html", "x": 0, "y": 0, "w": 1120, "h": 640, "page": "page-4" },
-    { "file": "DirectionB.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 640, "page": "page-4" },
-    { "file": "DirectionC.dc.html", "x": 2480, "y": 0, "w": 1120, "h": 640, "page": "page-4" },
-
-    { "file": "Mark.dc.html", "x": 0, "y": 0, "w": 1120, "h": 720, "page": "page-5" },
-    { "file": "Usage.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 760, "page": "page-5" },
-    { "file": "Alternates.dc.html", "x": 0, "y": 880, "w": 1120, "h": 480, "page": "page-5" }
+    { "file": "DirectionG.dc.html", "x": 0, "y": 0, "w": 1120, "h": 660, "page": "page-3" },
+    { "file": "DirectionH.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 660, "page": "page-3" },
+    { "file": "DirectionD.dc.html", "x": 2480, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "DirectionE.dc.html", "x": 3720, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "DirectionF.dc.html", "x": 4960, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "DirectionA.dc.html", "x": 0, "y": 900, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "DirectionB.dc.html", "x": 1240, "y": 900, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "DirectionC.dc.html", "x": 2480, "y": 900, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "Mark.dc.html", "x": 3720, "y": 900, "w": 1120, "h": 720, "page": "page-3" },
+    { "file": "Alternates.dc.html", "x": 4960, "y": 900, "w": 1120, "h": 480, "page": "page-3" }
   ],
   "annotations": [
     {
-      "id": "the-grammar",
+      "id": "the-decision",
       "x": 2480,
       "y": 0,
       "w": 430,
       "page": "page-1",
-      "text": "Why the dash-dot matters\n\nIt is not a texture choice. In technical drawing, a dash-dot line is the convention for a datum or centreline — the fixed reference an object is measured against. Your pace line is exactly that.\n\nSo the mark inherits a grammar rather than inventing one: solid means measured, dash-dot means reference, and the relationship between them is the reading. It also gives the whole identity a second usable device — dash-dot rules can mark projected or derived figures anywhere in the product, which is the ≈ problem from the provenance rule solved graphically."
+      "text": "The mark, settled\n\nTwo rules at a 1:2 slope, offset 28, knocked out of a solid plate and cropped by its edges — so neither line has an end, and the plate reads as a detail of a larger drawing.\n\nThe heavy rule is measured. The dash-dot one is the datum, borrowing the drafting convention for a reference line. That is the whole idea, and it is the same relationship the pace chart already draws.\n\nCorner rule: the plate is a hard square everywhere the app controls its own edge — tray, header, print, web, Windows. Only the macOS and Linux launcher icon gets r13 of 64, because those grids mask every icon and a square there reads as a mistake."
     },
     {
-      "id": "shortlist-3",
+      "id": "assets-note",
       "x": 2480,
-      "y": 480,
+      "y": 620,
       "w": 430,
       "page": "page-1",
-      "text": "Where I'd land: I, then G.\n\nI is the one that stops being a chart. Cropping the pair full-bleed kills every cap and terminal, and the plate gives the brand a surface — something to print, emboss, stamp on a release. It needs one decision from you: hard square, or a plate with the corners softened to sit beside OS icons.\n\nG is the most articulate and the most literal. H is the cleanest abstraction but drifts toward generic punctuation.\n\nSay which, and whether the plate should be square or softened, and I'll build the chosen one out in full."
+      "text": "Files in the repo\n\nbrand/assets/ now holds the mark as SVG: the square plate, the reversed plate, the r13 launcher icon, and the coarsened 16px cut whose thicker strokes keep the knockout open at tray size.\n\nStill to do when you want it: raster the .ico and .png set, and point the tray renderer at the plate instead of the arc — that one is a real code change in packages/desktop/src/trayicon.ts, not a brand decision."
     }
   ],
   "launch": { "view": "canvas", "page": "page-1" }
