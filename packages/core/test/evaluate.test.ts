@@ -9,15 +9,15 @@ import type {
   AgentBurnRule,
   AppState,
   PaceRule,
-  QuotaWindow,
+  QuotaLimit,
   ThresholdRule,
-  WindowAssessment,
+  LimitAssessment,
 } from '../src/model/types.js';
 
 const H = 3600_000;
 const T0 = 1_700_000_000_000; // arbitrary synthetic epoch
 
-function win(partial: Partial<QuotaWindow>): QuotaWindow {
+function win(partial: Partial<QuotaLimit>): QuotaLimit {
   return {
     backend: 'claude',
     key: '5h',
@@ -34,16 +34,16 @@ function win(partial: Partial<QuotaWindow>): QuotaWindow {
   };
 }
 
-function assess(w: QuotaWindow, now: number, burnPctPerHour: number | null): WindowAssessment {
+function assess(w: QuotaLimit, now: number, burnPctPerHour: number | null): LimitAssessment {
   const windowMs = w.windowMinutes * 60_000;
   const start = (w.resetsAt ?? now) - windowMs;
   const paceLinePct = Math.min(100, Math.max(0, ((now - start) / windowMs) * 100));
   const burn = burnPctPerHour === null ? null : { pctPerHour: burnPctPerHour, updatedAt: now };
   const exhaustsAt = burn && burn.pctPerHour > 0 ? now + ((100 - w.utilization) / burn.pctPerHour) * H : null;
-  return { window: w, burn, verdict: 'on-pace', paceLinePct, exhaustsAt, binding: true };
+  return { limit: w, burn, verdict: 'on-pace', paceLinePct, exhaustsAt, binding: true };
 }
 
-function state(windows: WindowAssessment[], burns: AppState['agentBurns'] = []): AppState {
+function state(limits: LimitAssessment[], burns: AppState['agentBurns'] = []): AppState {
   return {
     generatedAt: T0,
     backends: [],
@@ -52,15 +52,15 @@ function state(windows: WindowAssessment[], burns: AppState['agentBurns'] = []):
       { id: 'claude:a2', backend: 'claude', label: 'proj-two', projectPath: null, gitBranch: null, model: 'model-x', effort: null, entrypoint: null, parentId: null, pid: null, state: 'live', startedAt: T0, lastActivityAt: T0, totals: { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, thinking: 0 } },
       { id: 'claude:a3', backend: 'claude', label: 'proj-three', projectPath: null, gitBranch: null, model: 'model-x', effort: null, entrypoint: null, parentId: null, pid: null, state: 'live', startedAt: T0, lastActivityAt: T0, totals: { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, thinking: 0 } },
     ],
-    windows,
+    limits,
     agentBurns: burns,
     epsilon: null,
     fitConfidence: 'high',
   };
 }
 
-const paceRule: PaceRule = { id: 'pace', type: 'pace', backend: 'any', window: 'any', tolerancePp: 10, exhaustionLeadMin: 45, cooldownMin: 20, severity: 'warn' };
-const thresholdRule: ThresholdRule = { id: 'steps', type: 'threshold', backend: 'any', window: 'any', levels: [25, 50, 80, 95], severity: { 80: 'warn', 95: 'critical' } };
+const paceRule: PaceRule = { id: 'pace', type: 'pace', backend: 'any', limit: 'any', tolerancePp: 10, exhaustionLeadMin: 45, cooldownMin: 20, severity: 'warn' };
+const thresholdRule: ThresholdRule = { id: 'steps', type: 'threshold', backend: 'any', limit: 'any', levels: [25, 50, 80, 95], severity: { 80: 'warn', 95: 'critical' } };
 const burnRule: AgentBurnRule = { id: 'runaway', type: 'agent_burn', windowMin: 10, relToMedian: 4, sharePct: 60, absPctPerHour: 8, cooldownMin: 15, severity: 'warn' };
 
 describe('pace rule', () => {

@@ -2,41 +2,46 @@
   "pages": [
     { "id": "page-1", "name": "Directions" },
     { "id": "page-2", "name": "System" },
-    { "id": "page-3", "name": "v2 · A B C" },
-    { "id": "page-4", "name": "v1 · ring" }
+    { "id": "page-3", "name": "v3 · D E F" },
+    { "id": "page-4", "name": "v2 · A B C" },
+    { "id": "page-5", "name": "v1 · ring" }
   ],
   "artboards": [
-    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 700, "page": "page-1" },
-    { "file": "DirectionD.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 640, "page": "page-1" },
-    { "file": "DirectionE.dc.html", "x": 0, "y": 820, "w": 1120, "h": 640, "page": "page-1" },
-    { "file": "DirectionF.dc.html", "x": 1240, "y": 820, "w": 1120, "h": 640, "page": "page-1" },
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 720, "page": "page-1" },
+    { "file": "DirectionG.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 660, "page": "page-1" },
+    { "file": "DirectionH.dc.html", "x": 0, "y": 840, "w": 1120, "h": 660, "page": "page-1" },
+    { "file": "DirectionI.dc.html", "x": 1240, "y": 840, "w": 1120, "h": 660, "page": "page-1" },
 
     { "file": "System.dc.html", "x": 0, "y": 0, "w": 1120, "h": 800, "page": "page-2" },
 
-    { "file": "DirectionA.dc.html", "x": 0, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
-    { "file": "DirectionB.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
-    { "file": "DirectionC.dc.html", "x": 2480, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "DirectionD.dc.html", "x": 0, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "DirectionE.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
+    { "file": "DirectionF.dc.html", "x": 2480, "y": 0, "w": 1120, "h": 640, "page": "page-3" },
 
-    { "file": "Mark.dc.html", "x": 0, "y": 0, "w": 1120, "h": 720, "page": "page-4" },
-    { "file": "Usage.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 760, "page": "page-4" },
-    { "file": "Alternates.dc.html", "x": 0, "y": 880, "w": 1120, "h": 480, "page": "page-4" }
+    { "file": "DirectionA.dc.html", "x": 0, "y": 0, "w": 1120, "h": 640, "page": "page-4" },
+    { "file": "DirectionB.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 640, "page": "page-4" },
+    { "file": "DirectionC.dc.html", "x": 2480, "y": 0, "w": 1120, "h": 640, "page": "page-4" },
+
+    { "file": "Mark.dc.html", "x": 0, "y": 0, "w": 1120, "h": 720, "page": "page-5" },
+    { "file": "Usage.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 760, "page": "page-5" },
+    { "file": "Alternates.dc.html", "x": 0, "y": 880, "w": 1120, "h": 480, "page": "page-5" }
   ],
   "annotations": [
     {
-      "id": "what-changed",
+      "id": "the-grammar",
       "x": 2480,
       "y": 0,
-      "w": 420,
+      "w": 430,
       "page": "page-1",
-      "text": "What changed\n\nA is retired. The phallic read came from its construction, not its framing: one heavy shaft with a round cap, rising on a diagonal. Nothing survives that.\n\nD keeps A's idea and removes the cause — the composition is horizontal, both lines are rules rather than strokes, and a perpendicular tick turns the gap into a measurement.\n\nE and F are both B, given craft. E carves the margin out of solid form; F gives the approach a cadence. Neither floats a lone stick next to a box any more."
+      "text": "Why the dash-dot matters\n\nIt is not a texture choice. In technical drawing, a dash-dot line is the convention for a datum or centreline — the fixed reference an object is measured against. Your pace line is exactly that.\n\nSo the mark inherits a grammar rather than inventing one: solid means measured, dash-dot means reference, and the relationship between them is the reading. It also gives the whole identity a second usable device — dash-dot rules can mark projected or derived figures anywhere in the product, which is the ≈ problem from the provenance rule solved graphically."
     },
     {
-      "id": "shortlist-2",
+      "id": "shortlist-3",
       "x": 2480,
-      "y": 430,
-      "w": 420,
+      "y": 480,
+      "w": 430,
       "page": "page-1",
-      "text": "Where I'd land: E, then D.\n\nE is the only one that is a composition rather than a diagram — solid, confident at 16px, and the closing channel is a genuinely good animation. It costs you legibility of meaning: it needs the wordmark to explain itself once.\n\nD is the most articulate and the least striking. F is the most legible and the most conventional — it will always be read as a bar chart first.\n\nSay which and I'll build it out: icon set, lockups, panel and widget redrawn around it."
+      "text": "Where I'd land: I, then G.\n\nI is the one that stops being a chart. Cropping the pair full-bleed kills every cap and terminal, and the plate gives the brand a surface — something to print, emboss, stamp on a release. It needs one decision from you: hard square, or a plate with the corners softened to sit beside OS icons.\n\nG is the most articulate and the most literal. H is the cleanest abstraction but drifts toward generic punctuation.\n\nSay which, and whether the plate should be square or softened, and I'll build the chosen one out in full."
     }
   ],
   "launch": { "view": "canvas", "page": "page-1" }

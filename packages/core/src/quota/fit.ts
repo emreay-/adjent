@@ -10,7 +10,7 @@
  * model×kind) is handled by fitting each level and reporting the finest one
  * whose residual is acceptable; blended is always identifiable.
  */
-import type { QuotaWindow } from '../model/types.js';
+import type { QuotaLimit } from '../model/types.js';
 import {
   DEFAULT_PRICE_RATIOS,
   priorDirection,
@@ -53,7 +53,7 @@ export class ExchangeRateFit {
   }
 
   /** Feed one utilization poll of one window; builds one row per level. */
-  observePoll(w: QuotaWindow, ledger: UsageLedger): void {
+  observePoll(w: QuotaLimit, ledger: UsageLedger): void {
     const at = w.observedAt;
     const prev = this.lastPoll;
     this.lastPoll = { utilization: w.utilization, at };

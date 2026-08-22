@@ -13,7 +13,7 @@ The panel shows "resets in 2h 41m", not "the countdown in the primary read".
 
 | Term | Plain meaning |
 | --- | --- |
-| **Panel** | The small window that opens when you click the tray icon. |
+| **Panel** | The small limit that opens when you click the tray icon. |
 | **At rest** | What the panel shows before you click anything. The opposite of "behind a click". |
 | **Primary read** | The top block: verdict, big number, rate, countdown, chart. The part you see in the first second. It has a name only so we can put a hard cap on what goes in it. |
 | **Hero number** | The single biggest number on the panel; there is exactly one. In Adjent it is always the same metric: **vendor-reported utilization of the binding limit** — measured, never derived, so it survives total failure of the modelling layer. Its rate and reset countdown sit beside it as modifiers, not rivals. See [UI.md](UI.md#the-hero-number-exactly). |
@@ -28,14 +28,14 @@ The panel shows "resets in 2h 41m", not "the countdown in the primary read".
 | --- | --- |
 | **Backend** | A coding agent installed on your machine — Claude Code, Codex, and later others. |
 | **Vendor** | The company whose service a backend talks to: Anthropic for Claude Code, OpenAI for Codex. Used specifically to mean *the authority that defines and reports your quota*. "Vendor-reported" is the strongest provenance a number can have in Adjent — it means we read it rather than computed it, and we never override it. |
-| **Window** | A period your quota is measured over. Claude has a 5-hour and a 7-day one; Codex has its own. |
-| **Utilization** | The percentage the vendor says you have used of a window. We do not compute this — we read it. |
-| **Binding limit** | Of all your windows, the one that will stop you first. Not necessarily the fullest one: 84% of a weekly window with six days left is less urgent than 60% of a 5-hour window with 40 minutes left. The hero number always shows the binding limit. Selection rule: vendor's `is_active` flag if present, else earliest projected exhaustion among windows that run out before they reset, else highest utilization — with hysteresis so the choice holds still. Full rule in [UI.md](UI.md#choosing-the-binding-limit). |
+| **Limit** | One of your usage ceilings: a percentage that fills over a period, then resets. Claude has a 5-hour and a 7-day one plus per-model scoped ones; Codex has its own. Called a *limit* rather than a *window* because in a desktop app a window is a UI element — and because it is the vendors' own word (`limits[]`, `rate_limits`, `/usage`). The underlying period is still a rolling **window** in the maths below, where that is the standard term. |
+| **Utilization** | The percentage the vendor says you have used of a limit. We do not compute this — we read it. |
+| **Binding limit** | Of all your limits, the one that will stop you first. Not necessarily the fullest one: 84% of a weekly limit with six days left is less urgent than 60% of a 5-hour limit with 40 minutes left. The hero number always shows the binding limit. Selection rule: vendor's `is_active` flag if present, else earliest projected exhaustion among limits that run out before they reset, else highest utilization — with hysteresis so the choice holds still. Full rule in [UI.md](UI.md#choosing-the-binding-limit). |
 | **Burn rate** | How fast utilization is climbing, in **percentage points per hour** (`%/h`). |
-| **Pace line** | The diagonal on the chart: where utilization *would* be if you spent the window evenly. Two hours into a five-hour window, the pace line is at 40%. |
+| **Pace line** | The diagonal on the chart: where utilization *would* be if you spent the limit evenly. Two hours into a five-hour limit, the pace line is at 40%. |
 | **Ahead of pace** | Above the pace line — spending faster than even. Not automatically bad; it is bad if the projection says you run out early. |
 | **Projection** | The dotted line: where your current burn rate lands you. |
-| **Exhausts at** | When the projection hits 100%. If that is before the window resets, you run out. |
+| **Exhausts at** | When the projection hits 100%. If that is before the limit resets, you run out. |
 | **Verdict** | The one-word summary: *On pace* / *Ahead of pace* / *Over*. |
 | **Agent** | One running session of one backend, in one project. Subagents are counted separately and attributed to their parent. |
 
@@ -521,7 +521,7 @@ $$r(t) = \frac{u(t) - u(t - h)}{h}, \qquad h = 15\ \text{min}$$
 
 | Symbol | Meaning |
 | --- | --- |
-| $r(t)$ | window burn rate at time $t$, in percentage points per hour |
+| $r(t)$ | limit burn rate at time $t$, in percentage points per hour |
 | $u(t)$ | vendor-reported utilization, percent |
 | $h$ | lookback for the difference — 15 minutes, expressed in hours so the units come out as `%/h` |
 
@@ -561,7 +561,7 @@ $$\alpha = 1 - 2^{-\Delta t / T_{1/2}}$$
 
 Adjent uses $T_{1/2} = 5$ minutes: a genuine spike shows up within a minute or
 two, but no single noisy poll can dominate. The EWMA is reset — not merely
-smoothed through — whenever the window rolls over, since the drop to near-zero is
+smoothed through — whenever the limit rolls over, since the drop to near-zero is
 real and must not be averaged away.
 
 ## Per-agent burn rate — derived, needs the weights

@@ -27,7 +27,7 @@ export const DEFAULT_CONFIG: AlarmConfig = {
       id: 'pace-any',
       type: 'pace',
       backend: 'any',
-      window: 'any',
+      limit: 'any',
       tolerancePp: 10,
       exhaustionLeadMin: 45,
       cooldownMin: 20,
@@ -37,7 +37,7 @@ export const DEFAULT_CONFIG: AlarmConfig = {
       id: 'steps',
       type: 'threshold',
       backend: 'any',
-      window: 'any',
+      limit: 'any',
       levels: [25, 50, 80, 95],
       severity: { 25: 'info', 50: 'info', 80: 'warn', 95: 'critical' },
     },
@@ -86,6 +86,11 @@ const SEVERITIES: readonly Severity[] = ['info', 'warn', 'critical'];
 const sev = (v: unknown, fallback: Severity): Severity =>
   SEVERITIES.includes(v as Severity) ? (v as Severity) : fallback;
 const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+/** `limit:` is the current key; `window:` is still accepted from older files. */
+const limitOf = (scope: Record<string, unknown>, r: Record<string, unknown>): string | 'any' => {
+  const v = scope['limit'] ?? r['limit'] ?? scope['window'] ?? r['window'];
+  return typeof v === 'string' ? v : 'any';
+};
 const backendOf = (v: unknown): BackendId | 'any' => (v === 'claude' || v === 'codex' ? v : 'any');
 /** '20m' | '1h' | 45 → minutes */
 const minutes = (v: unknown, fallback: number): number => {
@@ -113,7 +118,7 @@ function coerceRule(raw: unknown): Rule | null {
         id,
         type: 'pace',
         backend: backendOf(scope['backend'] ?? r['backend']),
-        window: typeof (scope['window'] ?? r['window']) === 'string' ? ((scope['window'] ?? r['window']) as string) : 'any',
+        limit: limitOf(scope, r),
         tolerancePp: num(r['tolerance_pp'], 10),
         exhaustionLeadMin: minutes(r['project_exhaustion_lead'], 45),
         cooldownMin: minutes(r['cooldown'], 20),
@@ -132,7 +137,7 @@ function coerceRule(raw: unknown): Rule | null {
         id,
         type: 'threshold',
         backend: backendOf(scope['backend'] ?? r['backend']),
-        window: typeof (scope['window'] ?? r['window']) === 'string' ? ((scope['window'] ?? r['window']) as string) : 'any',
+        limit: limitOf(scope, r),
         levels: levels.length > 0 ? levels : [25, 50, 80, 95],
         severity: sevMap,
       };

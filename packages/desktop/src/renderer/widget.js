@@ -29,19 +29,19 @@ window.adjent.onState((payload) => {
   if (payload.explanations) EXPL = payload.explanations;
   const state = payload.state;
   const now = state.generatedAt;
-  const b = state.windows.find((w) => w.binding);
+  const b = state.limits.find((w) => w.binding);
   if (!b) return;
   const v = V[b.verdict] || V.idle;
 
   $('verdict').textContent = v.word;
   $('verdict').className = `chip ${v.cls}`;
-  $('hero').textContent = `${Math.round(b.window.utilization)}%`;
+  $('hero').textContent = `${Math.round(b.limit.utilization)}%`;
   $('rate').textContent =
     b.burn && Math.abs(b.burn.pctPerHour) >= 0.05
       ? `${b.burn.pctPerHour >= 0 ? '+' : ''}${b.burn.pctPerHour.toFixed(1)} %/h`
       : '';
-  const reset = b.window.resetsAt !== null ? `↺ ${fmtDur(b.window.resetsAt - now)}` : '';
-  $('meta').innerHTML = `${b.window.label}<br>${reset}`;
+  const reset = b.limit.resetsAt !== null ? `↺ ${fmtDur(b.limit.resetsAt - now)}` : '';
+  $('meta').innerHTML = `${b.limit.label}<br>${reset}`;
 
   // The strip is too small for a tooltip layer, so use native titles.
   $('hero').title = tipFor('hero');
@@ -51,7 +51,7 @@ window.adjent.onState((payload) => {
   document.querySelector('.bar').title = tipFor('paceLine');
 
   const fill = $('fill');
-  fill.style.width = `${Math.min(100, Math.max(0, b.window.utilization))}%`;
+  fill.style.width = `${Math.min(100, Math.max(0, b.limit.utilization))}%`;
   fill.style.background = v.color;
   // The pace line as a tick on the bar: the gap to it is the insight.
   $('pace').style.left = b.paceLinePct !== null ? `${Math.min(100, Math.max(0, b.paceLinePct))}%` : '-10px';

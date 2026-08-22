@@ -12,13 +12,13 @@ import type {
   Backend,
   Confidence,
   FireLog,
-  QuotaWindow,
+  QuotaLimit,
 } from './model/types.js';
 import { emptyFireLog } from './model/types.js';
 import type { ProviderAdapter } from './providers/provider.js';
 import { UsageLedger } from './quota/ledger.js';
 import { ExchangeRateFit, type FitResult } from './quota/fit.js';
-import { WindowAssessor } from './quota/assess.js';
+import { LimitAssessor } from './quota/assess.js';
 import { evaluate } from './rules/evaluate.js';
 import { DEFAULT_CONFIG, type AlarmConfig } from './rules/config.js';
 import { SinkRouter } from './sinks/sink.js';
@@ -48,8 +48,8 @@ export class Monitor extends EventEmitter {
   private config: AlarmConfig;
 
   readonly ledger = new UsageLedger();
-  private readonly fits = new Map<string, ExchangeRateFit>(); // per binding-capable backend window
-  private assessor = new WindowAssessor();
+  private readonly fits = new Map<string, ExchangeRateFit>(); // per binding-capable backend limit
+  private assessor = new LimitAssessor();
   private readonly fireLog: FireLog = emptyFireLog();
   readonly router: SinkRouter;
 
@@ -62,7 +62,7 @@ export class Monitor extends EventEmitter {
   private restored = false;
   private lastStateSaveAt = 0;
   private lastHistoryAt = new Map<string, { at: number; u: number }>();
-  /** Utilization samples for the current windows, newest last. */
+  /** Utilization samples for the current limits, newest last. */
   private history: HistorySample[] = [];
   /** Alarm log, oldest first. The notifications view reverses it. */
   private alarmHistory: Alarm[] = [];
@@ -119,10 +119,10 @@ export class Monitor extends EventEmitter {
     this.alarmHistory = await this.store.loadAlarms(now);
   }
 
-  /** Utilization samples for one window key, oldest first. */
-  historyFor(windowKey: string, sinceMs?: number): HistorySample[] {
+  /** Utilization samples for one limit key, oldest first. */
+  historyFor(limitKey: string, sinceMs?: number): HistorySample[] {
     const cutoff = sinceMs ?? 0;
-    return this.history.filter((s) => s.w === windowKey && s.t >= cutoff);
+    return this.history.filter((s) => s.w === limitKey && s.t >= cutoff);
   }
 
   /** The alarm log, newest first — what the notifications view renders. */
@@ -149,7 +149,7 @@ export class Monitor extends EventEmitter {
     const now = this.now();
     const backends: Backend[] = [];
     const agents: Agent[] = [];
-    const windows: QuotaWindow[] = [];
+    const limits: QuotaLimit[] = [];
 
     for (const p of this.providers) {
       try {
@@ -167,7 +167,7 @@ export class Monitor extends EventEmitter {
         this.ledger.add(events);
         backends.push(b);
         agents.push(...(await p.listAgents()));
-        windows.push(...(await p.quota()));
+        limits.push(...(await p.quota()));
       } catch (e) {
         // Degrade one provider, never the app.
         backends.push({
@@ -185,7 +185,7 @@ export class Monitor extends EventEmitter {
     // Feed the fit one poll per short (5h-class) window per backend — the
     // window whose Δu is most informative at our cadence.
     let fitResult: FitResult | null = null;
-    for (const w of windows) {
+    for (const w of limits) {
       if (w.windowMinutes > 0 && w.windowMinutes <= 600 && w.scope === null) {
         const key = `${w.backend}:${w.key}`;
         const fit = this.fits.get(key) ?? new ExchangeRateFit();
@@ -196,7 +196,7 @@ export class Monitor extends EventEmitter {
       }
     }
 
-    const assessments = this.assessor.assess(windows, now);
+    const assessments = this.assessor.assess(limits, now);
 
     // Per-agent burn: r_a = priced consumption over τ, scaled to an hour. Derived — render with ≈.
     const agentBurns: AgentBurn[] = [];
@@ -221,7 +221,7 @@ export class Monitor extends EventEmitter {
       generatedAt: now,
       backends,
       agents: agents.sort((a, b) => b.lastActivityAt - a.lastActivityAt),
-      windows: assessments,
+      limits: assessments,
       agentBurns: agentBurns.sort((a, b) => b.pctPerHour - a.pctPerHour),
       epsilon: this.epsilonEwma,
       fitConfidence,
@@ -236,7 +236,7 @@ export class Monitor extends EventEmitter {
       for (const a of alarms) this.emit('alarm', a);
     }
 
-    await this.recordHistory(windows, now);
+    await this.recordHistory(limits, now);
     await this.maybeSaveState(now);
 
     this.emit('state', state);
@@ -244,9 +244,9 @@ export class Monitor extends EventEmitter {
   }
 
   /** Downsampled: only on change, or every HISTORY_MIN_INTERVAL_MS. */
-  private async recordHistory(windows: QuotaWindow[], now: number): Promise<void> {
+  private async recordHistory(limits: QuotaLimit[], now: number): Promise<void> {
     const fresh: HistorySample[] = [];
-    for (const w of windows) {
+    for (const w of limits) {
       const key = `${w.backend}:${w.key}`;
       const prev = this.lastHistoryAt.get(key);
       const changed = !prev || prev.u !== w.utilization;
@@ -284,7 +284,7 @@ export class Monitor extends EventEmitter {
 
   /** Replace the assessor with a restored one (its state is private). */
   private assessorRestore(raw: unknown): void {
-    this.assessor = WindowAssessor.fromJSON(raw);
+    this.assessor = LimitAssessor.fromJSON(raw);
   }
 
   /** Flush everything now — call on shutdown. */
@@ -293,7 +293,7 @@ export class Monitor extends EventEmitter {
     await this.maybeSaveState(this.now());
   }
 
-  private updateEpsilon(assessments: AppState['windows'], burns: AgentBurn[], now: number): void {
+  private updateEpsilon(assessments: AppState['limits'], burns: AgentBurn[], now: number): void {
     const binding = assessments.find((a) => a.binding && a.burn !== null);
     if (!binding || binding.burn === null) return;
     const vendorRate = binding.burn.pctPerHour; // net; agents' side omits aging-out too over short τ,

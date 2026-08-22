@@ -11,7 +11,7 @@
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { Agent, Backend, QuotaWindow, TokenTotals, UsageEvent } from '../../model/types.js';
+import type { Agent, Backend, QuotaLimit, TokenTotals, UsageEvent } from '../../model/types.js';
 import { ZERO_TOTALS } from '../../model/types.js';
 import { asNum, asObj, asStr, parseLine, tailFile, type TailState } from '../../collect/tail.js';
 import { pidAlive, type ProviderAdapter } from '../provider.js';
@@ -57,7 +57,7 @@ export class ClaudeProvider implements ProviderAdapter {
     { model: string | null; effort: string | null; gitBranch: string | null; lastTs: number; totals: TokenTotals }
   >();
 
-  private lastQuota: QuotaWindow[] = [];
+  private lastQuota: QuotaLimit[] = [];
   private lastPollAt = 0;
   private backoffUntil = 0;
 
@@ -308,7 +308,7 @@ export class ClaudeProvider implements ProviderAdapter {
   }
 
   // -------------------------------------------------------------------------
-  async quota(): Promise<QuotaWindow[]> {
+  async quota(): Promise<QuotaLimit[]> {
     const now = this.now();
     if (now < this.backoffUntil || now - this.lastPollAt < MIN_POLL_MS) return this.lastQuota;
     const creds = await this.readCredentials();
@@ -342,9 +342,9 @@ export class ClaudeProvider implements ProviderAdapter {
    * Defensive parse: limits[] and the named windows are mutual fallbacks
    * (docs/ARCHITECTURE.md § Claude — reported).
    */
-  private parseUsageBody(body: Record<string, unknown>, observedAt: number): QuotaWindow[] {
-    const out: QuotaWindow[] = [];
-    const push = (w: Omit<QuotaWindow, 'backend' | 'source' | 'observedAt'>) =>
+  private parseUsageBody(body: Record<string, unknown>, observedAt: number): QuotaLimit[] {
+    const out: QuotaLimit[] = [];
+    const push = (w: Omit<QuotaLimit, 'backend' | 'source' | 'observedAt'>) =>
       out.push({ backend: 'claude', source: 'reported', observedAt, ...w });
 
     const limits = body['limits'];

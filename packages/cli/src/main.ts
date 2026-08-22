@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * adjent — headless CLI (M1).
- *   adjent status      one snapshot: backends, quota windows, agents
+ *   adjent status      one snapshot: backends, quota limits, agents
  *   adjent watch       continuous loop with alarms to the console
  *   adjent statusline  one line for Claude Code's statusLine setting
  *   adjent explain     plain-language definition of any metric shown
@@ -21,7 +21,7 @@ import {
   fmtTime,
   loadConfig,
   type AppState,
-  type WindowAssessment,
+  type LimitAssessment,
 } from '@adjent/core';
 
 const VERDICT_MARK: Record<string, string> = { 'on-pace': '✓', ahead: '▲', over: '■', idle: '·' };
@@ -46,8 +46,8 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
-function windowLine(a: WindowAssessment, now: number): string {
-  const w = a.window;
+function limitLine(a: LimitAssessment, now: number): string {
+  const w = a.limit;
   const mark = VERDICT_MARK[a.verdict] ?? '·';
   const rate = a.burn && Math.abs(a.burn.pctPerHour) >= 0.05 ? `  ${a.burn.pctPerHour >= 0 ? '+' : ''}${a.burn.pctPerHour.toFixed(1)} %/h` : '';
   const reset = w.resetsAt !== null ? `  resets in ${fmtDur(w.resetsAt - now)}` : '';
@@ -64,16 +64,16 @@ function render(state: AppState): string {
   const now = state.generatedAt;
   const lines: string[] = [];
 
-  const binding = state.windows.find((a) => a.binding);
+  const binding = state.limits.find((a) => a.binding);
   if (binding) {
     const word = VERDICT_WORD[binding.verdict] ?? '';
-    lines.push(`${VERDICT_MARK[binding.verdict] ?? ''} ${word} — ${binding.window.label} at ${Math.round(binding.window.utilization)}%`);
+    lines.push(`${VERDICT_MARK[binding.verdict] ?? ''} ${word} — ${binding.limit.label} at ${Math.round(binding.limit.utilization)}%`);
   }
 
-  lines.push('', 'Quota windows');
-  if (state.windows.length === 0) lines.push('  (none reported)');
-  for (const a of [...state.windows].sort((x, y) => Number(y.binding) - Number(x.binding))) {
-    lines.push(windowLine(a, now));
+  lines.push('', 'Quota limits');
+  if (state.limits.length === 0) lines.push('  (none reported)');
+  for (const a of [...state.limits].sort((x, y) => Number(y.binding) - Number(x.binding))) {
+    lines.push(limitLine(a, now));
   }
 
   lines.push('', 'Backends');
@@ -106,12 +106,12 @@ function render(state: AppState): string {
 }
 
 function statusline(state: AppState): string {
-  const b = state.windows.find((a) => a.binding);
+  const b = state.limits.find((a) => a.binding);
   if (!b) return 'adjent: no quota data';
   const mark = VERDICT_MARK[b.verdict] ?? '';
   const rate = b.burn && Math.abs(b.burn.pctPerHour) >= 0.05 ? ` ${b.burn.pctPerHour >= 0 ? '+' : ''}${b.burn.pctPerHour.toFixed(0)}%/h` : '';
-  const reset = b.window.resetsAt !== null ? ` ↺${fmtDur(b.window.resetsAt - state.generatedAt)}` : '';
-  return `${mark} ${b.window.label} ${Math.round(b.window.utilization)}%${rate}${reset}`;
+  const reset = b.limit.resetsAt !== null ? ` ↺${fmtDur(b.limit.resetsAt - state.generatedAt)}` : '';
+  return `${mark} ${b.limit.label} ${Math.round(b.limit.utilization)}%${rate}${reset}`;
 }
 
 /** Wrap prose to a readable width without pulling in a dependency. */

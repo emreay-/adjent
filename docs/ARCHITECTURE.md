@@ -192,7 +192,7 @@ Because this endpoint is private, four rules are structural, not stylistic:
 3. **Poll at most once a minute**, and only while a session is live or the panel
    is open. Plus an explicit manual refresh.
 4. **A shape change degrades one provider, never the app.** Parse defensively;
-   fall back to `limits[]` if the named window keys move, and vice versa.
+   fall back to `limits[]` if the named limit keys move, and vice versa.
 
 Adjent never sends the token anywhere except the endpoint that issued it, and
 never logs or displays it.
@@ -215,10 +215,10 @@ is the real unit.
 #### How it is learned
 
 Adjent holds two aligned series: an exact per-turn token timeline (model × token
-kind) and a polled utilization series. Between two polls of a trailing window,
+kind) and a polled utilization series. Between two polls of a trailing limit,
 
 ```
-Δu  ≈  Σ_k  w_k · ( tokens_k entering the window
+Δu  ≈  Σ_k  w_k · ( tokens_k entering the limit
                     − tokens_k aging out the back of it )
 ```
 
@@ -231,7 +231,7 @@ toward the truth.
 
 What it yields:
 
-* **A blended rate** — "1% of the 5-hour window ≈ 4.2M tokens at your current
+* **A blended rate** — "1% of the 5-hour limit ≈ 4.2M tokens at your current
   mix." Always identifiable, and the number most people want.
 * **Per-model, per-kind rates** — "1% ≈ 62k Opus output tokens, or 3.1M Opus
   cache reads." Only identifiable when the user's mix actually varies across
@@ -248,12 +248,12 @@ agent burn %/h  =  (agent tokens/h, by kind)  ·  w
 ```
 
 That converts "this subagent wrote 900k tokens" into **"this subagent is eating
-4.1% of your 5-hour window per hour"** — the only form of that number anyone can
+4.1% of your 5-hour limit per hour"** — the only form of that number anyone can
 act on. It is also what makes the `agent_burn` alarm expressible in the same unit
 as every other alarm, and what lets Adjent answer a forward question: "that
-queued refactor looks like ~15M tokens, roughly 3.6% of the window."
+queued refactor looks like ~15M tokens, roughly 3.6% of the limit."
 
-The absolute window size falls out of the same fit (`100 / w · typical mix`) and
+The absolute limit size falls out of the same fit (`100 / w · typical mix`) and
 is shown as an approximation. The authoritative number on the panel is always
 the polled percentage.
 
@@ -264,7 +264,7 @@ click, and the spec for the one chart — is in **[UI.md](UI.md)**. In summary:
 
 * **Tray icon** rendered at runtime: an arc filled to the *binding* limit across
   backends, coloured by pace state rather than raw percentage. 70% six hours into
-  a weekly window is fine; 70% after one hour is not.
+  a weekly limit is fine; 70% after one hour is not.
 * **Popover panel** (frameless, 380×560, anchored to the tray), budgeted to one
   verdict, one hero number, one chart and four agent rows.
 * **Notifications** via Electron `Notification`. Windows needs

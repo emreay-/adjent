@@ -36,7 +36,7 @@ export const RETENTION = {
 export interface HistorySample {
   /** epoch ms */
   t: number;
-  /** `${backend}:${windowKey}` */
+  /** `${backend}:${limitKey}` */
   w: string;
   /** utilization percent */
   u: number;
@@ -49,7 +49,7 @@ export interface PersistedState {
   tailOffsets: Record<string, Record<string, number>>;
   /** ExchangeRateFit.toJSON(), keyed by window */
   fits: Record<string, unknown>;
-  /** WindowAssessor.toJSON() */
+  /** LimitAssessor.toJSON() */
   assessor: unknown;
   fireLog: FireLog | null;
   epsilon: { value: number; at: number } | null;

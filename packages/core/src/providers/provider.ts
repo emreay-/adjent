@@ -2,7 +2,7 @@
  * The provider interface (docs/ARCHITECTURE.md). Adding a backend = implement
  * this + drop fixtures in test/. Nothing else in the app changes.
  */
-import type { Agent, Backend, BackendId, QuotaWindow, UsageEvent } from '../model/types.js';
+import type { Agent, Backend, BackendId, QuotaLimit, UsageEvent } from '../model/types.js';
 
 export interface ProviderAdapter {
   readonly id: BackendId;
@@ -19,7 +19,7 @@ export interface ProviderAdapter {
   collectUsage(): Promise<UsageEvent[]>;
 
   /** Reported quota windows. [] when the vendor exposes none (API-key auth etc.). */
-  quota(): Promise<QuotaWindow[]>;
+  quota(): Promise<QuotaLimit[]>;
 
   /** Byte offsets consumed so far, so a restart resumes instead of re-reading. */
   getTailOffsets(): Record<string, number>;

@@ -1,6 +1,6 @@
 /**
  * Domain model. Vocabulary follows docs/GLOSSARY.md exactly:
- * utilization, window, binding limit, bucket, burn rate.
+ * utilization, limit, binding limit, bucket, burn rate.
  *
  * Provenance is typed (README rule 4): every displayed number is
  * `reported` (vendor said it), `exact` (counted from transcripts), or
@@ -94,7 +94,7 @@ export interface UsageEvent {
   requestId: string;
 }
 
-export interface QuotaWindow {
+export interface QuotaLimit {
   backend: BackendId;
   /** Stable key: '5h' | '7d' | vendor limit id (e.g. 'weekly_scoped:opus'). */
   key: string;
@@ -102,13 +102,13 @@ export interface QuotaWindow {
   windowMinutes: number;
   /** Percent 0..100 as the vendor reports it. Never computed. */
   utilization: number;
-  /** Epoch ms; when this window resets. */
+  /** Epoch ms; when this limit resets. */
   resetsAt: number | null;
   /** Vendor-assigned severity when present (Claude limits[]). */
   severity: 'normal' | 'warning' | 'critical' | null;
   /** Vendor says this is the currently binding limit (Claude is_active). */
   vendorActive: boolean;
-  /** Scope, e.g. a model display name for scoped windows. */
+  /** Scope, e.g. a model display name for scoped limits. */
   scope: string | null;
   source: Provenance; // always 'reported' for both current backends
   /** Epoch ms the reading was taken (Codex readings can be stale while idle). */
@@ -133,8 +133,8 @@ export type Confidence = 'low' | 'medium' | 'high';
 
 export type Verdict = 'on-pace' | 'ahead' | 'over' | 'idle';
 
-export interface WindowAssessment {
-  window: QuotaWindow;
+export interface LimitAssessment {
+  limit: QuotaLimit;
   burn: BurnRate | null;
   verdict: Verdict;
   /** Where the pace line sits now (elapsed fraction × 100), null if resetsAt unknown. */
@@ -148,7 +148,7 @@ export interface AppState {
   generatedAt: number;
   backends: Backend[];
   agents: Agent[];
-  windows: WindowAssessment[];
+  limits: LimitAssessment[];
   agentBurns: AgentBurn[];
   /** Consistency residual EWMA (GLOSSARY: ε). */
   epsilon: number | null;
@@ -179,7 +179,7 @@ export interface AlarmAgentSnapshot {
  * hours later still explains itself.
  */
 export interface AlarmContext {
-  windowLabel: string | null;
+  limitLabel: string | null;
   utilization: number | null;
   burnPctPerHour: number | null;
   paceLinePct: number | null;
@@ -192,7 +192,7 @@ export interface AlarmContext {
 }
 
 export interface Alarm {
-  id: string; // rule id + discriminator (window key / agent id / level)
+  id: string; // rule id + discriminator (limit key / agent id / level)
   ruleId: string;
   severity: Severity;
   /** What happened, then what it means (docs/UI.md copy rules). */
@@ -200,7 +200,7 @@ export interface Alarm {
   body: string;
   firedAt: number;
   backend: BackendId | null;
-  windowKey: string | null;
+  limitKey: string | null;
   agentId: string | null;
   context?: AlarmContext;
 }
@@ -209,7 +209,8 @@ export interface PaceRule {
   id: string;
   type: 'pace';
   backend: BackendId | 'any';
-  window: string | 'any';
+  /** Limit key to match, or 'any'. */
+  limit: string | 'any';
   tolerancePp: number;
   /** Fire when projected exhaustion precedes reset by at least this many minutes. */
   exhaustionLeadMin: number;
@@ -221,7 +222,8 @@ export interface ThresholdRule {
   id: string;
   type: 'threshold';
   backend: BackendId | 'any';
-  window: string | 'any';
+  /** Limit key to match, or 'any'. */
+  limit: string | 'any';
   levels: number[];
   severity: Partial<Record<number, Severity>>;
 }
@@ -243,9 +245,9 @@ export type Rule = PaceRule | ThresholdRule | AgentBurnRule;
 export interface FireLog {
   /** ruleId+discriminator → last fired epoch ms. */
   lastFired: Record<string, number>;
-  /** threshold rule: windowKey → levels already fired in current occupancy. */
+  /** threshold rule: limitKey → levels already fired in current occupancy. */
   firedLevels: Record<string, number[]>;
-  /** windowKey → resetsAt seen last evaluation (detects rollover → rearm). */
+  /** limitKey → resetsAt seen last evaluation (detects rollover → rearm). */
   lastResetsAt: Record<string, number>;
   /** pace rule: discriminator → currently latched above the line (hysteresis). */
   paceLatched: Record<string, boolean>;

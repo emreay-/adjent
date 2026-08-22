@@ -175,14 +175,14 @@ function syncWidget(): void {
 function pushState(): void {
   const s = monitor?.state;
   if (!s) return;
-  const binding = s.windows.find((w) => w.binding);
+  const binding = s.limits.find((w) => w.binding);
   const payload = {
     state: s,
     // Recent few for the summary strip; the full log for the notifications tab.
     alarms: recentAlarms.slice(-5),
     alarmHistory: monitor.alarms(),
     // Real utilization samples so the chart draws the measured curve.
-    history: binding ? monitor.historyFor(`${binding.window.backend}:${binding.window.key}`) : [],
+    history: binding ? monitor.historyFor(`${binding.limit.backend}:${binding.limit.key}`) : [],
     settings,
     explanations: core.EXPLANATIONS,
     provenanceNote: core.PROVENANCE_NOTE,
@@ -207,8 +207,8 @@ async function applySettings(patch: Partial<Settings>, opts: { rebuildWidget?: b
     }
   }
   if (settings.trayStyle !== prev.trayStyle || settings.trayThickness !== prev.trayThickness) {
-    const b = monitor?.state?.windows.find((w) => w.binding);
-    updateTray(b?.window.utilization ?? 0, b?.verdict ?? 'idle', lastTooltip);
+    const b = monitor?.state?.limits.find((w) => w.binding);
+    updateTray(b?.limit.utilization ?? 0, b?.verdict ?? 'idle', lastTooltip);
   }
   if (settings.tickIntervalSec !== prev.tickIntervalSec) restartLoop();
   if (
@@ -280,11 +280,11 @@ async function start(): Promise<void> {
   buildTrayMenu();
 
   monitor.on('state', (s: AppState) => {
-    const b = s.windows.find((w) => w.binding);
+    const b = s.limits.find((w) => w.binding);
     updateTray(
-      b?.window.utilization ?? 0,
+      b?.limit.utilization ?? 0,
       b?.verdict ?? 'idle',
-      b ? `Adjent — ${b.window.label} ${Math.round(b.window.utilization)}%` : 'Adjent — no quota data',
+      b ? `Adjent — ${b.limit.label} ${Math.round(b.limit.utilization)}%` : 'Adjent — no quota data',
     );
     pushState();
   });

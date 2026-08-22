@@ -29,13 +29,13 @@ export const EXPLANATIONS: Record<string, Explanation> = {
   hero: {
     title: 'Utilization of the binding limit',
     body:
-      'How much of the window that will stop you first has been used. This is the one number Adjent leads with, because it is read straight from the vendor and stays correct even if everything else here is wrong.',
+      'How much of the limit that will stop you first has been used. This is the one number Adjent leads with, because it is read straight from the vendor and stays correct even if everything else here is wrong.',
     provenance: 'measured',
   },
   binding: {
-    title: 'Why this window',
+    title: 'Why this limit',
     body:
-      'The binding limit is whichever window runs out first — not the fullest one. A weekly limit at 84% with six days left is less urgent than a 5-hour limit at 60% with forty minutes left. If the vendor names an active limit, that wins outright.',
+      'The binding limit is whichever one runs out first — not the fullest one. A weekly limit at 84% with six days left is less urgent than a 5-hour limit at 60% with forty minutes left. If the vendor names an active limit, that wins outright.',
   },
   burnRate: {
     title: 'Burn rate',
@@ -46,23 +46,23 @@ export const EXPLANATIONS: Record<string, Explanation> = {
   resets: {
     title: 'Reset countdown',
     body:
-      'When this window rolls over and utilization drops back down. Windows are rolling: usage also ages off the back continuously, so the number can fall while you are still working.',
+      'When this limit rolls over and utilization drops back down. Limits are rolling: usage also ages off the back continuously, so the number can fall while you are still working.',
     provenance: 'measured',
   },
   verdict: {
     title: 'Verdict',
     body:
-      'On pace, ahead of pace, or over. Ahead of pace is not automatically bad — it only matters if the projection says you run out before the window resets.',
+      'On pace, ahead of pace, or over. Ahead of pace is not automatically bad — it only matters if the projection says you run out before the limit resets.',
   },
   paceLine: {
     title: 'The pace line',
     body:
-      'Where utilization would be if you spent the window evenly. Two hours into a five-hour window, the pace line sits at 40%. The gap between your curve and that line is the whole point of the chart.',
+      'Where utilization would be if you spent the limit evenly over its period. Two hours into a five-hour limit, the pace line sits at 40%. The gap between your curve and that line is the whole point of the chart.',
   },
   chart: {
     title: 'Burn against the pace line',
     body:
-      'Your utilization over the current window. The dashed diagonal is even spending; above it means you are burning faster than even. The dotted continuation projects your current rate forward — if it crosses the top before the right edge, you run out before the reset.',
+      'Your utilization over the current period. The dashed diagonal is even spending; above it means you are burning faster than even. The dotted continuation projects your current rate forward — if it crosses the top before the right edge, you run out before the reset.',
   },
   exhausts: {
     title: 'Projected exhaustion',
@@ -79,13 +79,13 @@ export const EXPLANATIONS: Record<string, Explanation> = {
   agentBurn: {
     title: 'What this agent is costing you',
     body:
-      "This agent's share of the window per hour. The vendor reports nothing per-agent, so Adjent prices its tokens through a rate it learns by watching how the reported percentage moves. Same unit as the big number, so they are directly comparable.",
+      "This agent's share of the limit per hour. The vendor reports nothing per-agent, so Adjent prices its tokens through a rate it learns by watching how the reported percentage moves. Same unit as the big number, so they are directly comparable.",
     provenance: 'derived',
   },
-  otherWindows: {
+  otherLimits: {
     title: 'Your other limits',
     body:
-      'Every window the vendors report, collapsed to one line. A scoped window covers one model only — those are often the first to bind, even when your overall usage looks fine.',
+      'Every limit the vendors report, collapsed to one line. A scoped limit covers one model only — those are often the first to bind, even when your overall usage looks fine.',
     provenance: 'measured',
   },
   scoped: {

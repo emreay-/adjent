@@ -1,5 +1,5 @@
 /* Panel renderer. Component budget per docs/UI.md: one verdict, one hero,
- * one chart, one token line, ≤3 collapsed windows, ≤4 agent rows.
+ * one chart, one token line, ≤3 collapsed limits, ≤4 agent rows.
  * Measured values plain; derived values carry ≈. */
 /* global window, document */
 
@@ -95,22 +95,22 @@ function render(payload) {
   const live = state.agents.filter((x) => x.state !== 'ended');
   $('liveCount').textContent = `${live.filter((x) => x.state === 'live').length} live`;
 
-  const binding = state.windows.find((w) => w.binding);
+  const binding = state.limits.find((w) => w.binding);
   if (!binding) return;
   const v = VERDICT[binding.verdict] || VERDICT.idle;
   const chip = $('verdict');
   chip.textContent = v.word;
   chip.className = `chip ${v.cls}`;
 
-  $('hero').textContent = `${Math.round(binding.window.utilization)}%`;
+  $('hero').textContent = `${Math.round(binding.limit.utilization)}%`;
   $('heroRate').textContent =
     binding.burn && Math.abs(binding.burn.pctPerHour) >= 0.05
       ? `${binding.burn.pctPerHour >= 0 ? '+' : ''}${binding.burn.pctPerHour.toFixed(1)} %/h`
       : '';
-  const resetIn = binding.window.resetsAt !== null ? `resets in ${fmtDur(binding.window.resetsAt - now)}` : '';
-  const stale = now - binding.window.observedAt > 10 * 60000 ? `as of ${fmtTime(binding.window.observedAt)}` : '';
+  const resetIn = binding.limit.resetsAt !== null ? `resets in ${fmtDur(binding.limit.resetsAt - now)}` : '';
+  const stale = now - binding.limit.observedAt > 10 * 60000 ? `as of ${fmtTime(binding.limit.observedAt)}` : '';
   $('heroMeta').setAttribute('data-tip', stale ? 'stale' : 'binding');
-  $('heroMeta').innerHTML = `${esc(binding.window.label)}<br>${esc(stale || resetIn)}`;
+  $('heroMeta').innerHTML = `${esc(binding.limit.label)}<br>${esc(stale || resetIn)}`;
   renderChart(binding, now, payload.history);
 
   // token line: exact totals across live agents (this window's exact split comes with history)
@@ -128,15 +128,15 @@ function render(payload) {
       ? `<span><b>${fmtTok(tot.all)}</b> tokens tracked</span><span><b>${fmtTok(tot.cached)}</b> cached</span><span><b>${fmtTok(tot.out)}</b> out</span>`
       : '';
 
-  // other windows (≤3), binding first excluded
-  const others = state.windows.filter((w) => !w.binding).slice(0, 3);
-  $('windows').innerHTML =
+  // other limits (≤3), binding first excluded
+  const others = state.limits.filter((w) => !w.binding).slice(0, 3);
+  $('limits').innerHTML =
     others
       .map((a) => {
         const vv = VERDICT[a.verdict] || VERDICT.idle;
-        const staleW = now - a.window.observedAt > 10 * 60000 ? ` · as of ${fmtTime(a.window.observedAt)}` : '';
-        const tip = staleW ? 'stale' : a.window.scope ? 'scoped' : 'otherWindows';
-        return `<div class="row" data-tip="${tip}"><span class="dot" style="background:${vv.color}"></span><span class="name">${esc(a.window.label)}</span><span class="meta"><b>${Math.round(a.window.utilization)}%</b>${a.window.severity === 'warning' ? ' ⚠' : ''}${esc(staleW)}</span></div>`;
+        const staleW = now - a.limit.observedAt > 10 * 60000 ? ` · as of ${fmtTime(a.limit.observedAt)}` : '';
+        const tip = staleW ? 'stale' : a.limit.scope ? 'scoped' : 'otherLimits';
+        return `<div class="row" data-tip="${tip}"><span class="dot" style="background:${vv.color}"></span><span class="name">${esc(a.limit.label)}</span><span class="meta"><b>${Math.round(a.limit.utilization)}%</b>${a.limit.severity === 'warning' ? ' ⚠' : ''}${esc(staleW)}</span></div>`;
       })
       .join('') || '<div class="empty">None</div>';
 
@@ -199,7 +199,7 @@ function alarmDetailHtml(a) {
 
   add('Fired', when.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
   if (c) {
-    add('Window', c.windowLabel);
+    add('Window', c.limitLabel);
     add('Utilization', c.utilization !== null ? `${c.utilization.toFixed(0)}%` : null);
     add(
       'Burn rate',

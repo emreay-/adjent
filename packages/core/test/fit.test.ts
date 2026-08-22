@@ -6,8 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import { UsageLedger } from '../src/quota/ledger.js';
 import { ExchangeRateFit } from '../src/quota/fit.js';
-import { WindowAssessor, exhaustion, paceLine } from '../src/quota/assess.js';
-import type { QuotaWindow, UsageEvent } from '../src/model/types.js';
+import { LimitAssessor, exhaustion, paceLine } from '../src/quota/assess.js';
+import type { QuotaLimit, UsageEvent } from '../src/model/types.js';
 
 const MIN = 60_000;
 const T0 = 1_700_000_000_000;
@@ -26,7 +26,7 @@ const costOf = (e: UsageEvent): number =>
   e.tokens.cacheRead * TRUE_W.cacheRead +
   e.tokens.output * TRUE_W.output;
 
-function quotaWindow(utilization: number, observedAt: number): QuotaWindow {
+function quotaWindow(utilization: number, observedAt: number): QuotaLimit {
   return {
     backend: 'claude',
     key: '5h',
@@ -88,11 +88,11 @@ describe('ExchangeRateFit', () => {
   });
 });
 
-describe('WindowAssessor', () => {
+describe('LimitAssessor', () => {
   it('computes a stable burn rate from steady polls and resets on rollover', () => {
-    const assessor = new WindowAssessor();
+    const assessor = new LimitAssessor();
     // 20%/h steady climb, polls every 5 min
-    let last: ReturnType<WindowAssessor['assess']> = [];
+    let last: ReturnType<LimitAssessor['assess']> = [];
     for (let m = 0; m <= 60; m += 5) {
       const u = (20 / 60) * m;
       last = assessor.assess([quotaWindow(u, T0 + m * MIN)], T0 + m * MIN);
@@ -103,15 +103,15 @@ describe('WindowAssessor', () => {
     expect(burn!.pctPerHour).toBeLessThan(25);
 
     // rollover: resetsAt jumps forward, utilization drops → EWMA restarts
-    const rolled: QuotaWindow = { ...quotaWindow(1, T0 + 65 * MIN), resetsAt: T0 + 600 * MIN };
+    const rolled: QuotaLimit = { ...quotaWindow(1, T0 + 65 * MIN), resetsAt: T0 + 600 * MIN };
     const after = assessor.assess([rolled], T0 + 65 * MIN);
     expect(after[0]!.burn === null || Math.abs(after[0]!.burn.pctPerHour) < 15).toBe(true);
   });
 
   it('binding selection: earliest exhaustion beats highest utilization, with hysteresis', () => {
-    const assessor = new WindowAssessor();
-    const mkShort = (u: number, at: number): QuotaWindow => quotaWindow(u, at);
-    const mkWeekly = (u: number, at: number): QuotaWindow => ({
+    const assessor = new LimitAssessor();
+    const mkShort = (u: number, at: number): QuotaLimit => quotaWindow(u, at);
+    const mkWeekly = (u: number, at: number): QuotaLimit => ({
       ...quotaWindow(u, at),
       key: '7d',
       label: 'Claude · 7d',
@@ -120,18 +120,18 @@ describe('WindowAssessor', () => {
     });
 
     // Weekly sits at 84% but burns slowly; short window climbs fast.
-    let result: ReturnType<WindowAssessor['assess']> = [];
+    let result: ReturnType<LimitAssessor['assess']> = [];
     for (let m = 0; m <= 60; m += 5) {
       const at = T0 + m * MIN;
       result = assessor.assess([mkWeekly(84 + m * 0.01, at), mkShort(30 + m, at)], at);
     }
     const binding = result.find((a) => a.binding);
-    expect(binding?.window.key).toBe('5h'); // exhausting before reset → binds despite lower %
+    expect(binding?.limit.key).toBe('5h'); // exhausting before reset → binds despite lower %
   });
 
   it('vendor is_active wins outright', () => {
-    const assessor = new WindowAssessor();
-    const scoped: QuotaWindow = {
+    const assessor = new LimitAssessor();
+    const scoped: QuotaLimit = {
       ...quotaWindow(60, T0),
       key: 'weekly_scoped:model-x',
       label: 'Claude · 7d · Model X',
@@ -139,7 +139,7 @@ describe('WindowAssessor', () => {
       vendorActive: true,
     };
     const result = assessor.assess([quotaWindow(90, T0), scoped], T0);
-    expect(result.find((a) => a.binding)?.window.key).toBe('weekly_scoped:model-x');
+    expect(result.find((a) => a.binding)?.limit.key).toBe('weekly_scoped:model-x');
   });
 });
 

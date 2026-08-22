@@ -17,18 +17,18 @@ deliberately.
 
 **Adjent is a tray-resident desktop application.** One background process,
 started at login, living in the Windows notification area / Linux system tray.
-It is not a window you launch and close — the process is always on, because the
+It is not a limit you launch and close — the process is always on, because the
 collectors and the alarm engine must run whether or not you are looking.
 
 **Nothing but the tray icon is visible by default.** No taskbar entry, no dock
-icon, no window at rest. The reasoning: Adjent's job is to interrupt you *only*
+icon, no limit at rest. The reasoning: Adjent's job is to interrupt you *only*
 when something needs deciding. A permanently visible dashboard trains you to
 stop seeing it — the alarm engine, not your peripheral vision, is what watches.
 The tray icon is the one always-on surface, and it is exactly one arc in one
 status colour, so a glance answers "anything wrong?" without a click.
 
 **The panel opens on one click, anchored to the tray icon.** Frameless,
-380×560, closes on focus loss like a volume or wifi popover — not a window you
+380×560, closes on focus loss like a volume or wifi popover — not a limit you
 manage, a question you ask. Left-click opens the panel; right-click a short
 menu (pause alarms, pin widget, settings, quit).
 
@@ -50,18 +50,18 @@ gives exactly that. Settings links straight to the Windows page via
 `ms-settings:taskbar`.
 
 **Sizing is a setting, not a constant.** `uiScale` (0.8–2.0) drives the
-renderer zoom factor *and* the window dimensions together, so the panel grows
+renderer zoom factor *and* the limit dimensions together, so the panel grows
 with its type rather than clipping it. The tray glyph is separate: Windows
 fixes the slot at 16 logical px, so "bigger" there means rendering at a higher
 scale factor for crispness and letting `trayThickness` (0.18–0.5 of radius)
 and `trayStyle` (`ring` | `disc`) use more of the slot. Appearance is a third
 setting — auto (follow the OS), light, or dark — applied through Electron's
 `nativeTheme.themeSource`, so the existing `prefers-color-scheme` stylesheets
-respond with no per-window theming code. All of it lives in
+respond with no per-limit theming code. All of it lives in
 `~/.adjent/settings.json` and applies live.
 
 **Notifications are native OS toasts, routed by severity.** Windows Action
-Center / libnotify — never a custom pop-over window, so they obey your OS's
+Center / libnotify — never a custom pop-over limit, so they obey your OS's
 do-not-disturb, focus assist, and notification history for free. Severity
 routing (from [ALARMS.md](ALARMS.md)): `info` never toasts, it only tints the
 tray; `warn` toasts; `critical` toasts persistently. Every toast carries at
@@ -130,7 +130,7 @@ line → other windows → agent rows. Nothing else is present at rest.
 
 The arc's fill is the binding limit's utilization; its colour is the verdict.
 Fill says how much, colour says whether that is a problem — 70% six hours into
-a weekly window draws a mostly-full *green* arc.
+a weekly limit draws a mostly-full *green* arc.
 
 ### Toasts (native, so styling is the OS's; content is ours)
 
@@ -176,7 +176,7 @@ click. This single rule is what keeps the panel from becoming a dashboard.
 | --- | --- |
 | Tray icon | one arc, one status colour. Nothing else — no text badge. |
 | **Primary read** | verdict chip · hero % · rate · reset countdown · the chart — **≤4 numbers** |
-| Token line | one line: exact tokens this window, split by kind |
+| Token line | one line: exact tokens this limit, split by kind |
 | Other windows | ≤3, one collapsed line each |
 | Agent rows | ≤4, sorted by burn |
 | Charts | exactly 1 |
@@ -217,7 +217,7 @@ number a monitoring tool leads with has to be the one it is most sure of.
 **It is a level, not a rate or a total.** A level is the only kind of number that
 is interpretable alone. `28 %/h` is unremarkable at 5% used and an emergency at
 90%. `15.0M tokens` means nothing without a denominator. A percentage of a
-window carries its own scale.
+limit carries its own scale.
 
 ### Every metric we have, and its job
 
@@ -225,13 +225,13 @@ window carries its own scale.
 | --- | --- | --- |
 | **$u$ of the binding limit** | vendor-reported | **the hero number** |
 | $u$ of the other windows | vendor-reported | collapsed to one line each, below the chart |
-| $r$ — window burn rate | measured (from $u$ alone) | printed beside the hero; it is the hero's *modifier*, not a rival |
+| $r$ — limit burn rate | measured (from $u$ alone) | printed beside the hero; it is the hero's *modifier*, not a rival |
 | Reset countdown | vendor-reported | printed beside the hero |
 | Verdict — on / ahead / over | measured (from $u$ vs the pace line) | the chip above the hero |
 | Exhausts-at | projected from $r$ | the chart's forward marker, and the alarm text |
 | Tokens by kind | exact, from transcripts | the token line |
 | $r_a$ — per-agent burn | **derived** | the agent rows |
-| Exchange rate, absolute window size | **derived** | one click in |
+| Exchange rate, absolute limit size | **derived** | one click in |
 | $\varepsilon$ — confidence | derived | a mark next to derived figures only |
 | USD | derived | hidden by default on a subscription |
 | Turn counts, session counts, tool calls | exact | not shown; they are activity, not consumption |
@@ -263,24 +263,24 @@ chip as a word.
 
 ### Choosing the binding limit
 
-The hero shows one window out of several, so which one is binding has to be
-decided every poll. For each window $i$, with burn rate $r_i$:
+The hero shows one limit out of several, so which one is binding has to be
+decided every poll. For each limit $i$, with burn rate $r_i$:
 
 $$T_i = \frac{100 - u_i}{r_i} \quad \text{(time to exhaustion; } \infty \text{ if } r_i \le 0)
 \qquad R_i = \text{time until } i \text{ resets}$$
 
-A window can only stop you if it runs out before it resets — that is, if
+A limit can only stop you if it runs out before it resets — that is, if
 $T_i < R_i$. So:
 
 1. **If the vendor names it, use that.** Claude's `limits[]` carries `is_active`
    on the limit currently binding. Vendor-reported beats anything we compute.
 2. Otherwise, among windows with $T_i < R_i$, take the one with the **smallest
    $T_i$** — the one that stops you soonest.
-3. If no window is projected to run out, nothing is binding. Fall back to the
+3. If no limit is projected to run out, nothing is binding. Fall back to the
    **highest $u_i$**, which is the conventional "how am I doing" answer and
    cannot mislead when nothing is at risk.
 
-This is why the fullest window is not automatically the hero. A weekly limit at
+This is why the fullest limit is not automatically the hero. A weekly limit at
 76% with six days left has a large $R$ and loses to a 5-hour limit at 60% with
 forty minutes left.
 
@@ -288,14 +288,14 @@ forty minutes left.
 
 A hero number that flips between windows on alternate polls is worse than a
 wrong one — it reads as instability in the tool rather than in your usage. So the
-selection is hysteretic: a challenger window must win the test above for **three
-consecutive polls** before it takes the slot, and the outgoing window stays
-visible in the collapsed list. Window rollovers are exempt: when a window resets,
+selection is hysteretic: a challenger limit must win the test above for **three
+consecutive polls** before it takes the slot, and the outgoing limit stays
+visible in the collapsed list. Window rollovers are exempt: when a limit resets,
 its claim genuinely vanishes and the switch is immediate.
 
 ## The one chart: burn against the pace line
 
-A single series — utilization against elapsed time in the current window — with
+A single series — utilization against elapsed time in the current limit — with
 the linear pace line drawn behind it and the burn projected forward.
 
 ```
@@ -316,7 +316,7 @@ number.** Above the line, you are burning too fast. That is the whole product in
 one glance, and it is the thing percentage-only tools cannot show.
 
 The dotted projection extends the current rate to 100%. If it crosses before the
-right edge, you run out before the window resets — and the crossing is marked
+right edge, you run out before the limit resets — and the crossing is marked
 where it lands. A reader who never looks at a single digit still gets the answer.
 
 ### Chart spec
@@ -336,9 +336,9 @@ where it lands. A reader who never looks at a single digit still gets the answer
   Validated for CVD separation; `warning` sits below 3:1 on a light surface by
   design, which is why the verdict word and direct labels carry the meaning and
   the hero figure stays in text ink, never in a status colour.
-* **Chrome** — no gridlines, no y-axis ticks. A faint baseline, the window start
+* **Chrome** — no gridlines, no y-axis ticks. A faint baseline, the limit start
   at the left edge and the reset time at the right. That is all the frame a
-  five-hour window needs.
+  five-hour limit needs.
 * **Interaction** — crosshair and tooltip on hover, giving the timestamp,
   utilization, and the tokens consumed in that bucket.
 * **Dark mode** — selected, not flipped. Status steps are mode-invariant and
@@ -365,7 +365,7 @@ away, because it explains the model rather than changing what you do next:
 72%   +20 %/h   resets 2h 30m              ← measured
 15.0M tokens · 13.5M cached · 1.0M out     ← exact
 
-  ── click the window ──
+  ── click the limit ──
 ≈ 1% ≈ 62k Opus output, or 3.1M cache reads   ← derived, per kind
 ```
 
@@ -379,7 +379,7 @@ Four rows maximum at rest, sorted by current burn, not alphabetically — the
 noisy one is always at the top where it will be seen.
 
 Each row: a status dot, the project name, the model and effort, and the number
-that matters — **the agent's share of the window per hour**, in the same unit as
+that matters — **the agent's share of the limit per hour**, in the same unit as
 the hero figure.
 
 ```
@@ -391,12 +391,12 @@ the hero figure.
 
 `≈12.0 %/h` is only expressible because of the learned exchange rate, and it is
 the line that makes the tool worth opening. "This agent wrote 900k tokens" is a
-fact; "this agent is eating 16% of your five-hour window every hour" is a
+fact; "this agent is eating 16% of your five-hour limit every hour" is a
 decision.
 
 The rows should also roughly **add up to the hero rate** — 12.0 + 4.1 + 3.4 ≈ 24
 here — once the hero rate is corrected for tokens aging out of the rolling
-window (early in a window, as in this example, nothing has aged out yet and the
+limit (early in a limit, as in this example, nothing has aged out yet and the
 two match directly). That is not decoration: the vendor-reported side and the
 per-agent side are computed by completely different routes, so their agreement is
 a free, continuous check — see [the free consistency
@@ -410,7 +410,7 @@ drops and the UI says so.
 | 1 | Tray icon | verdict, as an arc and a colour |
 | 1½ | Pinned widget (opt-in) | verdict · hero · rate · pace bar |
 | 2 | Panel, at rest | verdict · hero · chart · other windows · agent rows |
-| 3 | Click a window | that window's history, token breakdown by model and kind |
+| 3 | Click a limit | that limit's history, token breakdown by model and kind |
 | 4 | Click an agent | its session timeline, subagent tree, per-turn tokens |
 | 4½ | Notifications | the durable alarm log, grouped by day — toasts vanish, this does not |
 | 5 | Settings | interface size, tray glyph, widget/taskbar, poll cadence, pause alarms; alarm rules and sinks in `~/.adjent/alarms.yaml` |
@@ -431,7 +431,7 @@ or **derived**.
 * Explainable elements carry a dotted underline on hover, so the help is
   discoverable rather than hidden.
 * Tooltips appear after a short delay, are keyed to the *current* context —
-  a stale Codex reading explains staleness, a scoped window explains scoping —
+  a stale Codex reading explains staleness, a scoped limit explains scoping —
   and clamp to the panel edge so nothing is cut off.
 * The provenance tag is part of the tooltip, not decoration: it is how a reader
   learns that `≈12.0 %/h` is a model output and `72%` is not.
@@ -452,7 +452,7 @@ the panel header.
 * It survives restarts and outlives the toast, which is the whole point: the
   reason a limit was hit at 02:00 should still be readable at 09:00.
 * **Clear** empties the log — an explicit user action, never automatic.
-* **Hovering a row reveals the full state at fire time**: the window and how
+* **Hovering a row reveals the full state at fire time**: the limit and how
   full it was then, burn rate against the pace line, runway left, projected
   exhaustion — and the agents that were running, with project, branch, model,
   effort and their derived share. A notification read the next morning should
@@ -464,5 +464,5 @@ the panel header.
 * Rates always carry their unit and period: `+20 %/h`, never a bare `6.2`.
 * Derived values always carry `≈`. Measured values never do.
 * An alarm says what happened and what it means, in that order: *"Ahead of pace —
-  72% used with 2h 30m left. At this rate the window runs out at 20:24."*
+  72% used with 2h 30m left. At this rate the limit runs out at 20:24."*
 * Never an apology, never a raw field name, never an emoji as a section marker.

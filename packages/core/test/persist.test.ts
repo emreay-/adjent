@@ -6,8 +6,8 @@ import * as path from 'node:path';
 import { RETENTION, STORE_VERSION, Store } from '../src/persist.js';
 import { ExchangeRateFit } from '../src/quota/fit.js';
 import { UsageLedger } from '../src/quota/ledger.js';
-import { WindowAssessor } from '../src/quota/assess.js';
-import { emptyFireLog, type Alarm, type QuotaWindow, type UsageEvent } from '../src/model/types.js';
+import { LimitAssessor } from '../src/quota/assess.js';
+import { emptyFireLog, type Alarm, type QuotaLimit, type UsageEvent } from '../src/model/types.js';
 
 const T0 = 1_700_000_000_000;
 const MIN = 60_000;
@@ -28,10 +28,10 @@ const ev = (ts: number, id: string): UsageEvent => ({
 
 const alarm = (firedAt: number, id: string): Alarm => ({
   id, ruleId: 'r', severity: 'warn', title: `t-${id}`, body: 'b',
-  firedAt, backend: 'claude', windowKey: '5h', agentId: null,
+  firedAt, backend: 'claude', limitKey: '5h', agentId: null,
 });
 
-const qw = (u: number, at: number): QuotaWindow => ({
+const qw = (u: number, at: number): QuotaLimit => ({
   backend: 'claude', key: '5h', label: 'Claude · 5h', windowMinutes: 300,
   utilization: u, resetsAt: T0 + 300 * MIN, severity: null, vendorActive: false,
   scope: null, source: 'reported', observedAt: at,
@@ -104,11 +104,11 @@ describe('restart survival', () => {
   });
 
   it('a restored assessor keeps its burn rate and binding choice', () => {
-    const a = new WindowAssessor();
+    const a = new LimitAssessor();
     for (let m = 0; m <= 60; m += 5) a.assess([qw((20 / 60) * m, T0 + m * MIN)], T0 + m * MIN);
     const burnBefore = a.assess([qw(20, T0 + 60 * MIN)], T0 + 60 * MIN)[0]!.burn;
 
-    const revived = WindowAssessor.fromJSON(JSON.parse(JSON.stringify(a.toJSON())));
+    const revived = LimitAssessor.fromJSON(JSON.parse(JSON.stringify(a.toJSON())));
     const after = revived.assess([qw(21, T0 + 65 * MIN)], T0 + 65 * MIN)[0]!;
     expect(after.burn).not.toBeNull();
     expect(after.binding).toBe(true);

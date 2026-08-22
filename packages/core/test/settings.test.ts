@@ -43,7 +43,7 @@ describe('explanations', () => {
     // Keys referenced by the panel/widget renderers must all exist.
     const used = [
       'hero', 'binding', 'burnRate', 'resets', 'verdict', 'paceLine', 'chart',
-      'exhausts', 'tokens', 'agentBurn', 'otherWindows', 'scoped', 'stale',
+      'exhausts', 'tokens', 'agentBurn', 'otherLimits', 'scoped', 'stale',
       'confidence', 'epsilon', 'effort', 'model', 'idle', 'liveCount',
     ];
     for (const k of used) expect(EXPLANATION_KEYS, k).toContain(k);

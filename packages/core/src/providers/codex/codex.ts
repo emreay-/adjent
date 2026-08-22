@@ -7,7 +7,7 @@
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { Agent, Backend, QuotaWindow, TokenTotals, UsageEvent } from '../../model/types.js';
+import type { Agent, Backend, QuotaLimit, TokenTotals, UsageEvent } from '../../model/types.js';
 import { ZERO_TOTALS } from '../../model/types.js';
 import { asNum, asObj, asStr, parseLine, tailFile, type TailState } from '../../collect/tail.js';
 import type { ProviderAdapter } from '../provider.js';
@@ -307,12 +307,12 @@ export class CodexProvider implements ProviderAdapter {
   }
 
   // -------------------------------------------------------------------------
-  async quota(): Promise<QuotaWindow[]> {
+  async quota(): Promise<QuotaLimit[]> {
     // Ensure we have scanned at least once even if collectUsage was not called.
     if (!this.latestRateLimits) await this.collectUsage();
     const rl = this.latestRateLimits;
     if (!rl) return [];
-    const out: QuotaWindow[] = [];
+    const out: QuotaLimit[] = [];
     for (const field of ['primary', 'secondary'] as const) {
       const w = asObj(rl.payload[field]);
       const pct = asNum(w?.['used_percent']);

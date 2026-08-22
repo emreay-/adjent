@@ -33,10 +33,10 @@ Exit criteria: installs on a clean Windows and a clean Ubuntu box and notifies a
 
 ### M3 — Pace, per-agent burn, cost attribution (~1 week)
 The remaining two rule types, per-turn cost attribution from the price table,
-passive derivation of the absolute window limit, alarm config file with hot
+passive derivation of the absolute limit limit, alarm config file with hot
 reload, history rollups and sparklines.
 
-Exit criteria: a front-loaded window fires `pace` before it fires `threshold`; a
+Exit criteria: a front-loaded limit fires `pace` before it fires `threshold`; a
 looping subagent gets flagged by name.
 
 ### M4 — Polish

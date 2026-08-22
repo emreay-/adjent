@@ -4,7 +4,7 @@
  * All of this works from vendor-reported utilization alone — no weights, no
  * tokens, no fit (docs/GLOSSARY.md § Window burn rate; docs/UI.md § hero).
  */
-import type { BurnRate, QuotaWindow, Verdict, WindowAssessment } from '../model/types.js';
+import type { BurnRate, QuotaLimit, Verdict, LimitAssessment } from '../model/types.js';
 
 /** α from a half-life (GLOSSARY § smoothing): α = 1 − 2^(−Δt/T½). */
 const HALF_LIFE_MS = 5 * 60_000;
@@ -15,15 +15,15 @@ const PACE_TOLERANCE_PP = 10;
 /** A challenger window must win this many consecutive polls to take the hero slot. */
 const HYSTERESIS_POLLS = 3;
 
-interface WindowTrack {
+interface LimitTrack {
   samples: Array<{ at: number; utilization: number }>;
   ewma: number | null;
   ewmaAt: number | null;
   lastResetsAt: number | null;
 }
 
-export class WindowAssessor {
-  private readonly tracks = new Map<string, WindowTrack>();
+export class LimitAssessor {
+  private readonly tracks = new Map<string, LimitTrack>();
   private bindingKey: string | null = null;
   private challenger: { key: string; polls: number } | null = null;
 
@@ -35,17 +35,17 @@ export class WindowAssessor {
     };
   }
 
-  static fromJSON(raw: unknown): WindowAssessor {
-    const a = new WindowAssessor();
+  static fromJSON(raw: unknown): LimitAssessor {
+    const a = new LimitAssessor();
     if (typeof raw !== 'object' || raw === null) return a;
     const o = raw as Record<string, unknown>;
     if (Array.isArray(o['tracks'])) {
       for (const entry of o['tracks'] as unknown[]) {
         if (!Array.isArray(entry) || typeof entry[0] !== 'string') continue;
-        const t = entry[1] as Partial<WindowTrack> | undefined;
+        const t = entry[1] as Partial<LimitTrack> | undefined;
         if (!t || typeof t !== 'object') continue;
         a.tracks.set(entry[0], {
-          samples: Array.isArray(t.samples) ? (t.samples as WindowTrack['samples']) : [],
+          samples: Array.isArray(t.samples) ? (t.samples as LimitTrack['samples']) : [],
           ewma: typeof t.ewma === 'number' ? t.ewma : null,
           ewmaAt: typeof t.ewmaAt === 'number' ? t.ewmaAt : null,
           lastResetsAt: typeof t.lastResetsAt === 'number' ? t.lastResetsAt : null,
@@ -57,20 +57,20 @@ export class WindowAssessor {
   }
 
   /** Feed the latest reading of every window; returns full assessments. */
-  assess(windows: QuotaWindow[], now: number): WindowAssessment[] {
-    const out: WindowAssessment[] = [];
-    for (const w of windows) {
+  assess(limits: QuotaLimit[], now: number): LimitAssessment[] {
+    const out: LimitAssessment[] = [];
+    for (const w of limits) {
       const burn = this.updateBurn(w);
       const paceLinePct = paceLine(w, now);
       const verdict = verdictFor(w, burn, paceLinePct);
       const exhaustsAt = exhaustion(w, burn, now);
-      out.push({ window: w, burn, verdict, paceLinePct, exhaustsAt, binding: false });
+      out.push({ limit: w, burn, verdict, paceLinePct, exhaustsAt, binding: false });
     }
     this.selectBinding(out, now);
     return out;
   }
 
-  private updateBurn(w: QuotaWindow): BurnRate | null {
+  private updateBurn(w: QuotaLimit): BurnRate | null {
     const key = `${w.backend}:${w.key}`;
     const t = this.tracks.get(key) ?? { samples: [], ewma: null, ewmaAt: null, lastResetsAt: null };
     this.tracks.set(key, t);
@@ -111,19 +111,19 @@ export class WindowAssessor {
    *  3. else highest utilization.
    * With 3-poll hysteresis; immediate switch on rollover (claim vanishes).
    */
-  private selectBinding(assessments: WindowAssessment[], now: number): void {
+  private selectBinding(assessments: LimitAssessment[], now: number): void {
     if (assessments.length === 0) return;
-    const keyOf = (a: WindowAssessment) => `${a.window.backend}:${a.window.key}`;
+    const keyOf = (a: LimitAssessment) => `${a.limit.backend}:${a.limit.key}`;
 
-    let winner: WindowAssessment | null = assessments.find((a) => a.window.vendorActive) ?? null;
+    let winner: LimitAssessment | null = assessments.find((a) => a.limit.vendorActive) ?? null;
     if (!winner) {
       const exhausting = assessments.filter(
-        (a) => a.exhaustsAt !== null && a.window.resetsAt !== null && a.exhaustsAt < a.window.resetsAt,
+        (a) => a.exhaustsAt !== null && a.limit.resetsAt !== null && a.exhaustsAt < a.limit.resetsAt,
       );
       if (exhausting.length > 0) {
         winner = exhausting.reduce((best, a) => ((a.exhaustsAt as number) < (best.exhaustsAt as number) ? a : best));
       } else {
-        winner = assessments.reduce((best, a) => (a.window.utilization > best.window.utilization ? a : best));
+        winner = assessments.reduce((best, a) => (a.limit.utilization > best.limit.utilization ? a : best));
       }
     }
 
@@ -136,7 +136,7 @@ export class WindowAssessor {
     } else if (winnerKey !== this.bindingKey) {
       if (this.challenger?.key === winnerKey) this.challenger.polls += 1;
       else this.challenger = { key: winnerKey, polls: 1 };
-      if (this.challenger.polls >= HYSTERESIS_POLLS || winner.window.vendorActive) {
+      if (this.challenger.polls >= HYSTERESIS_POLLS || winner.limit.vendorActive) {
         this.bindingKey = winnerKey;
         this.challenger = null;
       }
@@ -150,7 +150,7 @@ export class WindowAssessor {
 }
 
 /** Elapsed fraction of the window × 100 — where the pace line sits (GLOSSARY). */
-export function paceLine(w: QuotaWindow, now: number): number | null {
+export function paceLine(w: QuotaLimit, now: number): number | null {
   if (w.resetsAt === null || w.windowMinutes <= 0) return null;
   const windowMs = w.windowMinutes * 60_000;
   const start = w.resetsAt - windowMs;
@@ -158,7 +158,7 @@ export function paceLine(w: QuotaWindow, now: number): number | null {
   return Math.min(100, Math.max(0, e * 100));
 }
 
-export function verdictFor(w: QuotaWindow, burn: BurnRate | null, paceLinePct: number | null): Verdict {
+export function verdictFor(w: QuotaLimit, burn: BurnRate | null, paceLinePct: number | null): Verdict {
   if (w.utilization >= 100) return 'over';
   if (burn === null || Math.abs(burn.pctPerHour) < 0.01) return w.utilization === 0 ? 'idle' : 'on-pace';
   if (paceLinePct === null) return 'on-pace';
@@ -166,7 +166,7 @@ export function verdictFor(w: QuotaWindow, burn: BurnRate | null, paceLinePct: n
 }
 
 /** T = now + (100 − u)/r, null when burn ≤ 0 (never renders as ∞ — docs/UI.md). */
-export function exhaustion(w: QuotaWindow, burn: BurnRate | null, now: number): number | null {
+export function exhaustion(w: QuotaLimit, burn: BurnRate | null, now: number): number | null {
   if (burn === null || burn.pctPerHour <= 0) return null;
   const hoursLeft = (100 - w.utilization) / burn.pctPerHour;
   return now + hoursLeft * 3600_000;

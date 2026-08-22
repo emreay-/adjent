@@ -16,7 +16,7 @@ import type {
   Rule,
   Severity,
   ThresholdRule,
-  WindowAssessment,
+  LimitAssessment,
 } from '../model/types.js';
 
 export function evaluate(state: AppState, rules: Rule[], memory: FireLog, now: number): Alarm[] {
@@ -40,9 +40,9 @@ export function evaluate(state: AppState, rules: Rule[], memory: FireLog, now: n
 
 /** Threshold levels rearm when a window's resetsAt moves forward (docs/ALARMS.md). */
 function rearmOnReset(state: AppState, memory: FireLog): void {
-  for (const a of state.windows) {
+  for (const a of state.limits) {
     const key = wkey(a);
-    const resetsAt = a.window.resetsAt;
+    const resetsAt = a.limit.resetsAt;
     if (resetsAt === null) continue;
     const prev = memory.lastResetsAt[key];
     if (prev !== undefined && resetsAt > prev + 60_000) {
@@ -54,7 +54,7 @@ function rearmOnReset(state: AppState, memory: FireLog): void {
   }
 }
 
-const wkey = (a: WindowAssessment): string => `${a.window.backend}:${a.window.key}`;
+const wkey = (a: LimitAssessment): string => `${a.limit.backend}:${a.limit.key}`;
 
 const MAX_CONTEXT_AGENTS = 4;
 
@@ -76,14 +76,14 @@ function agentSnapshots(state: AppState, only?: string): AlarmAgentSnapshot[] {
     .slice(0, MAX_CONTEXT_AGENTS);
 }
 
-function windowContext(state: AppState, a: WindowAssessment, only?: string): AlarmContext {
-  const backend = state.backends.find((b) => b.id === a.window.backend);
+function windowContext(state: AppState, a: LimitAssessment, only?: string): AlarmContext {
+  const backend = state.backends.find((b) => b.id === a.limit.backend);
   return {
-    windowLabel: a.window.label,
-    utilization: a.window.utilization,
+    limitLabel: a.limit.label,
+    utilization: a.limit.utilization,
     burnPctPerHour: a.burn?.pctPerHour ?? null,
     paceLinePct: a.paceLinePct,
-    resetsAt: a.window.resetsAt,
+    resetsAt: a.limit.resetsAt,
     exhaustsAt: a.exhaustsAt,
     plan: backend?.plan ?? null,
     fitConfidence: state.fitConfidence,
@@ -91,9 +91,9 @@ function windowContext(state: AppState, a: WindowAssessment, only?: string): Ala
   };
 }
 
-const matches = (rule: PaceRule | ThresholdRule, a: WindowAssessment): boolean =>
-  (rule.backend === 'any' || rule.backend === a.window.backend) &&
-  (rule.window === 'any' || rule.window === a.window.key);
+const matches = (rule: PaceRule | ThresholdRule, a: LimitAssessment): boolean =>
+  (rule.backend === 'any' || rule.backend === a.limit.backend) &&
+  (rule.limit === 'any' || rule.limit === a.limit.key);
 
 function cooldownOk(memory: FireLog, id: string, cooldownMin: number, now: number): boolean {
   const last = memory.lastFired[id];
@@ -103,10 +103,10 @@ function cooldownOk(memory: FireLog, id: string, cooldownMin: number, now: numbe
 // ---------------------------------------------------------------------------
 function evalPace(rule: PaceRule, state: AppState, memory: FireLog, now: number): Alarm[] {
   const out: Alarm[] = [];
-  for (const a of state.windows) {
+  for (const a of state.limits) {
     if (!matches(rule, a)) continue;
     const disc = `${rule.id}:${wkey(a)}`;
-    const u = a.window.utilization;
+    const u = a.limit.utilization;
     const pace = a.paceLinePct;
     if (pace === null) continue;
 
@@ -117,27 +117,27 @@ function evalPace(rule: PaceRule, state: AppState, memory: FireLog, now: number)
 
     const early =
       a.exhaustsAt !== null &&
-      a.window.resetsAt !== null &&
-      a.window.resetsAt - a.exhaustsAt >= rule.exhaustionLeadMin * 60_000;
+      a.limit.resetsAt !== null &&
+      a.limit.resetsAt - a.exhaustsAt >= rule.exhaustionLeadMin * 60_000;
 
     if ((above && !latched) || early) {
       if (!cooldownOk(memory, disc, rule.cooldownMin, now)) continue;
       memory.lastFired[disc] = now;
       if (above) memory.paceLatched[disc] = true;
-      const resetIn = a.window.resetsAt !== null ? fmtDur(a.window.resetsAt - now) : 'unknown';
+      const resetIn = a.limit.resetsAt !== null ? fmtDur(a.limit.resetsAt - now) : 'unknown';
       const meaning =
-        a.exhaustsAt !== null && a.window.resetsAt !== null && a.exhaustsAt < a.window.resetsAt
+        a.exhaustsAt !== null && a.limit.resetsAt !== null && a.exhaustsAt < a.limit.resetsAt
           ? `At this rate the window runs out at ${fmtTime(a.exhaustsAt)}.`
           : `The pace line is at ${pace.toFixed(0)}%.`;
       out.push({
         id: disc,
         ruleId: rule.id,
         severity: rule.severity,
-        title: `Ahead of pace — ${a.window.label}`,
-        body: `${a.window.label} at ${u.toFixed(0)}% with ${resetIn} left. ${meaning}`,
+        title: `Ahead of pace — ${a.limit.label}`,
+        body: `${a.limit.label} at ${u.toFixed(0)}% with ${resetIn} left. ${meaning}`,
         firedAt: now,
-        backend: a.window.backend,
-        windowKey: a.window.key,
+        backend: a.limit.backend,
+        limitKey: a.limit.key,
         agentId: null,
         context: windowContext(state, a),
       });
@@ -149,7 +149,7 @@ function evalPace(rule: PaceRule, state: AppState, memory: FireLog, now: number)
 // ---------------------------------------------------------------------------
 function evalThreshold(rule: ThresholdRule, state: AppState, memory: FireLog, now: number): Alarm[] {
   const out: Alarm[] = [];
-  for (const a of state.windows) {
+  for (const a of state.limits) {
     if (!matches(rule, a)) continue;
     const key = wkey(a);
     // `undefined` means this window has never been observed. Distinguishing
@@ -158,7 +158,7 @@ function evalThreshold(rule: ThresholdRule, state: AppState, memory: FireLog, no
     const firstSight = memory.firedLevels[key] === undefined;
     const fired = (memory.firedLevels[key] ??= []);
 
-    const crossed = rule.levels.filter((l) => a.window.utilization >= l && !fired.includes(l));
+    const crossed = rule.levels.filter((l) => a.limit.utilization >= l && !fired.includes(l));
     if (crossed.length === 0) continue;
     fired.push(...crossed); // arm every crossed level, announce at most one
 
@@ -166,8 +166,8 @@ function evalThreshold(rule: ThresholdRule, state: AppState, memory: FireLog, no
     // it carries the most severe routing. Announcing the rest is noise.
     const level = Math.max(...crossed);
     const severity: Severity = rule.severity[level] ?? 'info';
-    const resetIn = a.window.resetsAt !== null ? fmtDur(a.window.resetsAt - now) : 'unknown';
-    const u = a.window.utilization;
+    const resetIn = a.limit.resetsAt !== null ? fmtDur(a.limit.resetsAt - now) : 'unknown';
+    const u = a.limit.utilization;
 
     if (firstSight) {
       // We joined mid-window: nothing "crossed" while we were watching, so
@@ -178,11 +178,11 @@ function evalThreshold(rule: ThresholdRule, state: AppState, memory: FireLog, no
         id: `${rule.id}:${key}:already`,
         ruleId: rule.id,
         severity,
-        title: `${a.window.label} is already at ${u.toFixed(0)}%`,
+        title: `${a.limit.label} is already at ${u.toFixed(0)}%`,
         body: `Adjent started with this window past ${level}%. ${resetIn} until reset.`,
         firedAt: now,
-        backend: a.window.backend,
-        windowKey: a.window.key,
+        backend: a.limit.backend,
+        limitKey: a.limit.key,
         agentId: null,
         context: windowContext(state, a),
       });
@@ -193,11 +193,11 @@ function evalThreshold(rule: ThresholdRule, state: AppState, memory: FireLog, no
       id: `${rule.id}:${key}:${level}`,
       ruleId: rule.id,
       severity,
-      title: `${a.window.label} crossed ${level}%`,
-      body: `${a.window.label} is at ${u.toFixed(0)}% with ${resetIn} until reset.`,
+      title: `${a.limit.label} crossed ${level}%`,
+      body: `${a.limit.label} is at ${u.toFixed(0)}% with ${resetIn} until reset.`,
       firedAt: now,
-      backend: a.window.backend,
-      windowKey: a.window.key,
+      backend: a.limit.backend,
+      limitKey: a.limit.key,
       agentId: null,
       context: windowContext(state, a),
     });
@@ -241,15 +241,15 @@ function evalAgentBurn(rule: AgentBurnRule, state: AppState, memory: FireLog, no
       body: `${label} is ${reason}${agent?.model ? ` on ${agent.model}` : ''}${agent?.effort ? ` · ${agent.effort}` : ''}.`,
       firedAt: now,
       backend: agent?.backend ?? null,
-      windowKey: null,
+      limitKey: null,
       agentId: b.agentId,
       // Scope the snapshot to the offending agent, plus the binding window's
       // state so the alarm still says how much room was left.
       context: {
-        ...(state.windows.find((w) => w.binding)
-          ? windowContext(state, state.windows.find((w) => w.binding) as WindowAssessment, b.agentId)
+        ...(state.limits.find((w) => w.binding)
+          ? windowContext(state, state.limits.find((w) => w.binding) as LimitAssessment, b.agentId)
           : {
-              windowLabel: null,
+              limitLabel: null,
               utilization: null,
               burnPctPerHour: null,
               paceLinePct: null,
