@@ -38,7 +38,9 @@ is a handful of pixels, and the four states are the same icon.
 
 **Requirement.** At tray sizes the verdict colour is the icon's *field*, not an
 accent on it: **≥ 60% of opaque pixels carry the verdict hue**, and the icon's
-mean hue must move by ≥ 60° between `on-pace`, `ahead` and `over`.
+mean hue must move by **≥ 60° from `on-pace` to `ahead`**. (`ahead` → `over` is
+governed by §0.3 instead — 60° is not available between orange and red, which is
+why that pair also changes form.)
 
 Concretely, for each style:
 
@@ -86,6 +88,61 @@ not one:
 
 Deliver a greyscale proof of the four states per style: if `ahead` and `over`
 are indistinguishable with colour removed, the set is not finished.
+
+---
+
+## 0A. Round 2 assessment — three things left
+
+Round 2 fixed the main faults. Measured, per style:
+
+| | coverage `on-pace` / `ahead` / `over` | mean hue | `ahead`→`over` |
+| --- | --- | --- | --- |
+| Robot | 50% / 57% / 72% | 123° · 37° · 359° | 38° |
+| Gauge ring | 27% / 55% / 76% | 120° · 32° · 360° | 33° |
+| A-mark | 16% / 64% / 79% | 138° · 33° · 359° | 34° |
+
+**Fixed:** coverage is up from 8–25% to 50–79%; the hues are now clean and
+single rather than a green→red ramp; `on-pace`→`ahead` moves 86–105°; and the
+inversion is in place on the robot and the ring, which is what carries the
+`ahead`/`over` distinction. That part is done — don't revisit it.
+
+Three items remain.
+
+### A. `on-pace` is under-coloured
+
+Coverage is **50% (robot), 27% (ring), 16% (A-mark)** against the 60% bar — the
+only state still failing §0.1. The ring keeps a large dark centre, and the
+A-mark's A stays dark navy with only the gauge picking up green.
+
+**Fix.** Give `on-pace` the same field treatment `ahead` already has: the head,
+the ring body and the A itself take the verdict hue. Whatever was done to make
+`ahead` work, do it to `on-pace`.
+
+### B. The A-mark's `ahead` and `over` are identical in greyscale
+
+Mean luminance: **97 vs 93** — a 4-point gap. On the robot and the ring the
+inversion opens a 31–32 point gap (87→118 and 79→111), which is why they pass.
+The A-mark doesn't invert: the A stays a solid colour in both states and only
+the gauge arc flips.
+
+**Fix.** At `over` the A becomes the *light* element on a solid red field, as
+the robot and ring already do. Same rule, applied to all three styles.
+
+### C. The greyscale proof isn't greyscale
+
+Measured across the proof strip: **mean saturation 10.5%, peak 77% at hue 196°.**
+The cyan eyes were never desaturated, so the proof cannot demonstrate the thing
+it exists to demonstrate.
+
+**Fix.** Desaturate every layer, eyes included, and re-export. A true proof has
+0% saturation everywhere.
+
+### Correction to this brief
+
+§0.1 originally asked for a ≥60° mean-hue move between `on-pace`, `ahead` *and*
+`over`. That is not achievable between orange and red and contradicted §0.3.
+§0.1 now applies to `on-pace`→`ahead` only; §0.3 governs `ahead`→`over`. The
+round-2 artwork was right and the brief was wrong.
 
 ---
 
