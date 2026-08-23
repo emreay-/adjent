@@ -1,72 +1,25 @@
 {
   "artboards": [
-    {
-      "file": "Main.dc.html",
-      "x": 0,
-      "y": 0,
-      "w": 1120,
-      "h": 780
-    },
-    {
-      "file": "Plate.dc.html",
-      "x": 1240,
-      "y": 0,
-      "w": 1120,
-      "h": 760
-    },
-    {
-      "file": "TrayCut.dc.html",
-      "x": 2480,
-      "y": 0,
-      "w": 1120,
-      "h": 760
-    },
-    {
-      "file": "Usage.dc.html",
-      "x": 0,
-      "y": 900,
-      "w": 1120,
-      "h": 800
-    },
-    {
-      "file": "Device.dc.html",
-      "x": 1240,
-      "y": 900,
-      "w": 1120,
-      "h": 600
-    },
-    {
-      "file": "System.dc.html",
-      "x": 0,
-      "y": 1820,
-      "w": 1120,
-      "h": 800
-    },
-    {
-      "file": "DirectionI.dc.html",
-      "x": 1240,
-      "y": 1820,
-      "w": 1120,
-      "h": 660
-    }
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1120, "h": 760 },
+    { "file": "Mark.dc.html", "x": 1240, "y": 0, "w": 1120, "h": 720 },
+    { "file": "Usage.dc.html", "x": 0, "y": 880, "w": 1120, "h": 760 },
+    { "file": "System.dc.html", "x": 1240, "y": 880, "w": 1120, "h": 800 }
   ],
   "annotations": [
     {
-      "id": "the-decision",
+      "id": "the-restart",
       "x": 2480,
       "y": 0,
-      "w": 430,
-      "text": "The mark\n\nTwo rules at a 1:2 slope, offset 28, knocked out of a solid plate and cropped by its edges — so neither line has an end, and the plate reads as a detail of a larger drawing.\n\nThe heavy rule is measured. The dash-dot one is the datum, borrowing the drafting convention for a reference line. That is the whole idea, and it is the same relationship the pace chart already draws.\n\nCorner rule: the plate is a hard square everywhere the app controls its own edge — tray, header, print, web, Windows. Only the macOS and Linux launcher icon gets r13 of 64, because those grids mask every icon and a square there reads as a mistake."
+      "w": 440,
+      "text": "Designed from 16px up\n\nEvery earlier attempt drew a logo and then shrank it, and the tray glyph was whatever survived. This one runs the other way: the mark was designed as an instrument on the 16-pixel grid first, and the large sizes are the same drawing with room to breathe.\n\nThat ordering is why it works at both ends. The tray glyph is not a reduction of the logo — it is the logo, at the size it was designed for.\n\nWhat it shows: the left column is filled to utilization, the right is marked at the pace line. Fill above the mark means ahead of pace, and the gap is the size of the problem."
     },
     {
-      "id": "assets-note",
-      "x": 3720,
-      "y": 0,
-      "w": 430,
-      "text": "Files in the repo\n\nbrand/assets/ holds the mark as SVG: the square plate, the reversed plate, the r13 launcher icon, and — separately — the 16px tray cut, which is the two rules alone on the pixel grid.\n\nThe renderer in packages/desktop/src/trayicon.ts builds that same mask in code and upscales it by an integer factor, so the glyph stays crisp at every device scale rather than being resampled."
+      "id": "not-decided",
+      "x": 2480,
+      "y": 470,
+      "w": 440,
+      "text": "Still open\n\nTypography and palette were carried over untouched — Chivo and IBM Plex Mono, and the verdict colours already in the app's tokens. Neither was the thing that was failing, but say the word and they are in scope too.\n\nThe wordmark is set, not drawn. If the mark holds up, custom-drawing the 'adjent' letterforms to match its grid is the natural next step."
     }
   ],
-  "launch": {
-    "view": "canvas"
-  }
+  "launch": { "view": "canvas" }
 }

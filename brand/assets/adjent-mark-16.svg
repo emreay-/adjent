@@ -1,6 +1,13 @@
-<!-- Tray cut: below 32px the mark is the two rules alone, drawn on the pixel grid.
-     See brand/TrayCut.dc.html. -->
+<!-- Tray cut: the same drawing on the 16-unit grid, so every edge lands on a whole pixel. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" shape-rendering="crispEdges">
-  <path d="M10 14h3v2h-3zM11 12h3v2h-3zM12 10h3v2h-3zM13 8h3v2h-3zM14 6h3v2h-3zM15 4h3v2h-3zM16 2h3v2h-3zM17 0h3v2h-3z" fill="#8593A0"/>
-  <path d="M2 14h4v2h-4zM3 12h4v2h-4zM4 10h4v2h-4zM5 8h4v2h-4zM6 6h4v2h-4zM7 4h4v2h-4zM8 2h4v2h-4zM9 0h4v2h-4z" fill="#12171D"/>
+  <rect x="1" y="14" width="14" height="2" fill="#12171D">
+  </rect>
+  <rect x="2" y="0" width="5" height="14" fill="rgba(18,23,29,0.3)">
+  </rect>
+  <rect x="9" y="0" width="5" height="14" fill="rgba(18,23,29,0.3)">
+  </rect>
+  <rect x="2" y="3" width="5" height="11" fill="#12171D">
+  </rect>
+  <rect x="9" y="5" width="5" height="1" fill="#12171D">
+  </rect>
 </svg>

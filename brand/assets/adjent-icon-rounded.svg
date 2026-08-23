@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <clipPath id="plate"><rect width="64" height="64" rx="13"/></clipPath>
-  <g clip-path="url(#plate)">
-    <rect width="64" height="64" fill="#12171D"/>
-    <path d="M34 76 L74 -4" stroke="#FFFFFF" stroke-width="4" stroke-dasharray="12 4 2 4" fill="none"/>
-    <path d="M6 76 L46 -4" stroke="#FFFFFF" stroke-width="8" fill="none"/>
-  </g>
-</svg>

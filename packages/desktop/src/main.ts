@@ -35,13 +35,14 @@ const recentAlarms: Alarm[] = [];
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
-function updateTray(utilization: number, verdict: string, tooltip: string): void {
+function updateTray(utilization: number, pace: number, verdict: string, tooltip: string): void {
   if (!tray) return;
   lastTooltip = tooltip;
   const dpi = Math.max(1, Math.round(screen.getPrimaryDisplay().scaleFactor));
   tray.setImage(
     makeTrayIcon(nativeImage, {
       utilization,
+      pace,
       verdict,
       style: settings.trayStyle,
       thickness: settings.trayThickness,
@@ -208,7 +209,7 @@ async function applySettings(patch: Partial<Settings>, opts: { rebuildWidget?: b
   }
   if (settings.trayStyle !== prev.trayStyle || settings.trayThickness !== prev.trayThickness) {
     const b = monitor?.state?.limits.find((w) => w.binding);
-    updateTray(b?.limit.utilization ?? 0, b?.verdict ?? 'idle', lastTooltip);
+    updateTray(b?.limit.utilization ?? 0, b?.paceLinePct ?? 0, b?.verdict ?? 'idle', lastTooltip);
   }
   if (settings.tickIntervalSec !== prev.tickIntervalSec) restartLoop();
   if (
@@ -275,7 +276,7 @@ async function start(): Promise<void> {
   monitor.router.register(new TraySink());
 
   tray = new Tray(nativeImage.createEmpty());
-  updateTray(0, 'idle', 'Adjent — starting');
+  updateTray(0, 0, 'idle', 'Adjent — starting');
   tray.on('click', () => togglePanel());
   buildTrayMenu();
 
@@ -283,6 +284,7 @@ async function start(): Promise<void> {
     const b = s.limits.find((w) => w.binding);
     updateTray(
       b?.limit.utilization ?? 0,
+      b?.paceLinePct ?? 0,
       b?.verdict ?? 'idle',
       b ? `Adjent — ${b.limit.label} ${Math.round(b.limit.utilization)}%` : 'Adjent — no quota data',
     );
