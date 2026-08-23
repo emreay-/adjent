@@ -1,26 +1,27 @@
 {
   "artboards": [
-    { "file": "TrayStyles.dc.html", "x": 0, "y": 0, "w": 1180, "h": 900 },
-    { "file": "Main.dc.html", "x": 1300, "y": 0, "w": 1120, "h": 760 },
-    { "file": "Mark.dc.html", "x": 0, "y": 1020, "w": 1120, "h": 720 },
-    { "file": "Usage.dc.html", "x": 1300, "y": 1020, "w": 1120, "h": 760 },
-    { "file": "System.dc.html", "x": 2540, "y": 1020, "w": 1120, "h": 800 }
+    { "file": "Assets.dc.html", "x": 0, "y": 0, "w": 1240, "h": 1000 },
+    { "file": "TrayStyles.dc.html", "x": 1360, "y": 0, "w": 1180, "h": 900 },
+    { "file": "System.dc.html", "x": 2660, "y": 0, "w": 1120, "h": 800 },
+    { "file": "Main.dc.html", "x": 0, "y": 1120, "w": 1120, "h": 760 },
+    { "file": "Mark.dc.html", "x": 1360, "y": 1120, "w": 1120, "h": 720 },
+    { "file": "Usage.dc.html", "x": 2660, "y": 1120, "w": 1120, "h": 760 }
   ],
   "annotations": [
     {
-      "id": "status",
-      "x": 2540,
+      "id": "state",
+      "x": 3900,
       "y": 0,
       "w": 450,
-      "text": "Where this stands\n\nThe robot direction replaces everything to the right of this note — those artboards are the previous identity, kept only until the new one is drawn.\n\nThe tray styles above are redrawn from your reference on the pixel grid. The logo is not drawn yet: the file you sent is 310×237 with the navy background baked in and no alpha, which is well below what an app icon needs and cannot be keyed out cleanly, because the gloss and drop shadow blend into that background.\n\nPalette sampled from your art: body #E8EEF2, edge #A6B4C0, visor #131A22, eyes #6FEFEF, gauge #4FD06A / #E9E24F / #F02F30."
+      "text": "Where this stands\n\nThe 13 vector masters are drawn and in the repo under brand/assets. I reconstructed them rather than extracting from the sheets, because an image generator cannot emit structured SVG — the fourth sheet would have been another sheet.\n\nWhat is real now: flat vector, transparent, no gloss or shadow, named groups, and the whole set renders correctly at 16 through 128px on light and dark.\n\nThe three artboards on the lower row are the previous identity, kept for reference only. They are superseded."
     },
     {
-      "id": "needed",
-      "x": 2540,
-      "y": 520,
+      "id": "next",
+      "x": 3900,
+      "y": 470,
       "w": 450,
-      "text": "To draw the logo exactly\n\nBest: the vector source — SVG, PDF, AI or a Figma link. Then every size is exact, forever, and the print and favicon cases come free.\n\nGood enough: a PNG export at 512px or larger with a transparent background and no drop shadow.\n\nNeither? I redraw it as flat vector from the screenshot. The geometry is simple and I have the palette, so it will be recognisably the same character — but a flat interpretation, not the glossy render. Worth deciding deliberately: the gloss is what a vector logo cannot carry into a 16px tray or a one-colour print."
+      "text": "Not done yet\n\n1. The 16px tray glyphs. These masters are the spec, not the shipped art — scaled-down vector is exactly what failed at 16px twice. Each style and state gets hand-authored on the pixel grid, flat and hard-edged.\n\n2. The trayIconStyle setting: robot / ring / a-mark, defaulting to robot, and the app tokens moving to #FF8F00 and #B3181F.\n\n3. The .ico and PNG icon set, rasterised from the logo master.\n\nAll three are unblocked now — say the word."
     }
   ],
-  "launch": { "view": "focused", "file": "TrayStyles.dc.html" }
+  "launch": { "view": "focused", "file": "Assets.dc.html" }
 }

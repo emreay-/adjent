@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Adjent">
+  <title>Adjent</title>
+  <g id="antenna"><rect x="61" y="12" width="6" height="18" rx="3" fill="#F2F6F9" stroke="#131A22" stroke-width="3"/><circle cx="64" cy="11" r="8" fill="#F2F6F9" stroke="#131A22" stroke-width="3"/></g>
+  <g id="pods"><rect x="3" y="58" width="14" height="28" rx="7" fill="#DCE5EC" stroke="#131A22" stroke-width="3"/><rect x="111" y="58" width="14" height="28" rx="7" fill="#DCE5EC" stroke="#131A22" stroke-width="3"/></g>
+  <g id="head"><rect x="12" y="24" width="104" height="88" rx="28" fill="#F2F6F9" stroke="#131A22" stroke-width="4"/></g>
+  <g id="gauge-track"><path d="M40.05 61.5 A28 28 0 0 1 45.56 54.93" fill="none" stroke="#0CA30C" stroke-width="9" stroke-linecap="butt"/><path d="M46.46 54.18 A28 28 0 0 1 53.87 49.89" fill="none" stroke="#7BC62D" stroke-width="9" stroke-linecap="butt"/><path d="M54.98 49.49 A28 28 0 0 1 63.41 48.01" fill="none" stroke="#E9C21F" stroke-width="9" stroke-linecap="butt"/><path d="M64.59 48.01 A28 28 0 0 1 73.02 49.49" fill="none" stroke="#FF8F00" stroke-width="9" stroke-linecap="butt"/><path d="M74.13 49.89 A28 28 0 0 1 81.54 54.18" fill="none" stroke="#E5552B" stroke-width="9" stroke-linecap="butt"/><path d="M82.44 54.93 A28 28 0 0 1 87.95 61.5" fill="none" stroke="#D42027" stroke-width="9" stroke-linecap="butt"/></g>
+  <g id="gauge-needle"><path d="M89.89 57.19 L59.89 70.34 L68.11 81.66 Z" fill="#F2F6F9"/></g>
+  <g id="visor"><rect x="30" y="66" width="68" height="40" rx="17" fill="#131A22"/></g>
+  <g id="eyes"><path d="M41.03 87.22 A9 9 0 0 1 58.97 87.22" fill="none" stroke="#6FEFEF" stroke-width="6" stroke-linecap="round"/><path d="M69.03 87.22 A9 9 0 0 1 86.97 87.22" fill="none" stroke="#6FEFEF" stroke-width="6" stroke-linecap="round"/></g>
+</svg>

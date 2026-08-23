@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Adjent amark over">
+  <title>Adjent amark over</title>
+  <rect width="128" height="128" rx="28" fill="#B3181F"/>
+  <g id="letter"><path d="M64 10 L118 118 L92 118 L64 56 L36 118 L10 118 Z" fill="#FFFFFF" stroke="none" stroke-width="4" stroke-linejoin="round"/></g>
+  <g id="recess"><path d="M32 114 A32 32 0 0 1 96 114 Z" fill="#B3181F"/></g>
+  <g id="gauge"><path d="M41.22 110.8 A23 23 0 0 1 86.78 110.8" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="butt"/><path d="M46.7 109.04 L38.05 106.56" stroke="#B3181F" stroke-width="2.5" stroke-linecap="round"/><path d="M50.35 102.27 L43.52 96.41" stroke="#B3181F" stroke-width="2.5" stroke-linecap="round"/><path d="M56.49 97.64 L52.73 89.46" stroke="#B3181F" stroke-width="2.5" stroke-linecap="round"/><path d="M64 96 L64 87" stroke="#B3181F" stroke-width="2.5" stroke-linecap="round"/><path d="M71.51 97.64 L75.27 89.46" stroke="#B3181F" stroke-width="2.5" stroke-linecap="round"/><path d="M77.65 102.27 L84.48 96.41" stroke="#B3181F" stroke-width="2.5" stroke-linecap="round"/><path d="M81.3 109.04 L89.95 106.56" stroke="#B3181F" stroke-width="2.5" stroke-linecap="round"/></g>
+  <g id="needle"><path d="M76.72 93.65 L58.06 110.29 L69.94 117.71 Z" fill="#FFFFFF"/></g>
+</svg>
