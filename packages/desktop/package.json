@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "electron .",
     "test": "vitest run",
-    "dist": "electron-builder --config electron-builder.yml"
+    "dist": "electron-builder --config electron-builder.yml",
+    "icons": "electron scripts/make-icons.cjs"
   },
   "dependencies": {
     "@adjent/core": "workspace:*"

@@ -10,7 +10,8 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-export type TrayStyle = 'ring' | 'disc';
+/** Which tray glyph to draw. See brand/assets/tray for the vector masters. */
+export type TrayStyle = 'robot' | 'ring' | 'a-mark';
 export type Theme = 'system' | 'light' | 'dark';
 
 export interface Settings {
@@ -18,7 +19,7 @@ export interface Settings {
   uiScale: number;
   /** Follow the OS, or pin light/dark. Drives prefers-color-scheme directly. */
   theme: Theme;
-  /** Tray glyph: a filled arc ring, or a solid disc with a progress wedge. */
+  /** Tray glyph: the robot head, the gauge ring, or the A-mark. */
   trayStyle: TrayStyle;
   /** Ring thickness as a fraction of the icon radius. Clamped to [0.18, 0.5]. */
   trayThickness: number;
@@ -35,7 +36,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   uiScale: 1,
   theme: 'system',
-  trayStyle: 'ring',
+  trayStyle: 'robot',
   trayThickness: 0.34,
   widgetEnabled: false,
   widgetTaskbarButton: true,
@@ -57,7 +58,7 @@ export function coerceSettings(raw: unknown): Settings {
   return {
     uiScale: clamp(r['uiScale'], 0.8, 2.0, DEFAULT_SETTINGS.uiScale),
     theme: theme === 'light' || theme === 'dark' ? theme : 'system',
-    trayStyle: r['trayStyle'] === 'disc' ? 'disc' : 'ring',
+    trayStyle: r['trayStyle'] === 'ring' || r['trayStyle'] === 'a-mark' ? r['trayStyle'] : 'robot',
     trayThickness: clamp(r['trayThickness'], 0.18, 0.5, DEFAULT_SETTINGS.trayThickness),
     widgetEnabled: r['widgetEnabled'] === true,
     widgetTaskbarButton: r['widgetTaskbarButton'] !== false,

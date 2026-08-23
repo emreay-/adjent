@@ -8,6 +8,7 @@ files:
   - dist/**
   - package.json
 win:
+  icon: icons/icon.ico
   target:
     - nsis
     - portable
@@ -15,6 +16,7 @@ nsis:
   oneClick: true
   perMachine: false
 linux:
+  icon: icons/icon.png
   target:
     - AppImage
     - deb

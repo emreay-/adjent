@@ -1,100 +1,170 @@
 /**
  * Tray glyph rendering.
  *
- * The glyph is an instrument, not a shrunken logo. It answers the panel's one
- * question at a glance: two columns standing on a common foot, the left one
- * filled to the binding limit's utilization, the right one marked at the pace
- * line. Taller-than-the-mark means burning faster than the window allows, and
- * the size of the difference is the size of the problem — a reading that
- * survives with the colour ignored entirely.
+ * Three styles, chosen in settings: the robot head (default), the gauge ring,
+ * and the A-mark. Each is the vector master in brand/assets/tray drawn again
+ * for the pixel grid — not the master scaled down, which is what fails at 16px:
+ * an antialiased diagonal becomes a smear and a one-pixel detail becomes dirt.
  *
- * Everything is authored on the pixel grid and rendered with hard edges: rows
- * and columns only, no diagonals, no antialiasing. Device pixels are an integer
- * upscale of the logical grid, so the glyph is crisp at any scale factor rather
- * than resampled. The empty part of each column is drawn in the same hue at low
- * alpha, so the track reads on light and dark panels without a second colour.
+ * Everything here is rows, columns and integer circle tests, with hard edges
+ * and no antialiasing. Proportions are expressed as fractions of the grid so a
+ * 16px Windows slot and a 22px Linux panel both land on whole pixels, and
+ * device pixels are an integer upscale of that grid rather than a resample.
+ *
+ * The verdict colours the whole glyph rather than an accent on it, and `over`
+ * inverts — a light glyph on a solid red plate. Orange and red are the worst
+ * pair for the commonest colour-blindness, so that state differs in form as
+ * well as hue, and stays legible with colour removed.
  */
 import type { NativeImage } from 'electron';
 import type { TrayStyle } from '@adjent/core' with { 'resolution-mode': 'import' };
 
 export const VERDICT_RGB: Record<string, [number, number, number]> = {
   'on-pace': [0x0c, 0xa3, 0x0c],
-  ahead: [0xfa, 0xb2, 0x19],
-  over: [0xd0, 0x3b, 0x3b],
+  ahead: [0xff, 0x8f, 0x00],
+  over: [0xb3, 0x18, 0x1f],
   idle: [0x86, 0x93, 0xa0],
 };
 
-/** Mask levels. The track is the same hue at TRACK_ALPHA; the reading is opaque. */
-const EMPTY = 0;
-const TRACK = 1;
-const SOLID = 2;
-const TRACK_ALPHA = 0.3;
+const INK: [number, number, number] = [0x13, 0x1a, 0x22];
+const EYE: [number, number, number] = [0x6f, 0xef, 0xef];
+const WHITE: [number, number, number] = [0xff, 0xff, 0xff];
 
-/** Proportions of the logical grid, so 16px and 22px slots stay on-grid. */
-const FOOT_H = 1 / 8;
-const COL_W = 5 / 16;
-const MEASURED_X = 2 / 16;
-const DATUM_X = 9 / 16;
-const SIDE_INSET = 1 / 16;
+/** Mask levels, resolved to colours per state at paint time. */
+const EMPTY = 0;
+const PLATE = 1;
+const BODY = 2;
+const DARK = 3;
+const EYES = 4;
+const LIGHT = 5;
 
 export interface TrayIconOptions {
-  /** Vendor-reported utilization of the binding limit, 0..100+. */
+  /** Vendor-reported utilization of the binding limit, 0..100+. Reserved for the ring sweep. */
   utilization: number;
-  /** Where utilization would be if the window were burned evenly — the pace line. */
+  /** Where utilization would be if the window were burned evenly. */
   pace?: number;
   verdict: string;
-  /** `ring` draws both columns; `disc` drops the pace column for cluttered panels. */
+  /** Which of the three glyphs to draw. */
   style: TrayStyle;
-  /** Scales column width. 0.28 is the drawn weight. */
-  thickness: number;
+  /** Retained for settings compatibility; the pixel grid fixes weights. */
+  thickness?: number;
   /** Logical size in px (16 is the Windows tray slot; 22 suits most Linux panels). */
   logicalSize: number;
   /** Device pixels per logical px — 2 or 3 keeps it sharp on HiDPI. */
   scaleFactor: number;
 }
 
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+/** A grid of level values, with helpers that clip to it. */
+class Grid {
+  readonly m: Uint8Array;
+  readonly n: number;
+  constructor(n: number) {
+    this.n = n;
+    this.m = new Uint8Array(n * n);
+  }
+  set(x: number, y: number, v: number): void {
+    if (x >= 0 && x < this.n && y >= 0 && y < this.n) this.m[y * this.n + x] = v;
+  }
+  box(x0: number, y0: number, w: number, h: number, v: number): void {
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) this.set(x, y, v);
+  }
+  /** Filled rectangle with the corners cut back, so a plate reads as a rounded tile. */
+  plate(v: number): void {
+    const n = this.n;
+    const r = Math.max(1, Math.round(n * 0.2));
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        const dx = x < r ? r - x : x >= n - r ? x - (n - 1 - r) : 0;
+        const dy = y < r ? r - y : y >= n - r ? y - (n - 1 - r) : 0;
+        if (dx * dx + dy * dy > r * r) continue;
+        this.set(x, y, v);
+      }
+    }
+  }
+  /** A 1px line from the centre outwards, for the needle. */
+  ray(cx: number, cy: number, r0: number, r1: number, deg: number, v: number): void {
+    const th = (deg * Math.PI) / 180;
+    for (let r = r0; r <= r1; r += 0.4) {
+      this.set(Math.round(cx + r * Math.cos(th)), Math.round(cy - r * Math.sin(th)), v);
+    }
+  }
+}
+
+/**
+ * Shapes draw into a frame rather than the whole grid: when `over` inverts onto
+ * a plate, the glyph insets so the red reads as a field around it rather than
+ * as a hairline border.
+ */
+interface Frame {
+  x: number;
+  y: number;
+  s: number;
+}
+const frameFor = (n: number, inverted: boolean): Frame => {
+  const inset = inverted ? Math.round(n * 0.14) : 0;
+  return { x: inset, y: inset, s: n - 2 * inset };
+};
+
+function robot(g: Grid, f: Frame, body: number): void {
+  const P = (k: number): number => Math.round(f.s * k);
+  const pad = Math.max(1, P(0.125));
+  g.box(f.x + P(0.4375), f.y, Math.max(1, P(0.125)), pad, body); // antenna
+  g.box(f.x + pad, f.y + pad, f.s - 2 * pad, f.s - 2 * pad, body); // head
+  const vx = P(0.1875);
+  g.box(f.x + vx, f.y + P(0.4375), f.s - 2 * vx, Math.max(2, P(0.3125)), DARK); // visor
+  const eye = Math.max(1, P(0.125));
+  g.box(f.x + P(0.3125), f.y + P(0.5625), eye, eye, EYES);
+  g.box(f.x + P(0.5625), f.y + P(0.5625), eye, eye, EYES);
+}
+
+function ring(g: Grid, f: Frame, body: number): void {
+  const cx = f.x + (f.s - 1) / 2;
+  const cy = f.y + (f.s - 1) / 2;
+  const rOut = f.s * 0.47;
+  const rIn = f.s * 0.3;
+  for (let y = f.y; y < f.y + f.s; y++) {
+    for (let x = f.x; x < f.x + f.s; x++) {
+      const d = Math.hypot(x - cx, y - cy);
+      if (d <= rIn) g.set(x, y, DARK);
+      else if (d <= rOut) g.set(x, y, body);
+    }
+  }
+  g.ray(cx, cy, 0, rIn * 0.8, 55, LIGHT);
+}
+
+function amark(g: Grid, f: Frame, body: number): void {
+  const P = (k: number): number => Math.round(f.s * k);
+  const cx = f.x + (f.s - 1) / 2;
+  const top = f.y + P(0.0625);
+  const bottom = f.y + f.s - 1 - P(0.0625);
+  const half = Math.max(1, Math.floor(P(0.1875) / 2));
+  const spread = f.s * 0.4;
+  for (let y = top; y <= bottom; y++) {
+    const t = (y - top) / Math.max(1, bottom - top);
+    for (const lx of [cx - t * spread, cx + t * spread]) {
+      for (let i = -half; i <= half; i++) g.set(Math.round(lx) + i, y, body);
+    }
+  }
+  // The gauge recess in the letter's opening, with a needle in it.
+  const ry = bottom - Math.max(2, P(0.25));
+  g.box(Math.round(cx) - P(0.1875), ry, 2 * P(0.1875), bottom - ry, DARK);
+  g.ray(cx, bottom - 1, 0, Math.max(2, P(0.22)), 60, LIGHT);
+}
+
+const SHAPES: Record<string, (g: Grid, f: Frame, body: number) => void> = {
+  robot,
+  ring,
+  'a-mark': amark,
+};
 
 /** The glyph as a logical-resolution level mask — the whole design lives here. */
 export function renderTrayMask(o: TrayIconOptions): { mask: Uint8Array; n: number } {
   const n = Math.max(8, Math.round(o.logicalSize));
-  const mask = new Uint8Array(n * n);
-  const set = (x0: number, y0: number, w: number, h: number, v: number): void => {
-    for (let y = y0; y < y0 + h; y++) {
-      if (y < 0 || y >= n) continue;
-      for (let x = x0; x < x0 + w; x++) if (x >= 0 && x < n) mask[y * n + x] = v;
-    }
-  };
-
-  const footH = Math.max(1, Math.round(n * FOOT_H));
-  const span = n - footH;
-  const inset = Math.max(0, Math.round(n * SIDE_INSET));
-  const weight = clamp(o.thickness / 0.28, 0.7, 1.6);
-  const colW = Math.max(2, Math.round(n * COL_W * weight));
-  const measuredX = Math.round(n * MEASURED_X);
-  const datumX = Math.round(n * DATUM_X);
-  /** Rows of column filled by a percentage. */
-  const rows = (pct: number): number => Math.round((span * clamp(pct, 0, 100)) / 100);
-
-  // The foot is the one fixed element: it makes the columns read as standing on
-  // a baseline, and it keeps the idle glyph from being an empty rectangle.
-  set(inset, span, n - 2 * inset, footH, SOLID);
-
-  set(measuredX, 0, colW, span, TRACK);
-  if (o.style !== 'disc') set(datumX, 0, colW, span, TRACK);
-
-  // Idle means nothing is being measured: the tracks and the foot stand alone.
-  if (o.verdict === 'idle') return { mask, n };
-
-  const filled = rows(o.utilization);
-  set(measuredX, span - filled, colW, filled, SOLID);
-
-  if (o.style !== 'disc') {
-    // The pace column is marked, not filled — it is a reference, not a quantity.
-    const at = rows(o.pace ?? 0);
-    if (at > 0) set(datumX, span - at, colW, Math.max(1, Math.round(n / 32)), SOLID);
-  }
-  return { mask, n };
+  const g = new Grid(n);
+  const inverted = o.verdict === 'over';
+  if (inverted) g.plate(PLATE);
+  (SHAPES[o.style] ?? robot)(g, frameFor(n, inverted), inverted ? LIGHT : BODY);
+  return { mask: g.m, n };
 }
 
 /**
@@ -103,31 +173,54 @@ export function renderTrayMask(o: TrayIconOptions): { mask: Uint8Array; n: numbe
  */
 export function renderTrayBuffer(o: TrayIconOptions): { buf: Buffer; px: number } {
   const { mask, n } = renderTrayMask(o);
-  // Integer upscale only — a fractional one would reintroduce soft edges.
   const scale = Math.max(1, Math.round(o.scaleFactor));
-  const px = n * scale;
-  const buf = Buffer.alloc(px * px * 4);
-  const rgb = VERDICT_RGB[o.verdict] ?? VERDICT_RGB['idle']!;
+  const size = n * scale;
+  const buf = Buffer.alloc(size * size * 4);
+  const verdict = VERDICT_RGB[o.verdict] ?? VERDICT_RGB['idle']!;
+  const inverted = o.verdict === 'over';
 
-  for (let y = 0; y < px; y++) {
+  const colour = (v: number): [number, number, number] | null => {
+    switch (v) {
+      case PLATE:
+        return verdict;
+      case BODY:
+        return verdict;
+      case DARK:
+        return INK;
+      case EYES:
+        return EYE;
+      case LIGHT:
+        return inverted ? WHITE : WHITE;
+      default:
+        return null;
+    }
+  };
+
+  for (let y = 0; y < size; y++) {
     const my = Math.floor(y / scale);
-    for (let x = 0; x < px; x++) {
+    for (let x = 0; x < size; x++) {
       const v = mask[my * n + Math.floor(x / scale)]!;
       if (v === EMPTY) continue;
-      const i = (y * px + x) * 4;
-      buf[i] = rgb[0]!;
-      buf[i + 1] = rgb[1]!;
-      buf[i + 2] = rgb[2]!;
-      buf[i + 3] = v === TRACK ? Math.round(TRACK_ALPHA * 255) : 255;
+      const c = colour(v);
+      if (!c) continue;
+      const i = (y * size + x) * 4;
+      buf[i] = c[0];
+      buf[i + 1] = c[1];
+      buf[i + 2] = c[2];
+      buf[i + 3] = 255;
     }
   }
-  return { buf, px };
+  return { buf, px: size };
 }
 
 export function makeTrayIcon(
   nativeImage: { createFromBuffer(b: Buffer, o: { width: number; height: number; scaleFactor: number }): NativeImage },
   o: TrayIconOptions,
 ): NativeImage {
-  const { buf, px } = renderTrayBuffer(o);
-  return nativeImage.createFromBuffer(buf, { width: px, height: px, scaleFactor: Math.max(1, Math.round(o.scaleFactor)) });
+  const { buf, px: size } = renderTrayBuffer(o);
+  return nativeImage.createFromBuffer(buf, {
+    width: size,
+    height: size,
+    scaleFactor: Math.max(1, Math.round(o.scaleFactor)),
+  });
 }

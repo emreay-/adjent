@@ -448,7 +448,6 @@ function syncSettingsUI(s) {
   if (!s) return;
   $('scaleVal').textContent = `${Math.round(s.uiScale * 100)}%`;
   $('tickVal').textContent = `${s.tickIntervalSec}s`;
-  $('thick').value = String(s.trayThickness);
   $('widgetOn').checked = !!s.widgetEnabled;
   $('widgetTask').checked = !!s.widgetTaskbarButton;
   $('pauseAlarms').checked = !!s.alarmsPaused;
@@ -488,7 +487,6 @@ document.querySelectorAll('#trayStyle button').forEach((b) =>
 document.querySelectorAll('#theme button').forEach((b) =>
   b.addEventListener('click', () => set({ theme: b.dataset.theme })),
 );
-$('thick').addEventListener('input', (e) => set({ trayThickness: Number(e.target.value) }));
 $('widgetOn').addEventListener('change', (e) => set({ widgetEnabled: e.target.checked }));
 $('widgetTask').addEventListener('change', (e) => set({ widgetTaskbarButton: e.target.checked }));
 $('pauseAlarms').addEventListener('change', (e) => set({ alarmsPaused: e.target.checked }));

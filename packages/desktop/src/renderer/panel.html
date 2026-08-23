@@ -8,7 +8,7 @@
   /* Status palette is fixed and never themed (docs/UI.md). */
   :root {
     --bg:#F3F5F7; --surface:#FFFFFF; --line:#D9DFE6; --ink:#12171D; --ink2:#3C4752; --muted:#65727F;
-    --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+    --good:#0ca30c; --warn:#ff8f00; --crit:#b3181f;
     --good-bg:#E4F3E4; --warn-bg:#FBF0D8; --crit-bg:#F7E2E2; --idle:#808890;
   }
   @media (prefers-color-scheme: dark) {
@@ -214,12 +214,8 @@
       <div class="setRow">
         <label>Tray glyph</label>
         <div class="seg" id="trayStyle">
-          <button data-style="ring">Ring</button><button data-style="disc">Disc</button>
+          <button data-style="robot">Robot</button><button data-style="ring">Gauge</button><button data-style="a-mark">A-mark</button>
         </div>
-      </div>
-      <div class="setRow">
-        <label>Tray thickness</label>
-        <input type="range" id="thick" min="0.18" max="0.5" step="0.02">
       </div>
 
       <h2 style="margin-top:14px">Visibility</h2>

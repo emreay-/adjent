@@ -11,7 +11,7 @@ describe('settings', () => {
     expect(s.uiScale).toBe(2.0);
     expect(s.tickIntervalSec).toBe(10);
     expect(s.trayThickness).toBe(0.5);
-    expect(s.trayStyle).toBe('ring');
+    expect(s.trayStyle).toBe('robot');
   });
 
   it('a missing or corrupt file degrades to defaults', async () => {
