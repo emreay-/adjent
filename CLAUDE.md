@@ -72,8 +72,9 @@ Current split — check `git worktree list` before assuming:
 
 | Worktree | Branch | Area |
 | --- | --- | --- |
-| `adjent/` | `main` | integration; brand and design work |
+| `adjent/` | `main` | integration — merges the others, holds the shared history |
 | `adjent-core/` | `work/core` | core, CLI and desktop logic |
+| `adjent-branding/` | `work/branding` | brand identity, the tray glyph, design canvas |
 
 Rules that follow from sharing a repo:
 
@@ -87,13 +88,20 @@ Rules that follow from sharing a repo:
 4. Worktrees live *outside* the repo directory, so nothing needs gitignoring.
 5. `dist/` and `node_modules/` are per-worktree. Never build or run the Electron
    app from a directory another agent is editing.
+6. **Only one Adjent can run at a time**, whichever worktree it was built from —
+   `app.requestSingleInstanceLock()` is machine-wide. Agree who holds it before
+   launching, and stop it by **PID**, never `taskkill /IM electron.exe`, which
+   also kills every other Electron app on the machine.
 
 ## Conventions
 
 - TypeScript strict; pnpm workspaces (`core/`, `cli/`, `desktop/` under
   `packages/`) per ARCHITECTURE.md.
-- Vocabulary in code follows GLOSSARY.md: `utilization`, `window`,
-  `bindingLimit`, `bucket`, `burnRate` — do not invent synonyms.
+- Vocabulary in code follows GLOSSARY.md: `utilization`, `limit`,
+  `bindingLimit`, `bucket`, `burnRate` — do not invent synonyms. Note `limit`,
+  not `window`: in a desktop app a window is a UI element, and `limit` is the
+  vendors' own word. `window` survives only for a *time span* (`windowMinutes`,
+  the `agent_burn` lookback) and in the rolling-window maths in GLOSSARY.md.
 - Line endings are LF, enforced by `.gitattributes`.
 - Math in docs is KaTeX-compatible `$…$`/`$$…$$`. When editing it
   programmatically, never pass LaTeX through bash heredocs or Python string
