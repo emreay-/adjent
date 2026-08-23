@@ -66,6 +66,7 @@ function agentSnapshots(state: AppState, only?: string): AlarmAgentSnapshot[] {
     .map((a) => ({
       label: a.label,
       project: a.projectPath ? (a.projectPath.split(/[\\/]/).pop() ?? a.projectPath) : null,
+      projectPath: a.projectPath,
       branch: a.gitBranch,
       model: a.model,
       effort: a.effort,

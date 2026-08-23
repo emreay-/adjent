@@ -66,7 +66,10 @@ window.adjent.onState((payload) => {
     $('hot').querySelector('.dot').style.background = top.pctPerHour > 8 ? 'var(--crit)' : 'var(--warn)';
     $('hot').querySelector('.n').textContent = proj;
     $('hot').querySelector('.v').textContent = `≈${top.pctPerHour.toFixed(1)} %/h`;
-    $('hot').title = tipFor('agentBurn');
+    // The strip has room for one line of context; lead with the directory,
+    // which is what distinguishes sibling worktrees.
+    const where = agent?.projectPath ? `${agent.projectPath}\n\n` : '';
+    $('hot').title = where + tipFor('agentBurn');
   }
 });
 
