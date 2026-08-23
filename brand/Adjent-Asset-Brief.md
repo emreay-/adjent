@@ -13,6 +13,82 @@ artefacts: the product logo, and a tray icon set in three styles × four states.
 
 ---
 
+## 0. Revision 2 — read this first
+
+The first artwork round (1536×1024 sheet, three styles × four states) is close
+on the logo and **not yet usable for the tray**. Two problems, both measured
+from that sheet rather than eyeballed. Everything not mentioned here is
+unchanged.
+
+### 0.1 The verdict colour must cover the whole icon
+
+Measured share of visible pixels carrying any verdict colour, and the icon's
+mean hue per state:
+
+| Style | idle | on-pace | ahead | over |
+| --- | --- | --- | --- | --- |
+| Robot | 16.8% · 203° | 22.0% · 181° | 17.4% · 180° | 20.5% · 191° |
+| Gauge ring | 13.7% · 207° | 19.5% · 140° | 22.7% · 40° | 25.1% · 16° |
+| A-mark | 8.2% · 206° | 14.0% · 145° | 14.9% · 70° | 14.7% · 33° |
+
+The robot line is the important one: **its mean hue is ~180–203° in all four
+states** — cyan. The eyes and the white shell dominate every state, and the
+verdict lives in an antenna ball and two or three gauge segments. At 16px that
+is a handful of pixels, and the four states are the same icon.
+
+**Requirement.** At tray sizes the verdict colour is the icon's *field*, not an
+accent on it: **≥ 60% of opaque pixels carry the verdict hue**, and the icon's
+mean hue must move by ≥ 60° between `on-pace`, `ahead` and `over`.
+
+Concretely, for each style:
+
+- **Robot** — the verdict colours the head shell. Visor stays `#131A22`, eyes
+  stay `#6FEFEF`; those are the character and must not change. Everything else
+  takes the verdict hue.
+- **Gauge ring** — the ring body takes the verdict hue.
+- **A-mark** — the A itself takes the verdict hue. In the current sheet the A is
+  dark navy, which vanishes on a dark taskbar.
+
+### 0.2 The multi-colour gauge track has to go at tray sizes
+
+Every state in the sheet contains green *and* amber *and* red segments, because
+the gauge track is drawn in full each time. That is why the coloured pixels have
+a hue spread of 0.22–0.73 (0 = one pure hue, 1 = evenly spread): there is no
+single colour signal to read. It is correct on the large logo and wrong on a
+16px glyph.
+
+**Requirement.** At 24px and below, the gauge track is a single hue — the
+current verdict. Keep the full green→red track on the logo only.
+
+### 0.3 Ahead and over must separate
+
+Measured hue separation between `ahead` and `over`: **robot 11°, ring 24°,
+A-mark 37°.** For scale, green→red is about 120°. None of these is reliable at
+16px, and orange-vs-red is the single worst pair for the most common form of
+colour-blindness — a protanope sees these two as the same colour.
+
+**Requirement.** Ahead is orange, over is red, and they differ in **three** ways,
+not one:
+
+| | `ahead` | `over` |
+| --- | --- | --- |
+| Fill | `#FF8F00` | `#B3181F` |
+| Hue | 34° | 357° |
+| Form | Coloured glyph, transparent ground | **Inverted** — light glyph on a solid red field |
+
+- Hue separation ≥ 30°.
+- Contrast ratio between the two fills ≥ 2.5:1 — the recommended pair is 3.0:1,
+  so `over` reads as darker even in greyscale.
+- The **inversion** is what actually carries it. `over` is the only state drawn
+  as a filled plate with the glyph knocked out of it. That survives greyscale,
+  colour-blindness, and 16px, and it correctly makes the worst state the
+  loudest thing in the tray.
+
+Deliver a greyscale proof of the four states per style: if `ahead` and `over`
+are indistinguishable with colour removed, the set is not finished.
+
+---
+
 ## 1. Division of work
 
 | Who | What |
@@ -112,17 +188,20 @@ Sampled from the supplied artwork:
 The app already ships these verdict colours, and they are referenced across the
 UI, the docs and the alarm copy:
 
-| State | App value | Value in the supplied art |
-| --- | --- | --- |
-| `on-pace` | `#0CA30C` | `#4FD06A` |
-| `ahead` | `#FAB219` | `#E9E24F` |
-| `over` | `#D03B3B` | `#F02F30` |
-| `idle` | `#8693A0` | — |
+| State | Use this | App ships today | First artwork round |
+| --- | --- | --- | --- |
+| `on-pace` | `#0CA30C` | `#0CA30C` | `#4FD06A` |
+| `ahead` | **`#FF8F00`** | `#FAB219` | `#E9E24F` |
+| `over` | **`#B3181F`** | `#D03B3B` | `#F02F30` |
+| `idle` | `#8693A0` | `#8693A0` | — |
 
-**This is a decision, not a detail.** Either the artwork adopts the app values,
-or the app adopts the artwork's — but the tray icon and the in-app verdict chip
-must not be different greens. **Default assumption: use the app values** unless
-told otherwise. State which you used.
+`ahead` and `over` move deliberately (see §0.3): the shipped amber is too close
+to yellow to read as a warning at 16px, and the shipped red is too light to
+separate from it. The app's tokens will be updated to match, so **use the
+"Use this" column** — these are now the single source of truth, not the app.
+
+Everything else stays on the app's values; the tray icon and the in-app verdict
+chip must never be different greens.
 
 ---
 
@@ -185,6 +264,11 @@ Each item is checkable without opinion:
 - [ ] Every artwork legible against both `#1F1F1F` and `#EFEFEF`
 - [ ] Any supplied 16×16 PNG has binary alpha and no antialiasing
 - [ ] No text or wordmark inside any mark
+- [ ] **≥ 60% of each tray icon's opaque pixels carry the verdict hue** (§0.1)
+- [ ] **Mean hue moves ≥ 60°** between `on-pace`, `ahead` and `over`
+- [ ] **At ≤24px the gauge track is a single hue**, not a green→red ramp (§0.2)
+- [ ] **`over` is drawn inverted** — light glyph on a solid red field (§0.3)
+- [ ] **Greyscale proof supplied**, and `ahead` vs `over` still tell apart in it
 
 ## 9. Do not deliver
 
