@@ -230,8 +230,17 @@ function agentDetailHtml(agent, burn) {
     ['Burn', burn !== undefined ? `<b>≈${burn.toFixed(1)} %/h</b>` : '—'],
     ['Tokens', `${esc(fmtTok(all))} · ${esc(fmtTok(tot.cacheRead))} cached · ${esc(fmtTok(tot.output))} out`],
   ]);
-  if (burn !== undefined) {
-    html += `<span class="pn">${esc(PROV_NOTE.derived || '')}</span>`;
+  // Keep the contextual explanation the row used to carry on its own: the
+  // facts say what this agent is, the explanation says what the number means.
+  const key = burn !== undefined ? 'agentBurn' : agent.state === 'idle' ? 'idle' : 'model';
+  const e = EXPL[key];
+  if (e) {
+    html += `<span class="ctxh">${esc(e.title)}</span>`;
+    html += `<span class="expl">${esc(e.body)}</span>`;
+    if (e.provenance) {
+      html += `<span class="p ${e.provenance}">${esc(e.provenance)}</span>`;
+      html += `<span class="pn">${esc(PROV_NOTE[e.provenance] || '')}</span>`;
+    }
   }
   return html;
 }

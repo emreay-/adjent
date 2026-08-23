@@ -208,7 +208,12 @@ function payload(overrides: Record<string, unknown> = {}) {
       { t: T0 - H, w: 'claude:5h', u: 22 },
     ],
     settings: { uiScale: 1, theme: 'system', trayStyle: 'ring', trayThickness: 0.34, widgetEnabled: false, widgetTaskbarButton: true, widgetPosition: null, tickIntervalSec: 30, alarmsPaused: false },
-    explanations: { hero: { title: 'H', body: 'b'.repeat(50) } },
+    explanations: {
+      hero: { title: 'H', body: 'b'.repeat(50) },
+      agentBurn: { title: 'What this agent is costing you', body: 'Share of the limit per hour.', provenance: 'derived' },
+      idle: { title: 'Idle agent', body: 'Open but not producing turns.' },
+      model: { title: 'Model', body: 'The model used on the most recent turn.' },
+    },
     provenanceNote: { measured: 'm', exact: 'e', derived: 'd' },
     ...overrides,
   };
@@ -290,6 +295,34 @@ describe('hover detail', () => {
     expect(tip).toContain('main');           // branch
     expect(tip).toContain('model-x');        // model
     expect(tip).toContain('4.2 %/h');        // derived burn
+  });
+
+  it('the agent card keeps the explanation as well as the facts', () => {
+    h.onState(payload());
+    const row = new El();
+    row.setAttribute('data-agent', 'claude:a1');
+    const tip = h.hover(row);
+
+    // Facts.
+    expect(tip).toContain('Directory');
+    expect(tip).toContain('/w/demo');
+    // ...and the contextual explanation the row used to carry on its own. An
+    // earlier change swapped one for the other; both belong here.
+    expect(tip, 'explanation title missing').toContain('What this agent is costing you');
+    expect(tip, 'explanation body missing').toContain('Share of the limit per hour.');
+    expect(tip, 'provenance tag missing').toContain('derived');
+  });
+
+  it('an idle agent gets the idle explanation, not the burn one', () => {
+    const idle = payload();
+    idle.state.agents[0]!.state = 'idle';
+    idle.state.agentBurns = [];
+    h.onState(idle);
+    const row = new El();
+    row.setAttribute('data-agent', 'claude:a1');
+    const tip = h.hover(row);
+    expect(tip).toContain('Idle agent');
+    expect(tip).not.toContain('What this agent is costing you');
   });
 
   it('a notification hover lists each agent with its full directory', () => {
