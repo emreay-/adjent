@@ -14,10 +14,14 @@ import {
   EXPLANATIONS,
   EXPLANATION_KEYS,
   PROVENANCE_NOTE,
+  DEFAULT_CONFIG,
   SCHEMA_VERSION,
   check as checkPredicate,
+  hasErrors,
+  parseConfig,
   staleOnly,
   toSnapshot,
+  type AlarmConfig,
   type AppState,
   type CheckOptions,
   type Snapshot,
@@ -41,6 +45,10 @@ export interface MonitorLike {
 export interface Ctx {
   monitor: MonitorLike;
   machineId: string;
+  /** Where the alarm config lives. Injected so tests never read a real home. */
+  configPath: string;
+  /** Reads a config file. Injected for the same reason. */
+  readFile: (path: string) => Promise<string>;
   /** Machine-readable output. Exactly one object per invocation. */
   out: (line: string) => void;
   /** Notes, warnings, degradation. Never parsed by anyone. */
@@ -225,6 +233,79 @@ export const check: Command = async (ctx, flags) => {
   return staleOnly(result) ? EXIT.STALE : EXIT.PREDICATE_FAILED;
 };
 
+/**
+ * `adjent rules validate [path]` — prove a config before it has to fire.
+ *
+ * Authoring alarms has always been possible; knowing what Adjent *understood*
+ * has not. Because loading is deliberately lenient, a file can be half-ignored
+ * and still work, so the useful output is not "valid/invalid" but the effective
+ * rule set: what will actually run, printed next to what was complained about.
+ *
+ * Warnings do not fail. A warning means "this is ignored", which is worth
+ * saying and is not worth breaking a pipeline over; an error means a rule is
+ * gone, which is.
+ */
+const rulesValidate: Command = async (ctx, flags) => {
+  const path = flags.positional[1] ?? ctx.configPath;
+
+  let text: string;
+  try {
+    text = await ctx.readFile(path);
+  } catch {
+    // A missing file is not invalid — it is how most installs run, on the
+    // built-in defaults. Say so and report those as the effective set.
+    ctx.err(`no config at ${path} — the built-in defaults are in force`);
+    if (flags.json) {
+      emit(ctx, { ok: true, path, exists: false, diagnostics: [], effective: DEFAULT_CONFIG });
+    } else if (!flags.quiet) {
+      ctx.out(renderEffective(DEFAULT_CONFIG));
+    }
+    return EXIT.OK;
+  }
+
+  const { config, diagnostics } = parseConfig(text);
+  const failed = hasErrors(diagnostics);
+
+  if (flags.json) {
+    emit(ctx, { ok: !failed, path, exists: true, diagnostics, effective: config });
+  } else if (!flags.quiet) {
+    for (const d of diagnostics) ctx.out(`${d.path}: ${d.level} — ${d.message}`);
+    if (diagnostics.length > 0) ctx.out('');
+    ctx.out(renderEffective(config));
+  }
+
+  return failed ? EXIT.CONFIG_INVALID : EXIT.OK;
+};
+
+/** What will actually run, in the same vocabulary the file uses. */
+function renderEffective(config: AlarmConfig): string {
+  const lines = [`Effective rules (${config.rules.length})`];
+  for (const r of config.rules) {
+    const bits: string[] = [`${r.id}  [${r.type}]`];
+    if (r.type === 'pace') {
+      bits.push(`scope ${r.backend}/${r.limit}`, `tolerance ${r.tolerancePp}pp`, `cooldown ${r.cooldownMin}m`);
+    } else if (r.type === 'threshold') {
+      bits.push(`scope ${r.backend}/${r.limit}`, `levels ${r.levels.join(', ')}`);
+    } else {
+      bits.push(`window ${r.windowMin}m`, `≥${r.absPctPerHour} %/h`, `cooldown ${r.cooldownMin}m`);
+    }
+    lines.push('  ' + bits.join('  ·  '));
+  }
+  lines.push('', 'Routing');
+  for (const level of ['info', 'warn', 'critical'] as const) {
+    lines.push(`  ${level.padEnd(9)} → ${config.routing[level].join(', ') || '(none)'}`);
+  }
+  return lines.join('\n');
+}
+
+/** `rules` is a group, so it dispatches on its first positional. */
+export const rules: Command = async (ctx, flags) => {
+  const sub = flags.positional[0];
+  if (sub === 'validate') return rulesValidate(ctx, flags);
+  ctx.err(sub ? `unknown subcommand: rules ${sub}` : 'usage: adjent rules validate [path]');
+  return EXIT.USAGE;
+};
+
 export const COMMANDS: Record<string, Command> = {
   status,
   statusline,
@@ -232,6 +313,7 @@ export const COMMANDS: Record<string, Command> = {
   agents,
   explain,
   check,
+  rules,
 };
 
 export const USAGE = `usage: adjent <command> [options]
@@ -242,6 +324,7 @@ export const USAGE = `usage: adjent <command> [options]
   statusline            one line, for Claude Code's statusLine setting
   explain <term>        plain-language definition of any metric shown
   check                 budget gate for scripts; the exit code is the answer
+  rules validate [path] check alarms.yaml and print what will actually run
   watch                 continuous loop with alarms
 
 options:

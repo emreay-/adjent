@@ -11,10 +11,12 @@ import {
   CodexProvider,
   ConsoleSink,
   Monitor,
+  configPath,
   loadConfig,
   machineId,
   type Alarm,
 } from '@adjent/core';
+import { readFile } from 'node:fs/promises';
 import { COMMANDS, USAGE, type Ctx } from './commands.js';
 import { EXIT, type ExitCode } from './exit.js';
 import { parseArgs, parseDuration } from './args.js';
@@ -116,9 +118,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  // `explain` answers from a static table, so it must not pay for a collection
-  // pass — and must work with no vendor installed at all.
-  const needsMonitor = name !== 'explain';
+  // `explain` and `rules` answer without collecting, so neither pays for a
+  // collection pass — and both must work with no vendor installed at all.
+  const needsMonitor = name !== 'explain' && name !== 'rules';
   const ctx: Ctx = {
     monitor: needsMonitor
       ? await makeMonitor(true)
@@ -128,6 +130,8 @@ async function main(): Promise<void> {
           },
         },
     machineId: await machineId(),
+    configPath: configPath(),
+    readFile: (p) => readFile(p, 'utf-8'),
     // stdout carries the answer; stderr carries everything else.
     out: (line) => process.stdout.write(line + '\n'),
     err: (line) => process.stderr.write(line + '\n'),

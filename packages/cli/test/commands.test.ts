@@ -100,8 +100,27 @@ interface Run {
   ticks: number;
 }
 
+/** Drive one command with a scripted config file. */
+async function runWith(
+  name: string,
+  argv: string[],
+  appState: AppState,
+  readFile: (p: string) => Promise<string>,
+): Promise<Run> {
+  return drive(name, argv, appState, readFile);
+}
+
 /** Drive one command and collect everything it produced. */
 async function run(name: string, argv: string[], appState: AppState = state()): Promise<Run> {
+  return drive(name, argv, appState, () => Promise.reject(new Error('no config in this test')));
+}
+
+async function drive(
+  name: string,
+  argv: string[],
+  appState: AppState,
+  readFile: (p: string) => Promise<string>,
+): Promise<Run> {
   const stdout: string[] = [];
   const stderr: string[] = [];
   let ticks = 0;
@@ -114,6 +133,8 @@ async function run(name: string, argv: string[], appState: AppState = state()): 
   const ctx: Ctx = {
     monitor,
     machineId: MACHINE,
+    configPath: '/fake/alarms.yaml',
+    readFile,
     out: (l) => stdout.push(l),
     err: (l) => stderr.push(l),
   };
@@ -497,5 +518,122 @@ describe('collection cost', () => {
     expect(snap.agents[0]!['burnPctPerHour']).toBeNull();
     // And no provenance entry, since Adjent produced no such number.
     expect(snap.limits[0]!['provenance']).not.toHaveProperty('burnPctPerHour');
+  });
+});
+
+// -------------------------------------------------------------- rules validate
+/**
+ * `rules validate` exists because loading is lenient: a file can be
+ * half-ignored and still work. So the useful output is not a verdict but the
+ * *effective* rule set — what will actually run — printed beside what was
+ * complained about.
+ */
+describe('rules validate', () => {
+  const GOOD = `
+alarms:
+  - id: pace-any
+    type: pace
+    tolerance_pp: 15
+    cooldown: 20m
+routing:
+  warn: [tray, toast]
+`;
+  const TYPO = `
+alarms:
+  - id: pace-any
+    type: pace
+    tolerence_pp: 15
+`;
+  const BROKEN = `
+alarms:
+  - id: a
+    type: teleport
+`;
+
+  /** Run with a scripted config file rather than a real home directory. */
+  const withFile = (content: string | null, argv: string[] = ['validate']) =>
+    runWith(
+      'rules',
+      argv,
+      state(),
+      content === null
+        ? () => Promise.reject(new Error('ENOENT'))
+        : () => Promise.resolve(content),
+    );
+
+  it('exits 0 and prints the effective set for a valid file', async () => {
+    const r = await withFile(GOOD);
+    expect(r.code).toBe(EXIT.OK);
+    expect(r.stdout).toContain('Effective rules (1)');
+    expect(r.stdout).toContain('pace-any');
+    // The effective set is the point: it shows the value that will be used.
+    expect(r.stdout).toContain('tolerance 15pp');
+    expect(r.stdout).toContain('tray, toast');
+  });
+
+  it('exits 6 on a file with an error', async () => {
+    const r = await withFile(BROKEN);
+    expect(r.code).toBe(EXIT.CONFIG_INVALID);
+    expect(r.stdout).toContain('alarms[0].type: error');
+  });
+
+  it('exits 0 on warnings, and still prints them', async () => {
+    // A warning means "this is ignored" — worth saying, not worth breaking a
+    // pipeline over.
+    const r = await withFile(TYPO);
+    expect(r.code).toBe(EXIT.OK);
+    expect(r.stdout).toContain('alarms[0].tolerence_pp: warn');
+    // And the effective set shows the default that silently took over.
+    expect(r.stdout).toContain('tolerance 10pp');
+  });
+
+  it('formats a diagnostic as path, level, message', async () => {
+    const r = await withFile(`
+alarms:
+  - id: a
+    type: pace
+    tolerance_pp: ten
+`);
+    expect(r.stdout).toMatch(/alarms\[0\]\.tolerance_pp: error — expected a number, got "ten"/);
+  });
+
+  it('treats a missing file as the defaults, not as invalid', async () => {
+    // Most installs run on the built-in rules; that is not an error state.
+    const r = await withFile(null);
+    expect(r.code).toBe(EXIT.OK);
+    expect(r.stderr).toContain('built-in defaults');
+    expect(r.stdout).toContain('Effective rules (3)');
+  });
+
+  it('emits one object under --json, with diagnostics and the effective set', async () => {
+    const r = await withFile(BROKEN, ['validate', '--json']);
+    const obj = soleJson(r);
+    expect(obj['ok']).toBe(false);
+    expect(obj['exists']).toBe(true);
+    const diags = obj['diagnostics'] as Record<string, unknown>[];
+    expect(diags[0]).toMatchObject({ level: 'error', path: 'alarms[0].type' });
+    const eff = obj['effective'] as { rules: unknown[]; routing: unknown };
+    expect(eff.rules.length).toBeGreaterThan(0);
+    expect(eff.routing).toBeDefined();
+    expect(r.code).toBe(EXIT.CONFIG_INVALID);
+  });
+
+  it('reads a path given on the command line', async () => {
+    const seen: string[] = [];
+    const r = await runWith('rules', ['validate', '/tmp/custom.yaml'], state(), (p) => {
+      seen.push(p);
+      return Promise.resolve(GOOD);
+    });
+    expect(seen).toEqual(['/tmp/custom.yaml']);
+    expect(r.code).toBe(EXIT.OK);
+  });
+
+  it('never collects: validating a config needs no vendor installed', async () => {
+    expect((await withFile(GOOD)).ticks).toBe(0);
+  });
+
+  it('rejects an unknown subcommand', async () => {
+    expect((await withFile(GOOD, ['explode'])).code).toBe(EXIT.USAGE);
+    expect((await withFile(GOOD, [])).code).toBe(EXIT.USAGE);
   });
 });
