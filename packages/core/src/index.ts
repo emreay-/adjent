@@ -79,3 +79,10 @@ export {
   type CheckEvaluation,
   type CheckFailure,
 } from './api/check.js';
+export {
+  replayHistory,
+  type ReplayOptions,
+  type ReplayResult,
+  type ReplayedAlarm,
+  type NotEvaluable,
+} from './rules/replay.js';
