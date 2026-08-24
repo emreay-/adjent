@@ -1,0 +1,338 @@
+/**
+ * The command table, driven with an injected Monitor.
+ *
+ * No process is spawned and no real home directory is touched: every command
+ * is a function of `(ctx, flags)` returning an exit code, with both streams
+ * collected. That is the whole reason the table exists as a separate module.
+ *
+ * The property under test throughout is the one a script depends on:
+ * **stdout carries exactly one JSON object and nothing else.** A stray warning
+ * on stdout is invisible to a human and fatal to a pipe.
+ *
+ * Fixtures are synthetic (CLAUDE.md).
+ */
+import { describe, expect, it } from 'vitest';
+import { COMMANDS, type Ctx, type MonitorLike } from '../src/commands.js';
+import { parseArgs, parseDuration, parsePercent } from '../src/args.js';
+import { EXIT } from '../src/exit.js';
+import type { AppState } from '@adjent/core';
+
+const T0 = 1_700_000_000_000;
+const H = 3600_000;
+const MACHINE = '11111111-2222-4333-8444-555555555555';
+
+function state(over: Partial<AppState> = {}): AppState {
+  return {
+    generatedAt: T0,
+    backends: [
+      {
+        id: 'claude',
+        displayName: 'Claude Code',
+        version: '2.1.0',
+        plan: 'demo',
+        rateLimitTier: null,
+        health: 'ok',
+        healthDetail: null,
+      },
+    ],
+    agents: [
+      {
+        id: 'claude:a1',
+        backend: 'claude',
+        label: 'demo',
+        projectPath: '/w/demo',
+        gitBranch: 'main',
+        model: 'model-x',
+        effort: 'high',
+        entrypoint: 'cli',
+        parentId: null,
+        pid: 1,
+        state: 'live',
+        startedAt: T0 - H,
+        lastActivityAt: T0,
+        totals: { input: 100, cacheWrite: 0, cacheRead: 1000, output: 50, thinking: 0 },
+      },
+    ],
+    limits: [
+      {
+        limit: {
+          backend: 'claude',
+          key: '5h',
+          label: 'Claude · 5h',
+          windowMinutes: 300,
+          utilization: 32,
+          resetsAt: T0 + 3 * H,
+          severity: null,
+          vendorActive: false,
+          scope: null,
+          source: 'reported',
+          observedAt: T0,
+        },
+        burn: { pctPerHour: 8.1, updatedAt: T0 },
+        verdict: 'on-pace',
+        paceLinePct: 40,
+        exhaustsAt: null,
+        binding: true,
+        tokens: { input: 100, cacheWrite: 0, cacheRead: 1000, output: 50 },
+      },
+    ],
+    agentBurns: [{ agentId: 'claude:a1', pctPerHour: 4.2, confidence: 'high' }],
+    epsilon: 0.5,
+    fitConfidence: 'high',
+    ...over,
+  };
+}
+
+const EMPTY: AppState = {
+  generatedAt: T0,
+  backends: [],
+  agents: [],
+  limits: [],
+  agentBurns: [],
+  epsilon: null,
+  fitConfidence: 'low',
+};
+
+interface Run {
+  code: number;
+  stdout: string;
+  stderr: string;
+  ticks: number;
+}
+
+/** Drive one command and collect everything it produced. */
+async function run(name: string, argv: string[], appState: AppState = state()): Promise<Run> {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  let ticks = 0;
+  const monitor: MonitorLike = {
+    tick: async () => {
+      ticks += 1;
+      return appState;
+    },
+  };
+  const ctx: Ctx = {
+    monitor,
+    machineId: MACHINE,
+    out: (l) => stdout.push(l),
+    err: (l) => stderr.push(l),
+  };
+  const { flags, error } = parseArgs(argv);
+  expect(error, `argv did not parse: ${argv.join(' ')}`).toBeNull();
+  const code = await COMMANDS[name]!(ctx, flags);
+  return { code, stdout: stdout.join('\n'), stderr: stderr.join('\n'), ticks };
+}
+
+/** stdout must be exactly one JSON object — the contract a pipe depends on. */
+function soleJson(r: Run): Record<string, unknown> {
+  const lines = r.stdout.split('\n').filter((l) => l.length > 0);
+  expect(lines, 'stdout carried more than one line').toHaveLength(1);
+  return JSON.parse(lines[0]!) as Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------- args
+describe('argument parsing', () => {
+  it('rejects an unknown flag rather than ignoring it', () => {
+    // `--jsn` silently producing human output would feed a parser prose.
+    expect(parseArgs(['--jsn']).error).toMatch(/unknown flag/);
+  });
+
+  it('accepts a value flag in both spellings', () => {
+    expect(parseArgs(['--limit', '7d']).flags.values['limit']).toBe('7d');
+    expect(parseArgs(['--limit=7d']).flags.values['limit']).toBe('7d');
+  });
+
+  it('refuses a value flag with no value', () => {
+    expect(parseArgs(['--limit']).error).toMatch(/needs a value/);
+  });
+
+  it('refuses a value attached to a boolean flag', () => {
+    expect(parseArgs(['--json=yes']).error).toMatch(/does not take a value/);
+  });
+
+  it('stops parsing flags after --', () => {
+    expect(parseArgs(['--json', '--', '--not-a-flag']).flags.positional).toEqual(['--not-a-flag']);
+  });
+
+  it('reads percentages the way a person writes them', () => {
+    expect(parsePercent('20')).toBe(20);
+    expect(parsePercent('20%')).toBe(20);
+    expect(parsePercent('20.5%')).toBe(20.5);
+    expect(parsePercent('twenty')).toBeNull();
+  });
+
+  it('reads durations the way a person writes them', () => {
+    expect(parseDuration('90s')).toBe(90_000);
+    expect(parseDuration('15m')).toBe(900_000);
+    expect(parseDuration('2h')).toBe(7_200_000);
+    expect(parseDuration('7d')).toBe(604_800_000);
+    // A bare number is minutes, which is what a poll interval usually means.
+    expect(parseDuration('30')).toBe(1_800_000);
+    expect(parseDuration('soon')).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------ the pipe
+describe('--json is a pipe contract', () => {
+  for (const name of ['status', 'statusline', 'limits', 'agents']) {
+    it(`${name} --json writes exactly one JSON object to stdout`, async () => {
+      const r = await run(name, ['--json']);
+      const obj = soleJson(r);
+      expect(obj['schemaVersion']).toBe(1);
+      expect(r.code).toBe(EXIT.OK);
+    });
+  }
+
+  it('explain --json writes one object without collecting anything', async () => {
+    const r = await run('explain', ['--json', 'hero']);
+    expect(soleJson(r)['term']).toBe('hero');
+    expect(r.ticks, 'explain answered from a static table, so it must not tick').toBe(0);
+  });
+
+  it('puts the degradation note on stderr, never on stdout', async () => {
+    const r = await run('status', ['--json'], EMPTY);
+    // Still valid JSON — an empty machine is an answer, not a failure.
+    const obj = soleJson(r);
+    expect((obj['snapshot'] as { limits: unknown[] }).limits).toEqual([]);
+    expect(r.stderr).toMatch(/no backend detected/);
+    expect(r.code).toBe(EXIT.NO_DATA);
+  });
+
+  it('reports no-data when a backend exists but reports no quota', async () => {
+    const r = await run('status', ['--json'], { ...state(), limits: [] });
+    expect(r.code).toBe(EXIT.NO_DATA);
+    expect(r.stderr).toMatch(/no quota reported/);
+  });
+
+  it('names an unhealthy backend on stderr', async () => {
+    const degraded = state({
+      backends: [{ ...state().backends[0]!, health: 'degraded', healthDetail: 'format drift' }],
+    });
+    const r = await run('status', ['--json'], degraded);
+    expect(r.stderr).toMatch(/claude: degraded — format drift/);
+  });
+
+  it('emits nothing at all under --quiet', async () => {
+    const r = await run('status', ['--quiet']);
+    expect(r.stdout).toBe('');
+    expect(r.code).toBe(EXIT.OK);
+  });
+});
+
+// ------------------------------------------------------------------ payloads
+describe('json payloads', () => {
+  it('status carries the whole snapshot', async () => {
+    const snap = soleJson(await run('status', ['--json']))['snapshot'] as Record<string, unknown>;
+    expect(snap['machineId']).toBe(MACHINE);
+    expect((snap['limits'] as unknown[]).length).toBe(1);
+    expect((snap['agents'] as unknown[]).length).toBe(1);
+  });
+
+  it('statusline answers one question, not the whole snapshot', async () => {
+    const obj = soleJson(await run('statusline', ['--json']));
+    const binding = obj['bindingLimit'] as Record<string, unknown>;
+    expect(binding['bindingLimit']).toBe(true);
+    expect(binding['key']).toBe('5h');
+    // The rendered line rides along so a status bar needs no formatter.
+    expect(obj['text']).toContain('32%');
+  });
+
+  it('statusline reports a null binding limit rather than omitting the key', async () => {
+    const obj = soleJson(await run('statusline', ['--json'], EMPTY));
+    expect(obj).toHaveProperty('bindingLimit');
+    expect(obj['bindingLimit']).toBeNull();
+  });
+
+  it('limits and agents carry the published shape, not the internal one', async () => {
+    const l = (soleJson(await run('limits', ['--json']))['limits'] as Record<string, unknown>[])[0]!;
+    expect(l).toHaveProperty('bindingLimit');
+    expect(l).toHaveProperty('burnPctPerHour');
+    expect(l).not.toHaveProperty('binding');
+
+    const a = (soleJson(await run('agents', ['--json']))['agents'] as Record<string, unknown>[])[0]!;
+    expect(a).toHaveProperty('provenance');
+    expect(a['burnPctPerHour']).toBe(4.2);
+  });
+
+  it('never leaks a placeholder model through the CLI', async () => {
+    const withPlaceholder = state({ agents: [{ ...state().agents[0]!, model: 'gpt-unknown' }] });
+    const a = (
+      soleJson(await run('agents', ['--json'], withPlaceholder))['agents'] as Record<string, unknown>[]
+    )[0]!;
+    expect(a['model']).toBeNull();
+
+    const human = await run('agents', [], withPlaceholder);
+    expect(human.stdout).not.toContain('gpt-unknown');
+  });
+});
+
+// -------------------------------------------------------------------- human
+describe('human output', () => {
+  it('status leads with the verdict and the binding limit', async () => {
+    const r = await run('status', []);
+    expect(r.stdout).toMatch(/On pace — Claude · 5h at 32%/);
+    expect(r.stdout).toContain('Quota limits');
+    expect(r.stdout).toContain('Agents');
+  });
+
+  it('gives every limit its own token count, not just the binding one', async () => {
+    const two = state();
+    two.limits.push({
+      ...two.limits[0]!,
+      limit: { ...two.limits[0]!.limit, key: '7d', label: 'Claude · 7d', utilization: 8 },
+      binding: false,
+      tokens: null,
+    });
+    const r = await run('limits', [], two);
+    // 1150 tokens renders as 1.1k — (1.15).toFixed(1) is "1.1" in binary
+    // floating point — and the uncounted limit gets an em dash.
+    expect(r.stdout).toContain('1.1k tok');
+    expect(r.stdout).toContain('— tok');
+  });
+
+  it('orders limits binding-first, then by urgency', async () => {
+    const three = state();
+    three.limits[0]!.binding = false;
+    three.limits.push(
+      {
+        ...three.limits[0]!,
+        limit: { ...three.limits[0]!.limit, key: 'bind', label: 'BINDING' },
+        binding: true,
+      },
+      {
+        ...three.limits[0]!,
+        limit: { ...three.limits[0]!.limit, key: 'risky', label: 'RISKY', utilization: 5 },
+        binding: false,
+        // Runs out before it resets, so it outranks a fuller but flat limit.
+        exhaustsAt: T0 + 60_000,
+      },
+    );
+    const r = await run('limits', [], three);
+    const at = (s: string) => r.stdout.indexOf(s);
+    expect(at('BINDING')).toBeLessThan(at('RISKY'));
+    expect(at('RISKY')).toBeLessThan(at('Claude · 5h'));
+  });
+
+  it('says "idle", not a duration, when there is no activity time', async () => {
+    const noTime = state({
+      agents: [{ ...state().agents[0]!, state: 'idle', lastActivityAt: 0 }],
+      agentBurns: [],
+    });
+    const r = await run('agents', [], noTime);
+    expect(r.stdout).toContain('idle');
+    expect(r.stdout, 'printed a duration from a missing timestamp').not.toMatch(/\b\d{3,}d\b/);
+  });
+
+  it('explain rejects an unknown term with a usage code', async () => {
+    const r = await run('explain', ['nonsense']);
+    expect(r.code).toBe(EXIT.USAGE);
+    expect(r.stderr).toMatch(/unknown term/);
+    expect(r.stdout).toBe('');
+  });
+
+  it('explain with no term lists what can be asked', async () => {
+    const r = await run('explain', []);
+    expect(r.code).toBe(EXIT.OK);
+    expect(r.stdout).toContain('terms:');
+  });
+});

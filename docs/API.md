@@ -196,6 +196,30 @@ Field names follow [GLOSSARY.md](GLOSSARY.md) exactly — `utilization`,
 `bindingLimit`, `burnPctPerHour`. No synonyms enter the API, because a synonym
 in a published payload is permanent.
 
+## Commands
+
+Every command takes `--json`. Without it you get human output; with it you get
+one object on stdout and nothing else.
+
+| Command | Answers | `--json` payload |
+| --- | --- | --- |
+| `adjent status` | everything at once | `{ snapshot }` |
+| `adjent limits` | how full each limit is | `{ limits[], generatedAt }` |
+| `adjent agents` | what is running and what it costs | `{ agents[], generatedAt }` |
+| `adjent statusline` | one line for a status bar | `{ bindingLimit, text }` |
+| `adjent explain <term>` | what a number means | `{ term, title, body, provenance }` |
+| `adjent watch` | a live loop | *(JSONL — see the event stream)* |
+
+`limits` and `agents` are the sections of `status`, lifted out so a script can
+ask for one without parsing past the others. They carry the same objects the
+snapshot does, so anything you learn about `snapshot.limits[]` applies.
+
+`statusline --json` answers one question rather than returning the whole
+snapshot, and `bindingLimit` is `null` — present, not omitted — when there is no
+data. The rendered `text` rides along so a status bar needs no formatter.
+
+`--quiet` prints nothing on any command; the exit code is the whole answer.
+
 ## Exit codes
 
 Every CLI command uses one table, so a script can branch on the code without
