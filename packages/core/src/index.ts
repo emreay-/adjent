@@ -42,8 +42,21 @@ export {
 } from './explain.js';
 export {
   Store,
+  storeDir,
   STORE_VERSION,
   RETENTION,
   type HistorySample,
   type PersistedState,
 } from './persist.js';
+export {
+  toSnapshot,
+  SCHEMA_VERSION,
+  type Snapshot,
+  type SnapshotMeta,
+  type SnapshotBackend,
+  type SnapshotLimit,
+  type SnapshotAgent,
+  type SnapshotTokens,
+  type ProvenanceMap,
+} from './api/snapshot.js';
+export { machineId } from './api/machineid.js';

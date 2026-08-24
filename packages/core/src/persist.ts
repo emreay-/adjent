@@ -67,7 +67,7 @@ export interface PersistedState {
   tiers: Record<string, string | null>;
 }
 
-const storeDir = (): string => path.join(os.homedir(), '.adjent');
+export const storeDir = (): string => path.join(os.homedir(), '.adjent');
 
 export class Store {
   constructor(private readonly dir: string = storeDir()) {}
