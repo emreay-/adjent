@@ -254,6 +254,46 @@ not be read. A flag Adjent cannot parse is a usage error rather than a silently
 dropped condition — a gate that looks configured and enforces nothing is worse
 than one that refuses to run.
 
+## The event stream
+
+`adjent watch --json` writes **JSONL**: one object per line, flushed as it
+happens. A reader blocked on `read` wakes on the event, not on a buffer flush.
+
+```sh
+adjent watch --json | while read -r line; do
+  jq -r 'select(.type == "alarm") | .alarm.title' <<< "$line"
+done
+```
+
+Three line types, each carrying `schemaVersion`, `type` and `at`:
+
+| `type` | Payload | When |
+| --- | --- | --- |
+| `state` | `snapshot`, `changed` | something actionable changed, or a heartbeat |
+| `alarm` | `alarm` | a rule fired |
+| `error` | `backend`, `detail` | a collection pass failed |
+
+**A `state` line is not emitted every tick.** Ticking every 30 seconds and
+publishing each one would produce a line a minute per machine whether or not
+anything happened, leaving every consumer to diff the stream themselves. So a
+line is published when something you could act on has changed — a limit's
+utilization to the nearest point, the set of live agents, or a backend's health
+— and otherwise only on a heartbeat, so that a quiet stream stays
+distinguishable from a dead process.
+
+`changed` tells you which kind you are looking at: `true` for a real change,
+`false` for a heartbeat. The first line after attaching is always sent, so you
+have a baseline before any change can mean anything.
+
+Growing token counts are deliberately *not* a change. They climb continuously,
+and treating them as events would republish the snapshot every tick — which is
+the behaviour this design exists to avoid.
+
+`--interval <dur>` sets the poll period (`90s`, `2m`); the heartbeat is ten
+intervals. Ctrl-C exits **0** after the line in flight, never a truncated
+object. An `error` line never ends the stream — one failing backend degrades
+itself, not the app.
+
 ## Exit codes
 
 Every CLI command uses one table, so a script can branch on the code without
