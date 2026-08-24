@@ -24,6 +24,36 @@ const fmtTime = (t) => {
   const d = new Date(t);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
+/** Local midnight, so "tomorrow" means the next calendar day, not +24h. */
+function startOfDay(t) {
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+const calendarDaysBetween = (a, b) => Math.round((startOfDay(b) - startOfDay(a)) / 86400000);
+
+/**
+ * A moment, relative to now. Mirrors core's fmtWhen (packages/core/src/rules/
+ * evaluate.ts) — the panel is a plain script with no bundler, so the two are
+ * kept in step by hand. A bare clock is only unambiguous inside today: on a
+ * 7-day limit "runs out at 05:29" reads as five hours away when it is five
+ * days away.
+ */
+function fmtWhen(t, now) {
+  const clock = fmtTime(t);
+  const days = calendarDaysBetween(now, t);
+  if (days === 0) return clock;
+  if (days === 1) return `tomorrow ${clock}`;
+  if (days === -1) return `yesterday ${clock}`;
+  const d = new Date(t);
+  if (days > 1 && days < 7) return `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${clock}`;
+  return `${d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}, ${clock}`;
+}
+
+/** Chart axis: bare clock inside a day-long limit, weekday + clock beyond it. */
+const fmtAxis = (t, windowMinutes) =>
+  windowMinutes > 1440 ? `${new Date(t).toLocaleDateString(undefined, { weekday: 'short' })} ${fmtTime(t)}` : fmtTime(t);
+
 const fmtTok = (n) =>
   n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
 
@@ -33,9 +63,41 @@ function esc(s) {
   return div.innerHTML;
 }
 
+/**
+ * Advance width of the chart's 9px monospace face. An estimate is enough: it
+ * only decides whether two labels would touch, and erring slightly wide costs
+ * a dropped label rather than an unreadable one.
+ */
+const AXIS_CH = 5.5;
+const axisW = (s) => s.length * AXIS_CH;
+
+/**
+ * Lay out baseline labels so they can never overlap.
+ *
+ * The three axis labels are anchored independently — start at the left edge,
+ * reset at the right, "now" wherever the cursor is — so at the ends of a
+ * window "now" lands on top of its neighbour. Long labels made this routine:
+ * a 7-day limit names its weekday, which more than doubles the width.
+ *
+ * Lower `priority` wins the space. Anything that would collide is dropped
+ * rather than drawn on top, because two strings sharing pixels are less
+ * readable than one, and "now" is already marked by the dot on the curve.
+ */
+function placeLabels(items, gap) {
+  const kept = [];
+  for (const it of [...items].sort((x, y) => x.priority - y.priority)) {
+    const w = axisW(it.text);
+    const l = it.anchor === 'end' ? it.x - w : it.anchor === 'middle' ? it.x - w / 2 : it.x;
+    const box = { l, r: l + w };
+    if (kept.some((k) => box.l < k.r + gap && box.r + gap > k.l)) continue;
+    kept.push({ ...it, l: box.l, r: box.r });
+  }
+  return kept;
+}
+
 // --------------------------------------------------------------------------
-function renderChart(a, now, history) {
-  const svg = $('chart');
+function renderChart(a, now, history, svg) {
+  svg = svg || $('chart');
   const W = 352, H = 120, L = 6, R = 346, TOP = 12, BASE = 104;
   const w = a.limit;
   const color = (VERDICT[a.verdict] || VERDICT.idle).color;
@@ -76,14 +138,34 @@ function renderChart(a, now, history) {
       if (w.resetsAt !== null && a.exhaustsAt < w.resetsAt) {
         parts.push(`<line x1="${xEx - 4}" y1="${TOP - 4}" x2="${xEx + 4}" y2="${TOP + 4}" stroke="${color}" stroke-width="2"/>`);
         parts.push(`<line x1="${xEx + 4}" y1="${TOP - 4}" x2="${xEx - 4}" y2="${TOP + 4}" stroke="${color}" stroke-width="2"/>`);
-        parts.push(`<text x="${Math.min(xEx + 8, 260)}" y="${TOP + 2}">${fmtTime(a.exhaustsAt)} · ${fmtDur(w.resetsAt - a.exhaustsAt)} early</text>`);
+        // Sits right of the cross by default; flips left when that would run
+        // off the frame, which a dated label on a multi-day limit always did.
+        const exText = `${fmtAxis(a.exhaustsAt, w.windowMinutes)} · ${fmtDur(w.resetsAt - a.exhaustsAt)} early`;
+        const exW = axisW(exText);
+        let exX = xEx + 8;
+        let exAnchor = 'start';
+        if (exX + exW > R) {
+          exX = xEx - 8;
+          exAnchor = 'end';
+          if (exX - exW < L) {
+            exX = L;
+            exAnchor = 'start';
+          }
+        }
+        parts.push(`<text x="${exX.toFixed(1)}" y="${TOP + 2}" text-anchor="${exAnchor}">${exText}</text>`);
       }
     }
   }
   parts.push(`<circle cx="${xNow}" cy="${yNow}" r="4" fill="${color}" stroke="var(--surface)" stroke-width="2"/>`);
-  parts.push(`<text x="${L}" y="${BASE + 12}">${fmtTime(start)}</text>`);
-  parts.push(`<text x="${xNow}" y="${BASE + 12}" text-anchor="middle">now</text>`);
-  if (w.resetsAt !== null) parts.push(`<text x="${R}" y="${BASE + 12}" text-anchor="end">${fmtTime(w.resetsAt)} · reset</text>`);
+  const axis = [{ text: fmtAxis(start, w.windowMinutes), x: L, anchor: 'start', priority: 0 }];
+  if (w.resetsAt !== null) {
+    axis.push({ text: `${fmtAxis(w.resetsAt, w.windowMinutes)} · reset`, x: R, anchor: 'end', priority: 1 });
+  }
+  // Lowest priority: the curve's dot already says where now is.
+  axis.push({ text: 'now', x: xNow, anchor: 'middle', priority: 2 });
+  for (const lab of placeLabels(axis, 6)) {
+    parts.push(`<text x="${lab.x.toFixed(1)}" y="${BASE + 12}" text-anchor="${lab.anchor}">${lab.text}</text>`);
+  }
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.innerHTML = parts.join('');
 }
@@ -110,6 +192,7 @@ function render(payload) {
   const resetIn = binding.limit.resetsAt !== null ? `resets in ${fmtDur(binding.limit.resetsAt - now)}` : '';
   const stale = now - binding.limit.observedAt > 10 * 60000 ? `as of ${fmtTime(binding.limit.observedAt)}` : '';
   $('heroMeta').setAttribute('data-tip', stale ? 'stale' : 'binding');
+  $('heroMeta').setAttribute('data-limit', limitKeyOf(binding.limit));
   $('heroMeta').innerHTML = `${esc(binding.limit.label)}<br>${esc(stale || resetIn)}`;
   try {
     renderChart(binding, now, payload.history);
@@ -142,7 +225,7 @@ function render(payload) {
         const vv = VERDICT[a.verdict] || VERDICT.idle;
         const staleW = now - a.limit.observedAt > 10 * 60000 ? ` · as of ${fmtTime(a.limit.observedAt)}` : '';
         const tip = staleW ? 'stale' : a.limit.scope ? 'scoped' : 'otherLimits';
-        return `<div class="row" data-tip="${tip}"><span class="dot" style="background:${vv.color}"></span><span class="name">${esc(a.limit.label)}</span><span class="meta"><b>${Math.round(a.limit.utilization)}%</b>${a.limit.severity === 'warning' ? ' ⚠' : ''}${esc(staleW)}</span></div>`;
+        return `<div class="row" data-tip="${tip}" data-limit="${esc(limitKeyOf(a.limit))}"><span class="dot" style="background:${vv.color}"></span><span class="name">${esc(a.limit.label)}</span><span class="meta"><b>${Math.round(a.limit.utilization)}%</b>${a.limit.severity === 'warning' ? ' ⚠' : ''}${esc(staleW)}</span></div>`;
       })
       .join('') || '<div class="empty">None</div>';
 
@@ -225,7 +308,7 @@ function agentDetailHtml(agent, burn) {
     ['Branch', agent.gitBranch ? esc(agent.gitBranch) : null],
     ['Session', esc(agent.label)],
     ['Backend', esc(agent.backend) + (agent.entrypoint ? ` · ${esc(agent.entrypoint)}` : '')],
-    ['Started', agent.startedAt ? `${clockOf(agent.startedAt)} · ${fmtDur(now - agent.startedAt)} ago` : null],
+    ['Started', agent.startedAt ? `${fmtWhen(agent.startedAt, now)} · ${fmtDur(now - agent.startedAt)} ago` : null],
     ['Last turn', agent.lastActivityAt ? `${fmtDur(now - agent.lastActivityAt)} ago` : null],
     ['Burn', burn !== undefined ? `<b>≈${burn.toFixed(1)} %/h</b>` : '—'],
     ['Tokens', `${esc(fmtTok(all))} · ${esc(fmtTok(tot.cacheRead))} cached · ${esc(fmtTok(tot.output))} out`],
@@ -239,6 +322,57 @@ function agentDetailHtml(agent, burn) {
     html += `<span class="expl">${esc(e.body)}</span>`;
     if (e.provenance) {
       html += `<span class="p ${e.provenance}">${esc(e.provenance)}</span>`;
+      html += `<span class="pn">${esc(PROV_NOTE[e.provenance] || '')}</span>`;
+    }
+  }
+  return html;
+}
+
+/**
+ * Who spent one model's share of a limit — the hover behind a "Where it went"
+ * row. The breakdown carries agent ids only; labels, directories and branches
+ * live on the agent records, so they are resolved here at hover time.
+ */
+function splitDetailHtml(model) {
+  const b = limitDetailData?.breakdown;
+  const row = b?.rows?.find((r) => r.model === model);
+  if (!row) return '';
+  const agents = lastPayload?.state?.agents ?? [];
+  const share = b.total > 0 ? (row.total / b.total) * 100 : 0;
+
+  let html = `<span class="t">${esc(row.model)}</span>`;
+  html += esc(`${fmtTok(row.total)} tokens · ${share.toFixed(0)}% of this limit · ${row.requests} requests`);
+  html += ctxRows([
+    ['Input', esc(fmtTok(row.tokens.input))],
+    ['Cache write', esc(fmtTok(row.tokens.cacheWrite))],
+    ['Cache read', esc(fmtTok(row.tokens.cacheRead))],
+    ['Output', esc(fmtTok(row.tokens.output))],
+  ]);
+
+  const list = row.agents ?? [];
+  if (list.length === 0) {
+    html += '<span class="ctxh">No agent attribution</span>';
+  } else {
+    html += `<span class="ctxh">${list.length === 1 ? 'Agent' : `${list.length} agents`}</span>`;
+    for (const g of list) {
+      const a = agents.find((x) => x.id === g.agentId);
+      // A session can leave the inventory while its spend stays in the ledger:
+      // say so rather than rendering a bare uuid as if it were a name.
+      const name = a ? (a.projectPath ? a.projectPath.split(/[\\/]/).pop() : a.label) : 'ended session';
+      const pct = row.total > 0 ? (g.total / row.total) * 100 : 0;
+      html +=
+        `<span class="ag"><b>${esc(name)}</b>` +
+        (a?.gitBranch ? `<span class="br">${esc(a.gitBranch)}</span>` : '') +
+        (a?.projectPath ? `<span class="path">${esc(a.projectPath)}</span>` : '') +
+        `<span class="mt">${esc(fmtTok(g.total))} tok · ${pct.toFixed(0)}% · ` +
+        `${esc(String(g.requests))} req${a ? '' : ' · not running'}</span></span>`;
+    }
+  }
+  const e = EXPL.tokens;
+  if (e) {
+    html += `<span class="ctxh">${esc(e.title)}</span><span class="expl">${esc(e.body)}</span>`;
+    if (e.provenance) {
+      html += `<span class="p ${esc(e.provenance)}">${esc(e.provenance)}</span>`;
       html += `<span class="pn">${esc(PROV_NOTE[e.provenance] || '')}</span>`;
     }
   }
@@ -263,10 +397,12 @@ function alarmDetailHtml(a) {
         : null,
     );
     add('Pace line', c.paceLinePct !== null && c.paceLinePct !== undefined ? `${c.paceLinePct.toFixed(0)}%` : null);
-    add('Resets', c.resetsAt ? `${clockOf(c.resetsAt)} · in ${fmtDur(c.resetsAt - a.firedAt)}` : null);
+    add('Resets', c.resetsAt ? `${fmtWhen(c.resetsAt, a.firedAt)} · in ${fmtDur(c.resetsAt - a.firedAt)}` : null);
     add(
       'Projected out',
-      c.exhaustsAt ? `${clockOf(c.exhaustsAt)}${c.resetsAt && c.exhaustsAt < c.resetsAt ? ' — before reset' : ''}` : null,
+      c.exhaustsAt
+        ? `${fmtWhen(c.exhaustsAt, a.firedAt)}${c.resetsAt && c.exhaustsAt < c.resetsAt ? ' — before reset' : ''}`
+        : null,
     );
     add('Plan', c.plan);
   }
@@ -313,6 +449,16 @@ function showTip(target) {
     return;
   }
 
+  // "Where it went" rows resolve to the agents behind that model's spend.
+  const splitModel = target.getAttribute('data-split');
+  if (splitModel !== null) {
+    const html = splitDetailHtml(splitModel);
+    if (!html) return;
+    tip.innerHTML = html;
+    positionTip(target, tip);
+    return;
+  }
+
   // Notification rows carry their own record rather than a dictionary key.
   const alarmIdx = target.getAttribute('data-alarm');
   if (alarmIdx !== null) {
@@ -348,7 +494,7 @@ function positionTip(target, tip) {
   tip.style.left = `${Math.round(left)}px`;
 }
 
-const TIP_SEL = '[data-tip],[data-alarm],[data-agent]';
+const TIP_SEL = '[data-tip],[data-alarm],[data-agent],[data-split]';
 document.addEventListener('mouseover', (ev) => {
   const t = ev.target.closest ? ev.target.closest(TIP_SEL) : null;
   if (!t) return;
@@ -419,10 +565,206 @@ function updateBellDot() {
 }
 
 // --------------------------------------------------------------------------
+// Tier 3: any limit, on demand (docs/UI.md § Any limit, on demand).
+//
+// At rest the panel commits to one limit — the binding one — plus three
+// collapsed lines. This view reaches *every* limit the vendors report, and for
+// the chosen one draws its own curve, its own numbers, and the exact token
+// split behind it. It is pulled on open rather than pushed each tick: shipping
+// every limit's breakdown every time would be a lot of JSON for something
+// usually not on screen.
+//
+// The token split is `exact` — counted from transcripts. It does not multiply
+// out to the utilization percentage and is not meant to: the vendor meters a
+// weighted mix, and what relates the two is the fitted exchange rate. This
+// answers "where did it go", not "what did it cost".
+// --------------------------------------------------------------------------
+const limitKeyOf = (l) => `${l.backend}:${l.key}`;
+
+/** Limit key currently open, or null when the view has never been opened. */
+let selectedLimit = null;
+/** Last resolved detail payload from the main process. */
+let limitDetailData = null;
+/** Monotonic request id: a slow response must never overwrite a newer one. */
+let detailSeq = 0;
+
+const allLimits = () => lastPayload?.state?.limits ?? [];
+
+function defaultLimitKey() {
+  const ls = allLimits();
+  const pick = ls.find((a) => a.binding) ?? ls[0];
+  return pick ? limitKeyOf(pick.limit) : null;
+}
+
+function openLimits(key) {
+  selectedLimit = key ?? defaultLimitKey();
+  showView('limits');
+}
+
+/** Every limit, binding first, then fullest — the part that beats the ≤3 cap. */
+function renderLimitPicker() {
+  const ls = [...allLimits()].sort(
+    (a, b) => Number(b.binding) - Number(a.binding) || b.limit.utilization - a.limit.utilization,
+  );
+  if (ls.length === 0) {
+    $('limitPicker').innerHTML = '<div class="empty">No limits reported yet.</div>';
+    return;
+  }
+  $('limitPicker').innerHTML = ls
+    .map((a) => {
+      const key = limitKeyOf(a.limit);
+      const v = VERDICT[a.verdict] || VERDICT.idle;
+      const tag = a.binding ? '<span class="tag">binding</span>' : '';
+      const on = key === selectedLimit ? ' on' : '';
+      return (
+        `<div class="limitPick${on}" data-limit="${esc(key)}">` +
+        `<span class="dot" style="background:${v.color}"></span>` +
+        `<span class="name">${esc(a.limit.label)}</span>${tag}` +
+        `<span class="meta"><b>${Math.round(a.limit.utilization)}%</b>` +
+        `${a.limit.severity === 'warning' ? ' ⚠' : ''}</span></div>`
+      );
+    })
+    .join('');
+}
+
+/** Provenance words come from core's table, so they are never invented here. */
+const provTag = (key) => {
+  const prov = EXPL[key]?.provenance;
+  return prov ? `<span class="prov ${esc(prov)}">${esc(prov)}</span>` : '';
+};
+
+async function loadLimitDetail() {
+  const key = selectedLimit;
+  if (key === null || typeof window.adjent.limitDetail !== 'function') {
+    limitDetailData = null;
+    renderLimitDetail();
+    return;
+  }
+  const seq = ++detailSeq;
+  let d = null;
+  try {
+    d = await window.adjent.limitDetail(key);
+  } catch (err) {
+    reportRenderError('limit detail', err);
+    return;
+  }
+  // A newer selection already resolved — drop this one rather than flicker.
+  if (seq !== detailSeq || selectedLimit !== key) return;
+  limitDetailData = d;
+  renderLimitDetail();
+}
+
+function renderLimitDetail() {
+  const body = $('limitBody');
+  const d = limitDetailData;
+  if (!d || !d.assessment) {
+    body.hidden = true;
+    return;
+  }
+  body.hidden = false;
+  const a = d.assessment;
+  const w = a.limit;
+  const now = d.generatedAt;
+  const v = VERDICT[a.verdict] || VERDICT.idle;
+
+  const chip = $('limitVerdict');
+  chip.textContent = v.word;
+  chip.className = `chip ${v.cls}`;
+
+  $('limitHero').textContent = `${Math.round(w.utilization)}%`;
+  $('limitRate').textContent =
+    a.burn && Math.abs(a.burn.pctPerHour) >= 0.05
+      ? `${a.burn.pctPerHour >= 0 ? '+' : ''}${a.burn.pctPerHour.toFixed(1)} %/h`
+      : '';
+  $('limitMeta').innerHTML = `${esc(w.label)}<br>${esc(w.scope ? `scoped to ${w.scope}` : w.backend)}`;
+
+  try {
+    renderChart(a, now, d.history, $('limitChart'));
+  } catch (err) {
+    $('limitChart').innerHTML = '';
+    reportRenderError('limit chart', err);
+  }
+
+  const stale = now - w.observedAt > 10 * 60000;
+  const rows = [
+    ['Utilization', `<b>${Math.round(w.utilization)}%</b>${provTag('hero')}`],
+    [
+      'Burn rate',
+      a.burn && Math.abs(a.burn.pctPerHour) >= 0.05
+        ? `${a.burn.pctPerHour >= 0 ? '+' : ''}${a.burn.pctPerHour.toFixed(1)} %/h${provTag('burnRate')}`
+        : '—',
+    ],
+    ['Pace line', a.paceLinePct !== null && a.paceLinePct !== undefined ? `${Math.round(a.paceLinePct)}%` : null],
+    [
+      'Resets',
+      w.resetsAt !== null ? `${fmtWhen(w.resetsAt, now)} · in ${fmtDur(w.resetsAt - now)}` : 'not reported',
+    ],
+    [
+      'Projected out',
+      a.exhaustsAt !== null && a.exhaustsAt !== undefined
+        ? `${fmtWhen(a.exhaustsAt, now)}${w.resetsAt !== null && a.exhaustsAt < w.resetsAt ? ' — before reset' : ''}${provTag('exhausts')}`
+        : null,
+    ],
+    ['Scope', w.scope],
+    ['Severity', w.severity],
+    ['Vendor active', w.vendorActive ? 'yes' : null],
+    ['Reading', stale ? `${fmtWhen(w.observedAt, now)} · stale` : fmtWhen(w.observedAt, now)],
+  ];
+  let html = '<table class="facts">';
+  for (const [k, val] of rows) {
+    if (val === null || val === undefined || val === '') continue;
+    html += `<tr><td>${esc(k)}</td><td>${val}</td></tr>`;
+  }
+  $('limitFacts').innerHTML = html + '</table>';
+
+  renderLimitSplit(d.breakdown);
+}
+
+const KIND_LABEL = { input: 'in', cacheWrite: 'write', cacheRead: 'read', output: 'out' };
+
+/** Token split by model and kind, over exactly the span the curve draws. */
+function renderLimitSplit(b) {
+  const el = $('limitSplit');
+  if (!b) {
+    el.innerHTML = '<div class="empty">–</div>';
+    return;
+  }
+  if (b.events === 0) {
+    el.innerHTML = `<div class="empty">No usage observed in this window yet${
+      b.scope ? ` for ${esc(b.scope)}` : ''
+    }.</div>`;
+    return;
+  }
+  const max = b.rows.length > 0 ? b.rows[0].total : 0;
+  const rows = b.rows
+    .map((r) => {
+      const share = b.total > 0 ? (r.total / b.total) * 100 : 0;
+      const width = max > 0 ? (r.total / max) * 100 : 0;
+      const kinds = Object.keys(KIND_LABEL)
+        .filter((k) => r.tokens[k] > 0)
+        .map((k) => `${KIND_LABEL[k]} ${fmtTok(r.tokens[k])}`)
+        .join(' · ');
+      return (
+        `<div class="splitRow" data-split="${esc(r.model)}"><div class="splitTop">` +
+        `<span class="name">${esc(r.model)}</span>` +
+        `<span class="meta"><b>${esc(fmtTok(r.total))}</b> · ${share.toFixed(0)}%</span></div>` +
+        `<div class="bar"><i style="width:${width.toFixed(1)}%"></i></div>` +
+        `<span class="kinds">${esc(kinds)} · ${esc(String(r.requests))} req</span></div>`
+      );
+    })
+    .join('');
+  el.innerHTML =
+    rows +
+    `<div class="tokline" style="margin-top:8px"><span><b>${esc(fmtTok(b.total))}</b> tokens` +
+    `${provTag('tokens')}</span><span>${esc(String(b.requests))} requests</span>` +
+    `<span>${esc(fmtWhen(b.from, b.to))} → ${esc(fmtWhen(b.to, b.to))}</span></div>`;
+}
+
+// --------------------------------------------------------------------------
 // Settings view. Every control writes through to the main process, which
 // persists to ~/.adjent/settings.json and applies live.
 // --------------------------------------------------------------------------
-const OVERLAYS = ['settingsView', 'notificationsView'];
+const OVERLAYS = ['settingsView', 'notificationsView', 'limitView'];
 const DATA_SECTIONS = () =>
   [...document.querySelectorAll('main > section')].filter((el) => !OVERLAYS.includes(el.id));
 let activeView = null; // null = the dashboard
@@ -433,8 +775,15 @@ function showView(view) {
   DATA_SECTIONS().forEach((el) => { el.hidden = view !== null; });
   $('settingsView').hidden = view !== 'settings';
   $('notificationsView').hidden = view !== 'notifications';
+  $('limitView').hidden = view !== 'limits';
   $('gear').classList.toggle('on', view === 'settings');
   $('bell').classList.toggle('on', view === 'notifications');
+  if (view === 'limits') {
+    if (selectedLimit === null) selectedLimit = defaultLimitKey();
+    renderLimitPicker();
+    renderLimitDetail();
+    void loadLimitDetail();
+  }
   if (view === 'notifications') {
     lastSeenAlarmAt = Date.now();
     localStorage.setItem('adjent.lastSeenAlarm', String(lastSeenAlarmAt));
@@ -461,6 +810,29 @@ function syncSettingsUI(s) {
 
 const set = (patch) => window.adjent.setSettings(patch);
 
+// Tier-3 entry points, delegated: limit rows and the picker are rebuilt on
+// every tick, so per-element handlers would not survive a re-render.
+document.addEventListener('click', (ev) => {
+  const t = ev.target.closest ? ev.target.closest('[data-limit],[data-limit-all]') : null;
+  if (!t) return;
+  hideTip();
+  if (t.getAttribute('data-limit-all') !== null) {
+    openLimits(null);
+    return;
+  }
+  const key = t.getAttribute('data-limit');
+  if (activeView === 'limits') {
+    // Already inside the view: switch which limit it is showing.
+    selectedLimit = key;
+    limitDetailData = null;
+    renderLimitPicker();
+    renderLimitDetail();
+    void loadLimitDetail();
+  } else {
+    openLimits(key);
+  }
+});
+$('limitBack').addEventListener('click', () => showView(null));
 $('gear').addEventListener('click', () => showView(activeView === 'settings' ? null : 'settings'));
 $('bell').addEventListener('click', () => showView(activeView === 'notifications' ? null : 'notifications'));
 $('clearAlarms').addEventListener('click', () => window.adjent.clearAlarms());
@@ -524,6 +896,14 @@ window.adjent.onState((payload) => {
       render(payload);
     } catch (err) {
       reportRenderError('panel', err);
+    }
+  } else if (activeView === 'limits') {
+    // The detail view is as live as the dashboard: same tick, same numbers.
+    try {
+      renderLimitPicker();
+      void loadLimitDetail();
+    } catch (err) {
+      reportRenderError('limits', err);
     }
   }
 });

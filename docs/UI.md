@@ -176,10 +176,10 @@ click. This single rule is what keeps the panel from becoming a dashboard.
 | --- | --- |
 | Tray icon | one arc, one status colour. Nothing else — no text badge. |
 | **Primary read** | verdict chip · hero % · rate · reset countdown · the chart — **≤4 numbers** |
-| Token line | one line: exact tokens this limit, split by kind |
+| Token line | one line: exact tokens **in the binding limit's window**, split by kind |
 | Other windows | ≤3, one collapsed line each |
 | Agent rows | ≤4, sorted by burn |
-| Charts | exactly 1 |
+| Charts | exactly 1 on screen - the tier-3 limit view replaces the dashboard, it does not add a second |
 
 The budget is a component list, not a guideline. If a new feature needs a fifth
 number in the primary read, something else has to earn its way off it first.
@@ -293,6 +293,62 @@ consecutive polls** before it takes the slot, and the outgoing limit stays
 visible in the collapsed list. Window rollovers are exempt: when a limit resets,
 its claim genuinely vanishes and the switch is immediate.
 
+### Any limit, on demand
+
+Everything above commits the resting panel to *one* limit. That is the right
+default — the binding limit is the only one that can stop you, and a panel that
+showed four limits equally would make the reader do the ranking the app exists
+to do. But "which limit binds" is a claim, and a reader is entitled to check it,
+or to ask a question the hero cannot answer: how full is the weekly limit, and
+what has been eating it?
+
+So every limit is one click away, and none of it is on the resting surface.
+
+* **The way in** is the limit itself: click the hero's own label, any of the
+  three collapsed rows, or the *Other limits* heading. Limit rows are the only
+  clickable rows at rest, so they take a pointer cursor and a hover fill —
+  distinct from the dotted underline that means "there is an explanation here".
+* **Every limit is listed**, not just the three that fit at rest. This is the
+  only route to the fourth limit and beyond; the collapsed list is a summary,
+  not an index. The binding one is tagged `binding` and sorts first, then the
+  fullest.
+* **The chosen limit gets the full treatment** the hero gets: verdict, its own
+  utilization and burn, its own curve against its own pace line, reset and
+  projected exhaustion, scope, vendor severity, and when the reading was taken.
+  Each number keeps its provenance tag, drawn from the same `explain.ts` table
+  the tooltips use — so the detail view cannot drift from the dashboard's
+  vocabulary.
+* **The token split answers "where did it go"**: every model that spent inside
+  that limit's window, with its share, and the split by kind — input, cache
+  write, cache read, output — plus request counts.
+* **Hovering a split row answers "who spent it"**: the agents behind that
+  model's share, each with its share *of that model*, its request count, and
+  the **project directory in full** — the same rule the agent rows follow, for
+  the same reason. Spend outlives sessions, so an agent id with no live session
+  behind it is labelled an ended session rather than rendered as a bare id.
+
+Two constraints this deliberately respects:
+
+1. **The at-rest budget does not move.** No number is added to the resting
+   panel; only the affordance to leave it. The detail view replaces the
+   dashboard rather than extending it, so "exactly one chart" still holds —
+   there is one chart *on screen*, always.
+2. **The hero still holds still.** Opening another limit does not promote it.
+   Selection is a view state, discarded when the panel closes; the binding
+   limit is chosen by [the rule above](#choosing-the-binding-limit) and by
+   nothing the reader clicked.
+
+**The split is `exact`, and it does not reconcile with the percentage.** It is
+counted from transcripts, not modelled — but the vendor meters a *weighted*
+mix, and what relates 10.2M tokens to 23% is the fitted exchange rate
+([GLOSSARY](GLOSSARY.md)), not arithmetic on the token count. The view says
+where consumption went, never what it cost. Presenting the two as if they
+should multiply out would be the most confident-looking lie the app could tell.
+
+The data is pulled when the view opens, not pushed on every tick: a breakdown
+for every limit on every poll is a lot of JSON for something usually not on
+screen. Once open it refreshes with the same tick as the dashboard.
+
 ## The one chart: burn against the pace line
 
 A single series — utilization against elapsed time in the current limit — with
@@ -320,6 +376,16 @@ right edge, you run out before the limit resets — and the crossing is marked
 where it lands. A reader who never looks at a single digit still gets the answer.
 
 ### Chart spec
+
+**Labels never overlap.** The axis carries three independently anchored labels
+— window start at the left edge, reset at the right, `now` wherever the cursor
+falls — so at either end of a window `now` lands on top of a neighbour, and
+dating the labels on limits longer than a day more than doubles their width.
+They are placed with measured widths and a minimum gap, and anything that will
+not fit is **dropped rather than drawn on top**: two strings sharing pixels are
+less readable than one, and `now` is already marked by the dot on the curve, so
+it gives way first. The exhaustion callout flips to the other side of its
+marker rather than running past the frame.
 
 * **Form** — area + line, one series. No legend (the title names it); the
   reference line is directly labeled.
@@ -418,7 +484,7 @@ name, so `adjent` and `adjent-<area>` are only distinguishable by path.
 | 1 | Tray icon | verdict, as an arc and a colour |
 | 1½ | Pinned widget (opt-in) | verdict · hero · rate · pace bar |
 | 2 | Panel, at rest | verdict · hero · chart · other windows · agent rows |
-| 3 | Click a limit | that limit's history, token breakdown by model and kind |
+| 3 | Click a limit | every limit listed, and for the chosen one: its own curve, numbers, and the exact token split by model and kind - see [Any limit, on demand](#any-limit-on-demand) |
 | 4 | Click an agent | its session timeline, subagent tree, per-turn tokens |
 | 4½ | Notifications | the durable alarm log, grouped by day — toasts vanish, this does not |
 | 5 | Settings | interface size, tray glyph, widget/taskbar, poll cadence, pause alarms; alarm rules and sinks in `~/.adjent/alarms.yaml` |
@@ -471,6 +537,24 @@ the panel header.
 
 * Name things the way a person would: "resets in 2h 30m", not `resets_at`.
 * Rates always carry their unit and period: `+20 %/h`, never a bare `6.2`.
+* **Counts describe the window, not the process.** Token totals cover the
+  binding limit's window — the one the hero is reporting — so the line under
+  the hero explains the number above it. They are summed from the ledger, which
+  survives restarts; totals that began at process start would drop to zero on a
+  restart while utilization carried on climbing, and the two would then
+  disagree for the rest of the window. An agent that spent nothing in the
+  window reads zero, which is the honest answer.
+* **A placeholder is never displayed as a value.** When no turn names a model
+  the ledger still needs a bucket key, so providers write `unknown` /
+  `gpt-unknown`. Those are internal: the UI shows `?`, which says "we do not
+  know" instead of inventing a model that does not exist.
+* **A time outside today names its day.** A bare `05:29` is only unambiguous
+  within today; on a 7-day limit it reads as five hours away when it is five
+  days away. So: `05:29` today, `tomorrow 05:29`, `Fri 05:29` inside the coming
+  week, `Fri 29 Aug, 05:29` beyond it. This applies wherever a moment is shown
+  — alarm bodies, the notifications view, limit detail, chart axes on any limit
+  longer than a day. Durations ("in 6d 22h") are unaffected; they were never
+  ambiguous.
 * Derived values always carry `≈`. Measured values never do.
 * An alarm says what happened and what it means, in that order: *"Ahead of pace —
   72% used with 2h 30m left. At this rate the limit runs out at 20:24."*

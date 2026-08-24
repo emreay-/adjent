@@ -19,6 +19,7 @@ import {
   PROVENANCE_NOTE,
   fmtDur,
   fmtTime,
+  fmtWhen,
   loadConfig,
   type AppState,
   type LimitAssessment,
@@ -55,7 +56,7 @@ function limitLine(a: LimitAssessment, now: number): string {
   const binding = a.binding ? '  ← binding' : '';
   const exhaust =
     a.exhaustsAt !== null && w.resetsAt !== null && a.exhaustsAt < w.resetsAt
-      ? `  runs out ${fmtTime(a.exhaustsAt)}`
+      ? `  runs out ${fmtWhen(a.exhaustsAt, now)}`
       : '';
   return `  ${mark} ${w.label.padEnd(22)} ${String(Math.round(w.utilization)).padStart(3)}%${rate}${reset}${exhaust}${stale}${binding}`;
 }

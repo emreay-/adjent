@@ -92,6 +92,12 @@ interface Harness {
   onState: (payload: unknown) => void;
   errors: unknown[];
   hover: (el: El) => string;
+  /** Dispatch a delegated click, as the real panel does for limit rows. */
+  click: (el: El) => void;
+  /** Let the tier-3 detail promise settle. */
+  flush: () => Promise<void>;
+  /** Script what the main process answers `limit:detail` with. */
+  setDetail: (fn: (key: string) => unknown) => void;
 }
 
 /** Load panel.js with a fake document/window and return a handle to drive it. */
@@ -106,6 +112,7 @@ function loadPanel(): Harness {
   let onState: (p: unknown) => void = () => {};
 
   const listeners: Record<string, ((ev: unknown) => void)[]> = {};
+  let detailFor: (key: string) => unknown = () => null;
   const documentShim = {
     getElementById: (id: string) => els.get(id) ?? null,
     createElement: () => new El(),
@@ -130,6 +137,7 @@ function loadPanel(): Harness {
       openPanel: () => {},
       openTaskbarSettings: () => {},
       clearAlarms: () => {},
+      limitDetail: (key: string) => Promise.resolve(detailFor(key)),
     },
   };
 
@@ -154,7 +162,17 @@ function loadPanel(): Harness {
     for (const cb of listeners['mouseover'] ?? []) cb({ target: el });
     return els.get('tip')!.innerHTML;
   };
-  return { els, onState, errors, hover };
+  const click = (el: El): void => {
+    for (const cb of listeners['click'] ?? []) cb({ target: el });
+  };
+  // The detail path is one await deep; a few microtask turns cover it.
+  const flush = async (): Promise<void> => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  };
+  const setDetail = (fn: (key: string) => unknown): void => {
+    detailFor = fn;
+  };
+  return { els, onState, errors, hover, click, flush, setDetail };
 }
 
 // -------------------------------------------------------------------- state
@@ -364,5 +382,420 @@ describe('hover detail', () => {
     const el = new El();
     el.setAttribute('data-tip', 'hero');
     expect(h.hover(el)).toContain('H');
+  });
+});
+
+// ----------------------------------------- tier 3: any limit, on demand
+/**
+ * The resting panel deliberately shows the binding limit and at most three
+ * others. These cover the way out of that cap: a click reaches every limit the
+ * vendors report, with its own curve and its own exact token split.
+ */
+function manyLimits() {
+  const p = payload() as ReturnType<typeof payload> & {
+    state: { limits: unknown[] };
+  };
+  const base = (p.state.limits[0] as { limit: Record<string, unknown> }).limit;
+  const mk = (key: string, label: string, util: number, binding = false, scope: string | null = null) => ({
+    limit: { ...base, key, label, utilization: util, scope },
+    burn: { pctPerHour: 2.4, updatedAt: T0 },
+    verdict: 'on-pace',
+    paceLinePct: 40,
+    exhaustsAt: null,
+    binding,
+  });
+  // Five limits — more than the resting panel can ever show.
+  p.state.limits = [
+    mk('5h', 'Claude · 5h', 32, true),
+    mk('7d', 'Claude · 7d', 46),
+    mk('7d:scoped', 'Claude · 7d · Scoped', 84, false, 'Scoped'),
+    mk('codex7d', 'Codex · 7d', 64),
+    mk('codex5h', 'Codex · 5h', 12),
+  ];
+  return p;
+}
+
+function detailOf(p: ReturnType<typeof manyLimits>, key: string, over: Record<string, unknown> = {}) {
+  const a = (p.state.limits as { limit: { backend: string; key: string; scope: string | null } }[]).find(
+    (x) => `${x.limit.backend}:${x.limit.key}` === key,
+  )!;
+  return {
+    assessment: a,
+    history: [{ t: T0 - 2 * H, w: key, u: 18 }],
+    generatedAt: T0,
+    breakdown: {
+      limitKey: key,
+      backend: 'claude',
+      from: T0 - 3 * H,
+      to: T0,
+      scope: a.limit.scope,
+      rows: [
+        {
+          model: 'model-x',
+          tokens: { input: 1000, cacheWrite: 200, cacheRead: 8000, output: 500 },
+          total: 9700,
+          requests: 12,
+          agents: [
+            { agentId: 'claude:a1', total: 9000, requests: 10 },
+            // An id with no live agent behind it: spend outlives the session.
+            { agentId: 'claude:gone', total: 700, requests: 2 },
+          ],
+        },
+        {
+          model: 'model-y',
+          tokens: { input: 100, cacheWrite: 0, cacheRead: 300, output: 50 },
+          total: 450,
+          requests: 3,
+          agents: [{ agentId: 'claude:a1', total: 450, requests: 3 }],
+        },
+      ],
+      totals: { input: 1100, cacheWrite: 200, cacheRead: 8300, output: 550 },
+      total: 10150,
+      requests: 15,
+      events: 15,
+      source: 'exact',
+      ...over,
+    },
+  };
+}
+
+const rowFor = (key: string): El => {
+  const el = new El();
+  el.setAttribute('data-limit', key);
+  return el;
+};
+
+describe('limit detail (tier 3)', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  it('marks the resting panel’s limit rows as the way in', () => {
+    h.onState(payload());
+    // Both the collapsed rows and the hero's own meta open their limit.
+    expect(h.els.get('limits')!.innerHTML).toContain('data-limit="claude:7d"');
+    expect(h.els.get('heroMeta')!.getAttribute('data-limit')).toBe('claude:5h');
+  });
+
+  it('opens on click and lists every limit, past the resting cap of three', async () => {
+    const p = manyLimits();
+    h.onState(p);
+    h.setDetail((key) => detailOf(p, key));
+
+    h.click(rowFor('claude:7d'));
+    await h.flush();
+
+    expect(h.errors, 'renderer logged an error').toHaveLength(0);
+    const picker = h.els.get('limitPicker')!.innerHTML;
+    for (const label of ['Claude · 5h', 'Claude · 7d', 'Claude · 7d · Scoped', 'Codex · 7d', 'Codex · 5h']) {
+      expect(picker, `picker is missing ${label}`).toContain(label);
+    }
+    // The binding limit is called out, and the opened one is the selected one.
+    expect(picker).toContain('binding');
+    expect(picker).toContain('data-limit="claude:7d"');
+  });
+
+  it('renders the chosen limit’s numbers, curve and exact token split', async () => {
+    const p = manyLimits();
+    h.onState(p);
+    h.setDetail((key) => detailOf(p, key));
+
+    h.click(rowFor('claude:7d:scoped'));
+    await h.flush();
+
+    expect(h.errors).toHaveLength(0);
+    expect(h.els.get('limitBody')!.hidden).toBe(false);
+    expect(h.els.get('limitHero')!.textContent).toBe('84%');
+    expect(h.els.get('limitChart')!.innerHTML).toContain('<path');
+
+    const facts = h.els.get('limitFacts')!.innerHTML;
+    expect(facts).toContain('Utilization');
+    expect(facts).toContain('Pace line');
+    expect(facts).toContain('Scoped');
+
+    // The split is by model and by kind, and says so is exact.
+    const split = h.els.get('limitSplit')!.innerHTML;
+    expect(split).toContain('model-x');
+    expect(split).toContain('model-y');
+    expect(split).toContain('read 8.0k');
+    expect(split).toContain('12 req');
+    expect(split).toContain('10.2k');
+  });
+
+  it('switches limits without leaving a stale body behind', async () => {
+    const p = manyLimits();
+    h.onState(p);
+    const asked: string[] = [];
+    h.setDetail((key) => {
+      asked.push(key);
+      return detailOf(p, key);
+    });
+
+    h.click(rowFor('claude:7d'));
+    await h.flush();
+    expect(h.els.get('limitHero')!.textContent).toBe('46%');
+
+    h.click(rowFor('claude:codex7d'));
+    await h.flush();
+    expect(h.els.get('limitHero')!.textContent).toBe('64%');
+    expect(asked).toEqual(['claude:7d', 'claude:codex7d']);
+  });
+
+  it('says so plainly when nothing was spent in the window', async () => {
+    const p = manyLimits();
+    h.onState(p);
+    h.setDetail((key) => detailOf(p, key, { rows: [], totals: {}, total: 0, requests: 0, events: 0 }));
+
+    h.click(rowFor('claude:7d'));
+    await h.flush();
+
+    expect(h.errors).toHaveLength(0);
+    expect(h.els.get('limitSplit')!.innerHTML).toContain('No usage observed');
+  });
+
+  it('stays live: a tick refreshes the open limit rather than freezing it', async () => {
+    const p = manyLimits();
+    h.onState(p);
+    h.setDetail((key) => detailOf(p, key));
+    h.click(rowFor('claude:7d'));
+    await h.flush();
+    expect(h.els.get('limitHero')!.textContent).toBe('46%');
+
+    // Next tick: the same limit, fuller. The dashboard is not what is on screen,
+    // so this only updates if the 'limits' branch of onState does the work.
+    const p2 = manyLimits();
+    (p2.state.limits as { limit: { key: string; utilization: number } }[]).find(
+      (x) => x.limit.key === '7d',
+    )!.limit.utilization = 59;
+    // Script the answer before the tick: onState requests the detail synchronously.
+    h.setDetail((key) => detailOf(p2, key));
+    h.onState(p2);
+    await h.flush();
+
+    expect(h.errors).toHaveLength(0);
+    expect(h.els.get('limitHero')!.textContent).toBe('59%');
+    expect(h.els.get('limitPicker')!.innerHTML).toContain('59%');
+  });
+
+  it('survives a limit the main process no longer knows about', async () => {
+    const p = manyLimits();
+    h.onState(p);
+    h.setDetail(() => null);
+
+    h.click(rowFor('claude:gone'));
+    await h.flush();
+
+    expect(h.errors).toHaveLength(0);
+    expect(h.els.get('limitBody')!.hidden).toBe(true);
+  });
+});
+
+describe('where it went: agents behind a model', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  const openSplit = async (over: Record<string, unknown> = {}) => {
+    const p = manyLimits();
+    h.onState(p);
+    h.setDetail((key) => detailOf(p, key, over));
+    h.click(rowFor('claude:7d'));
+    await h.flush();
+    return p;
+  };
+
+  it('marks each split row with its model, so the row can be hovered', async () => {
+    await openSplit();
+    expect(h.els.get('limitSplit')!.innerHTML).toContain('data-split="model-x"');
+    expect(h.els.get('limitSplit')!.innerHTML).toContain('data-split="model-y"');
+  });
+
+  it('names the agents behind that model, with the directory in full', async () => {
+    await openSplit();
+    const el = new El();
+    el.setAttribute('data-split', 'model-x');
+    const tip = h.hover(el);
+
+    expect(tip).toContain('model-x');
+    // Resolved against the live agent: project name, branch and full path.
+    expect(tip).toContain('demo');
+    expect(tip).toContain('/w/demo');
+    expect(tip).toContain('main');
+    // Shares within the model, not of the whole limit.
+    expect(tip).toContain('93%');
+    expect(tip).toContain('2 agents');
+  });
+
+  it('says a session ended rather than printing a bare id as a name', async () => {
+    await openSplit();
+    const el = new El();
+    el.setAttribute('data-split', 'model-x');
+    const tip = h.hover(el);
+    expect(tip).toContain('ended session');
+    expect(tip).toContain('not running');
+    expect(tip).not.toContain('claude:gone');
+  });
+
+  it('handles a model with no attribution at all', async () => {
+    await openSplit({
+      rows: [
+        {
+          model: 'model-z',
+          tokens: { input: 5, cacheWrite: 0, cacheRead: 0, output: 5 },
+          total: 10,
+          requests: 1,
+          agents: [],
+        },
+      ],
+      total: 10,
+    });
+    const el = new El();
+    el.setAttribute('data-split', 'model-z');
+    expect(h.hover(el)).toContain('No agent attribution');
+    expect(h.errors).toHaveLength(0);
+  });
+});
+
+describe('dates, not just clock times', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  it('names the day for a reset that is not today', async () => {
+    const p = manyLimits();
+    // A 7-day limit resetting five days out: "05:29" alone would read as today.
+    const target = (p.state.limits as { limit: Record<string, unknown> }[])[1]!;
+    target.limit.resetsAt = T0 + 5 * 24 * H;
+    target.limit.windowMinutes = 10_080;
+    h.onState(p);
+    h.setDetail((key) => detailOf(p, key));
+    h.click(rowFor('claude:7d'));
+    await h.flush();
+
+    const facts = h.els.get('limitFacts')!.innerHTML;
+    // Letters ahead of the clock — a weekday or "tomorrow", never a bare HH:MM.
+    expect(facts).toMatch(/\p{L}[^<]*\d{2}:\d{2}/u);
+    expect(h.errors).toHaveLength(0);
+  });
+
+  it('keeps a same-day reset to the bare clock', async () => {
+    const p = manyLimits();
+    const target = (p.state.limits as { limit: Record<string, unknown> }[])[1]!;
+    // Two minutes out is unambiguously today whatever the local hour.
+    target.limit.resetsAt = T0 + 2 * 60_000;
+    h.onState(p);
+    h.setDetail((key) => detailOf(p, key));
+    h.click(rowFor('claude:7d'));
+    await h.flush();
+
+    expect(h.els.get('limitFacts')!.innerHTML).not.toContain('tomorrow');
+    expect(h.errors).toHaveLength(0);
+  });
+});
+
+/**
+ * Chart labels must never overlap. The three axis labels are anchored
+ * independently — left edge, right edge, and wherever "now" happens to fall —
+ * so near either end of a window they collided. Dating the labels on
+ * multi-day limits more than doubled their width and made it routine.
+ */
+describe('chart labels never overlap', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  /** Same estimate the renderer places with. */
+  const CH = 5.5;
+
+  function boxes(svg: string) {
+    const out: { y: number; l: number; r: number; text: string }[] = [];
+    const re = /<text x="([\d.-]+)" y="([\d.-]+)"(?: text-anchor="(\w+)")?>([^<]*)<\/text>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(svg)) !== null) {
+      const x = Number(m[1]);
+      const y = Number(m[2]);
+      const anchor = m[3] ?? 'start';
+      const text = m[4]!;
+      const w = text.length * CH;
+      const l = anchor === 'end' ? x - w : anchor === 'middle' ? x - w / 2 : x;
+      out.push({ y, l, r: l + w, text });
+    }
+    return out;
+  }
+
+  function assertNoOverlap(svg: string, label: string) {
+    const bs = boxes(svg);
+    expect(bs.length, `${label}: no labels drawn at all`).toBeGreaterThan(0);
+    for (let i = 0; i < bs.length; i++) {
+      for (let j = i + 1; j < bs.length; j++) {
+        const a = bs[i]!;
+        const b = bs[j]!;
+        if (a.y !== b.y) continue;
+        const overlap = a.l < b.r && b.l < a.r;
+        expect(overlap, `${label}: "${a.text}" and "${b.text}" overlap`).toBe(false);
+      }
+    }
+  }
+
+  // now at the very start, the very end, and points between: the "now" label
+  // has to give way at both extremes rather than land on its neighbour.
+  const OFFSETS = [1, 5, 30, 60, 150, 240, 290, 299];
+
+  it('holds for a 5-hour limit wherever now falls in it', () => {
+    for (const mins of OFFSETS) {
+      const p = payload() as { state: { limits: { limit: Record<string, unknown> }[] } };
+      const w = p.state.limits[0]!.limit;
+      w.windowMinutes = 300;
+      // now sits `mins` into a 300-minute window.
+      w.resetsAt = T0 + (300 - mins) * 60_000;
+      h.onState(p);
+      assertNoOverlap(h.els.get('chart')!.innerHTML, `5h at +${mins}m`);
+    }
+  });
+
+  it('holds for a 7-day limit, whose labels carry a weekday', () => {
+    for (const frac of [0.001, 0.02, 0.5, 0.94, 0.99, 0.999]) {
+      const p = payload() as { state: { limits: { limit: Record<string, unknown> }[] } };
+      const w = p.state.limits[0]!.limit;
+      w.windowMinutes = 10_080;
+      w.resetsAt = T0 + Math.round(10_080 * (1 - frac)) * 60_000;
+      h.onState(p);
+      assertNoOverlap(h.els.get('chart')!.innerHTML, `7d at ${frac}`);
+    }
+  });
+
+  it('drops the "now" label at the ends rather than stacking it', () => {
+    const labelsAt = (frac: number) => {
+      const p = payload() as { state: { limits: { limit: Record<string, unknown> }[] } };
+      const w = p.state.limits[0]!.limit;
+      w.windowMinutes = 10_080;
+      w.resetsAt = T0 + Math.round(10_080 * (1 - frac)) * 60_000;
+      h.onState(p);
+      return boxes(h.els.get('chart')!.innerHTML).map((b) => b.text);
+    };
+    // Mid-window there is room for all three; hard against the reset there is not.
+    expect(labelsAt(0.5)).toContain('now');
+    expect(labelsAt(0.999), 'now should have given way to the reset label').not.toContain('now');
+  });
+
+  it('keeps the exhaustion callout inside the frame', () => {
+    for (const frac of [0.05, 0.5, 0.97]) {
+      const p = payload() as {
+        state: { limits: { limit: Record<string, unknown>; exhaustsAt: number }[] };
+      };
+      const a = p.state.limits[0]!;
+      a.limit.windowMinutes = 10_080;
+      a.limit.resetsAt = T0 + 6 * 24 * H;
+      a.exhaustsAt = T0 + Math.round(6 * 24 * H * frac);
+      h.onState(p);
+      for (const b of boxes(h.els.get('chart')!.innerHTML)) {
+        expect(b.l, `label "${b.text}" starts left of the frame`).toBeGreaterThanOrEqual(-0.5);
+        expect(b.r, `label "${b.text}" runs past the frame`).toBeLessThanOrEqual(352.5);
+      }
+    }
   });
 });

@@ -26,6 +26,17 @@ export interface Backend {
   healthDetail: string | null;
 }
 
+/**
+ * What a provider writes into a usage event when the turn it parsed named no
+ * model. The ledger needs *some* bucket key, but these are placeholders, not
+ * models: they must never reach the UI, seed a display, or be mistaken for a
+ * real answer when filling a gap.
+ */
+export const UNKNOWN_MODELS: ReadonlySet<string> = new Set(['unknown', 'gpt-unknown']);
+
+export const isKnownModel = (model: string | null | undefined): model is string =>
+  typeof model === 'string' && model.length > 0 && !UNKNOWN_MODELS.has(model);
+
 export type AgentState = 'live' | 'idle' | 'ended';
 
 export interface TokenTotals {

@@ -304,6 +304,11 @@ async function start(): Promise<void> {
   ipcMain.on('panel:refresh', () => void monitor.tick());
   ipcMain.on('widget:open-panel', () => togglePanel());
   ipcMain.on('settings:set', (_e, patch: Partial<Settings>) => void applySettings(patch));
+  // Tier 3 (docs/UI.md § Any limit, on demand): the panel pulls one limit's
+  // history and exact token split when the user opens it. Pull, not push —
+  // shipping every limit's breakdown on every tick would be most of a
+  // megabyte of JSON a second for something usually not on screen.
+  ipcMain.handle('limit:detail', (_e, key: string) => monitor?.limitDetail(key) ?? null);
   ipcMain.on('alarms:clear', () => {
     void monitor.clearAlarmHistory().then(pushState);
   });

@@ -12,13 +12,17 @@ import type {
   Backend,
   Confidence,
   FireLog,
+  LimitAssessment,
   QuotaLimit,
+  TokenTotals,
+  UsageEvent,
 } from './model/types.js';
-import { emptyFireLog } from './model/types.js';
+import { ZERO_TOTALS, emptyFireLog, isKnownModel } from './model/types.js';
 import type { ProviderAdapter } from './providers/provider.js';
 import { UsageLedger } from './quota/ledger.js';
 import { ExchangeRateFit, type FitResult } from './quota/fit.js';
 import { LimitAssessor } from './quota/assess.js';
+import { limitBreakdown, limitWindow, type LimitBreakdown } from './quota/breakdown.js';
 import { evaluate } from './rules/evaluate.js';
 import { DEFAULT_CONFIG, type AlarmConfig } from './rules/config.js';
 import { SinkRouter } from './sinks/sink.js';
@@ -41,6 +45,14 @@ export interface MonitorOptions {
 const HISTORY_MIN_INTERVAL_MS = 5 * 60_000;
 /** How often to rewrite state.json. */
 const STATE_SAVE_INTERVAL_MS = 60_000;
+
+/** One limit, fully unpacked — the tier-3 payload. */
+export interface LimitDetail {
+  assessment: LimitAssessment;
+  history: HistorySample[];
+  breakdown: LimitBreakdown;
+  generatedAt: number;
+}
 
 export class Monitor extends EventEmitter {
   private readonly providers: ProviderAdapter[];
@@ -125,6 +137,25 @@ export class Monitor extends EventEmitter {
     return this.history.filter((s) => s.w === limitKey && s.t >= cutoff);
   }
 
+  /**
+   * Everything tier 3 needs about one limit, on demand (docs/UI.md
+   * § Any limit, on demand). `limitKey` is `${backend}:${key}`, the same id
+   * `historyFor` takes. Null when no such limit is in the current snapshot —
+   * limits come and go as the vendor reports them, so callers must handle it.
+   */
+  limitDetail(limitKey: string, sinceMs?: number): LimitDetail | null {
+    const state = this.lastState;
+    if (state === null) return null;
+    const assessment = state.limits.find((a) => `${a.limit.backend}:${a.limit.key}` === limitKey);
+    if (assessment === undefined) return null;
+    return {
+      assessment,
+      history: this.historyFor(limitKey, sinceMs),
+      breakdown: limitBreakdown(this.ledger, assessment.limit, state.generatedAt),
+      generatedAt: state.generatedAt,
+    };
+  }
+
   /** The alarm log, newest first — what the notifications view renders. */
   alarms(): Alarm[] {
     return [...this.alarmHistory].reverse();
@@ -182,6 +213,8 @@ export class Monitor extends EventEmitter {
       }
     }
 
+    this.backfillIdentity(agents);
+
     // Feed the fit one poll per short (5h-class) window per backend — the
     // window whose Δu is most informative at our cadence.
     let fitResult: FitResult | null = null;
@@ -197,6 +230,7 @@ export class Monitor extends EventEmitter {
     }
 
     const assessments = this.assessor.assess(limits, now);
+    this.applyWindowTotals(agents, assessments.find((a) => a.binding), now);
 
     // Per-agent burn: r_a = priced consumption over τ, scaled to an hour. Derived — render with ≈.
     const agentBurns: AgentBurn[] = [];
@@ -241,6 +275,84 @@ export class Monitor extends EventEmitter {
 
     this.emit('state', state);
     return state;
+  }
+
+  /**
+   * Agent token totals over the window on screen, not since this process
+   * started.
+   *
+   * A provider accumulates from the moment it began watching, so restarting
+   * Adjent mid-window reset every agent to zero while the vendor's utilization
+   * carried on climbing — the token line then disagreed with the number above
+   * it for the rest of the window. The ledger survives restarts and carries
+   * timestamps, so the window can simply be summed instead.
+   *
+   * The window is the binding limit's: the token line sits under the hero, so
+   * it should explain the hero's number and no other. With no binding limit
+   * there is no window to speak of, and the provider's own totals stand.
+   */
+  private applyWindowTotals(agents: Agent[], binding: LimitAssessment | undefined, now: number): void {
+    if (binding === undefined) return;
+    const { from, to } = limitWindow(binding.limit, now);
+
+    const byAgent = new Map<string, TokenTotals>();
+    for (const e of this.ledger.slice(from, to)) {
+      let t = byAgent.get(e.agentId);
+      if (t === undefined) {
+        t = { ...ZERO_TOTALS };
+        byAgent.set(e.agentId, t);
+      }
+      t.input += e.tokens.input;
+      t.cacheWrite += e.tokens.cacheWrite;
+      t.cacheRead += e.tokens.cacheRead;
+      t.output += e.tokens.output;
+      t.thinking += e.tokens.thinking;
+    }
+    // An agent with nothing in the window spent nothing in it. Zero is the
+    // honest answer; carrying a previous window's figure forward is not.
+    for (const a of agents) a.totals = byAgent.get(a.id) ?? { ...ZERO_TOTALS };
+  }
+
+  /**
+   * Restore identity a provider can only learn by watching.
+   *
+   * Providers read `model` and `effort` off assistant turns as they stream in,
+   * so a session that has produced no turn since Adjent last started has
+   * neither: the byte offsets are persisted, but the observations derived from
+   * them are not. The ledger *is* persisted and every event carries both, so
+   * the agent's most recent event answers it exactly.
+   *
+   * Without this an agent that is visibly burning quota renders its model as
+   * "?" — the burn comes from the ledger, the model did not.
+   */
+  private backfillIdentity(agents: Agent[]): void {
+    const missing = new Map<string, Agent[]>();
+    for (const a of agents) {
+      if (a.model !== null) continue;
+      const at = missing.get(a.id);
+      if (at) at.push(a);
+      else missing.set(a.id, [a]);
+    }
+    if (missing.size === 0) return;
+
+    // Newest first, stopping as soon as every gap is filled: the last turn is
+    // the answer, so this walks a handful of events in the common case.
+    const events = this.ledger.all();
+    for (let i = events.length - 1; i >= 0 && missing.size > 0; i--) {
+      const e = events[i] as UsageEvent;
+      const targets = missing.get(e.agentId);
+      if (targets === undefined) continue;
+      // A placeholder is not an answer — keep looking for a turn that named
+      // a real model rather than displaying "gpt-unknown" as if it were one.
+      if (!isKnownModel(e.model)) continue;
+      for (const a of targets) {
+        a.model = e.model;
+        // Effort belongs to the same turn as the model, so take it together
+        // rather than mixing fields from different points in time.
+        if (a.effort === null) a.effort = e.effort;
+      }
+      missing.delete(e.agentId);
+    }
   }
 
   /** Downsampled: only on change, or every HISTORY_MIN_INTERVAL_MS. */

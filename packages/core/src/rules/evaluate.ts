@@ -128,7 +128,7 @@ function evalPace(rule: PaceRule, state: AppState, memory: FireLog, now: number)
       const resetIn = a.limit.resetsAt !== null ? fmtDur(a.limit.resetsAt - now) : 'unknown';
       const meaning =
         a.exhaustsAt !== null && a.limit.resetsAt !== null && a.exhaustsAt < a.limit.resetsAt
-          ? `At this rate the window runs out at ${fmtTime(a.exhaustsAt)}.`
+          ? `At this rate the limit runs out ${fmtWhen(a.exhaustsAt, now)}.`
           : `The pace line is at ${pace.toFixed(0)}%.`;
       out.push({
         id: disc,
@@ -180,7 +180,7 @@ function evalThreshold(rule: ThresholdRule, state: AppState, memory: FireLog, no
         ruleId: rule.id,
         severity,
         title: `${a.limit.label} is already at ${u.toFixed(0)}%`,
-        body: `Adjent started with this window past ${level}%. ${resetIn} until reset.`,
+        body: `Adjent started with this limit past ${level}%. ${resetIn} until reset.`,
         firedAt: now,
         backend: a.limit.backend,
         limitKey: a.limit.key,
@@ -230,7 +230,7 @@ function evalAgentBurn(rule: AgentBurnRule, state: AppState, memory: FireLog, no
     const agent = state.agents.find((a) => a.id === b.agentId);
     const label = agent?.label ?? b.agentId;
     const reason = absTrip
-      ? `burning ≈${b.pctPerHour.toFixed(1)}%/h of the window`
+      ? `burning ≈${b.pctPerHour.toFixed(1)}%/h of the limit`
       : shareTrip
         ? `≈${(((b.pctPerHour / total) * 100) | 0)}% of all current burn`
         : `≈${(b.pctPerHour / median).toFixed(1)}× the median agent`;
@@ -281,4 +281,36 @@ export function fmtDur(ms: number): string {
 export function fmtTime(epochMs: number): string {
   const d = new Date(epochMs);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Local midnight, so "tomorrow" means the next calendar day, not +24h. */
+function startOfDay(epochMs: number): number {
+  const d = new Date(epochMs);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** Whole calendar days from `a` to `b`; DST-safe because both are midnights. */
+export function calendarDaysBetween(a: number, b: number): number {
+  return Math.round((startOfDay(b) - startOfDay(a)) / 86_400_000);
+}
+
+/**
+ * A moment, said the way a person would, relative to `now`.
+ *
+ * A bare clock time is only unambiguous inside today. On a 7-day limit
+ * "runs out at 05:29" reads as five hours away when it is five days away —
+ * which is the difference between "stop working" and "carry on". So anything
+ * outside today names its day.
+ */
+export function fmtWhen(epochMs: number, now: number): string {
+  const clock = fmtTime(epochMs);
+  const days = calendarDaysBetween(now, epochMs);
+  if (days === 0) return clock;
+  if (days === 1) return `tomorrow ${clock}`;
+  if (days === -1) return `yesterday ${clock}`;
+  const d = new Date(epochMs);
+  // Inside the coming week a weekday alone is unambiguous; beyond it, date it.
+  if (days > 1 && days < 7) return `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${clock}`;
+  return `${d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}, ${clock}`;
 }

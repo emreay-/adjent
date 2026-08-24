@@ -8,8 +8,8 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { Agent, Backend, QuotaLimit, TokenTotals, UsageEvent } from '../../model/types.js';
-import { ZERO_TOTALS } from '../../model/types.js';
-import { asNum, asObj, asStr, parseLine, tailFile, type TailState } from '../../collect/tail.js';
+import { ZERO_TOTALS, isKnownModel } from '../../model/types.js';
+import { asNum, asObj, asStr, headChunk, parseLine, tailChunk, tailFile, type TailState } from '../../collect/tail.js';
 import type { ProviderAdapter } from '../provider.js';
 
 const IDLE_MS = 5 * 60_000;
@@ -19,6 +19,12 @@ const ACTIVE_HORIZON_MS = 48 * 3600_000;
 const QUOTA_HORIZON_MS = 14 * 24 * 3600_000;
 /** Threads idle longer than this are dropped from the agent list entirely. */
 const LIST_HORIZON_MS = 12 * 3600_000;
+/**
+ * How much of a rollout to re-read when recovering a thread's model. The turn
+ * context sits near the top of the file and again at the newest turn, so both
+ * ends are searched and the middle — which is all message content — is not.
+ */
+const IDENTITY_CHUNK_BYTES = 256 * 1024;
 
 export interface CodexProviderOptions {
   root?: string;
@@ -38,6 +44,11 @@ export class CodexProvider implements ProviderAdapter {
     string,
     { model: string | null; effort: string | null; lastTs: number; totals: TokenTotals; cwd: string | null }
   >();
+
+  /** threadId → rollout path, so identity can be re-read without a rescan. */
+  private readonly threadFiles = new Map<string, string>();
+  /** Threads already searched retrospectively — the file is read at most once. */
+  private readonly identityResolved = new Set<string>();
 
   private latestRateLimits: { payload: Record<string, unknown>; observedAt: number } | null = null;
   private plan: string | null = null;
@@ -75,6 +86,7 @@ export class CodexProvider implements ProviderAdapter {
   // -------------------------------------------------------------------------
   async listAgents(): Promise<Agent[]> {
     await this.readThreadIndex();
+    await this.resolveMissingIdentity();
     const agents: Agent[] = [];
     for (const [threadId, obs] of this.threadObservations) {
       if (this.now() - obs.lastTs > LIST_HORIZON_MS) continue;
@@ -85,7 +97,7 @@ export class CodexProvider implements ProviderAdapter {
         label: this.threadNames.get(threadId) ?? threadId.slice(0, 8),
         projectPath: obs.cwd,
         gitBranch: null,
-        model: obs.model,
+        model: isKnownModel(obs.model) ? obs.model : null,
         effort: obs.effort,
         entrypoint: null,
         parentId: null,
@@ -118,10 +130,15 @@ export class CodexProvider implements ProviderAdapter {
     const files = await this.findActiveRollouts();
     const events: UsageEvent[] = [];
     for (const f of files) {
+      this.threadFiles.set(f.threadId, f.path);
       const { lines } = await tailFile(this.tail, f.path);
       for (const line of lines) {
         if (line.includes('"rate_limits"')) this.captureRateLimits(line);
         if (line.includes('"session_meta"')) this.captureSessionMeta(line, f.threadId);
+        // Usage lines never name the model; the turn context does.
+        if (line.includes('"turn_context"') || line.includes('"world_state"')) {
+          this.captureIdentityLine(line, f.threadId);
+        }
         if (!line.includes('token') && !line.includes('usage')) continue;
         const ev = this.parseUsageLine(line, f.threadId);
         if (ev) events.push(ev);
@@ -154,10 +171,6 @@ export class CodexProvider implements ProviderAdapter {
     if (this.seenEventIds.has(requestId)) return null;
     this.seenEventIds.add(requestId);
 
-    const model = this.findStr(d, 'model') ?? 'gpt-unknown';
-    const effort = this.findStr(d, 'effort') ?? this.findStr(d, 'reasoning_effort');
-    const cwd = this.findStr(d, 'cwd');
-
     const tokens: TokenTotals = { input: Math.max(0, input - cached), cacheWrite: 0, cacheRead: cached, output, thinking };
     const obs = this.threadObservations.get(threadId) ?? {
       model: null,
@@ -166,7 +179,15 @@ export class CodexProvider implements ProviderAdapter {
       totals: { ...ZERO_TOTALS },
       cwd: null,
     };
-    obs.model = model !== 'gpt-unknown' ? model : obs.model;
+    // A usage line carries tokens, not identity. Prefer what the thread is
+    // known to be running over stamping a placeholder into the ledger, which
+    // would then be indistinguishable from a real model downstream.
+    const lineModel = this.findStr(d, 'model');
+    const model = lineModel ?? obs.model ?? 'gpt-unknown';
+    const effort = this.findStr(d, 'effort') ?? this.findStr(d, 'reasoning_effort') ?? obs.effort;
+    const cwd = this.findStr(d, 'cwd');
+
+    obs.model = isKnownModel(model) ? model : obs.model;
     obs.effort = effort ?? obs.effort;
     obs.cwd = cwd ?? obs.cwd;
     obs.lastTs = Math.max(obs.lastTs, ts);
@@ -208,6 +229,75 @@ export class CodexProvider implements ProviderAdapter {
   }
 
   /** A session_meta line names the thread's cwd before any turn completes. */
+  /**
+   * Rebuild what a rollout already says, for threads the incremental tail can
+   * no longer tell us anything about.
+   *
+   * Codex has no session-file inventory the way Claude does: a thread exists
+   * to us only because we parsed its lines. So after a restart the byte offset
+   * sits at the end of the file, nothing new arrives, and the thread is not
+   * merely missing its model — it is missing entirely, along with the window
+   * of usage the panel is meant to be showing.
+   *
+   * Re-reading the file fixes both. Bounded, once per thread, both ends: the
+   * head carries session metadata and the opening turn context, the tail the
+   * newest turn context and the latest activity.
+   */
+  private async resolveMissingIdentity(): Promise<void> {
+    for (const [threadId, file] of this.threadFiles) {
+      const known = this.threadObservations.get(threadId);
+      if (known !== undefined && isKnownModel(known.model)) continue;
+      if (this.identityResolved.has(threadId)) continue;
+      this.identityResolved.add(threadId);
+
+      const tail = await tailChunk(file, IDENTITY_CHUNK_BYTES);
+      const head = await headChunk(file, IDENTITY_CHUNK_BYTES);
+      // Tail first: if the model changed mid-session, the newest one wins.
+      for (const chunk of [tail, head]) {
+        for (let i = chunk.length - 1; i >= 0; i--) {
+          const line = chunk[i] as string;
+          if (line.includes('"session_meta"')) this.captureSessionMeta(line, threadId);
+          if (line.includes('"model"')) this.captureIdentityLine(line, threadId);
+        }
+      }
+
+      // Liveness comes from the newest timestamp in the file, not from when we
+      // happened to read it — otherwise a restored thread looks brand new.
+      let newest = 0;
+      for (let i = tail.length - 1; i >= 0 && newest === 0; i--) {
+        const d = parseLine(tail[i] as string);
+        const ts = Date.parse(asStr(d?.['timestamp']) ?? '');
+        if (Number.isFinite(ts)) newest = ts;
+      }
+      const obs = this.threadObservations.get(threadId);
+      if (obs !== undefined && newest > obs.lastTs) obs.lastTs = newest;
+    }
+  }
+
+  /**
+   * Pull model and effort off a turn-context-shaped line. Depth-limited search
+   * rather than a fixed path: the payload shape has moved between client
+   * versions, and an additive-tolerant reader survives that (README rule 6).
+   */
+  private captureIdentityLine(line: string, threadId: string): void {
+    if (!line.includes('"model"')) return;
+    const d = parseLine(line);
+    if (!d) return;
+    const model = this.findStr(d, 'model');
+    if (!isKnownModel(model)) return;
+    const effort = this.findStr(d, 'effort') ?? this.findStr(d, 'reasoning_effort');
+    const obs = this.threadObservations.get(threadId) ?? {
+      model: null,
+      effort: null,
+      lastTs: 0,
+      totals: { ...ZERO_TOTALS },
+      cwd: null,
+    };
+    obs.model = model;
+    obs.effort = effort ?? obs.effort;
+    this.threadObservations.set(threadId, obs);
+  }
+
   private captureSessionMeta(line: string, threadId: string): void {
     const d = parseLine(line);
     if (!d || d['type'] !== 'session_meta') return;

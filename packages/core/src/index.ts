@@ -2,7 +2,7 @@ export * from './model/types.js';
 export { ClaudeProvider } from './providers/claude/claude.js';
 export { CodexProvider } from './providers/codex/codex.js';
 export { pidAlive, type ProviderAdapter } from './providers/provider.js';
-export { tailFile, parseLine, emptyTailState, type TailState } from './collect/tail.js';
+export { tailFile, headChunk, tailChunk, parseLine, emptyTailState, type TailState } from './collect/tail.js';
 export {
   UsageLedger,
   DEFAULT_PRICE_RATIOS,
@@ -12,10 +12,17 @@ export {
 } from './quota/ledger.js';
 export { ExchangeRateFit, type FitResult } from './quota/fit.js';
 export { LimitAssessor, paceLine, verdictFor, exhaustion } from './quota/assess.js';
-export { evaluate, fmtDur, fmtTime } from './rules/evaluate.js';
+export { evaluate, fmtDur, fmtTime, fmtWhen, calendarDaysBetween } from './rules/evaluate.js';
 export { loadConfig, configPath, DEFAULT_CONFIG, type AlarmConfig, type Routing } from './rules/config.js';
 export { ConsoleSink, WebhookSink, SinkRouter, type Sink } from './sinks/sink.js';
-export { Monitor, type MonitorOptions } from './monitor.js';
+export { Monitor, type MonitorOptions, type LimitDetail } from './monitor.js';
+export {
+  limitBreakdown,
+  limitWindow,
+  type LimitBreakdown,
+  type BreakdownRow,
+  type BreakdownAgent,
+} from './quota/breakdown.js';
 export {
   loadSettings,
   saveSettings,

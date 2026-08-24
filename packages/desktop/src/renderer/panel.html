@@ -167,6 +167,60 @@
     font-family:Consolas, monospace; font-size:10px; letter-spacing:.08em;
     text-transform:uppercase; color:var(--muted); padding:10px 0 4px; font-weight:600;
   }
+  /* Tier 3: any limit, on demand (docs/UI.md § Any limit, on demand). Limit
+     rows are the only clickable rows at rest, so they get a pointer and a
+     hover fill rather than the dotted underline that means "explanation". */
+  .row[data-limit], h2[data-limit-all] { cursor:pointer; }
+  .row[data-limit]:hover { background:var(--surface); }
+  .heroMeta[data-limit] { cursor:pointer; }
+  .limitPick {
+    display:flex; align-items:baseline; gap:8px; padding:6px 0; font-size:12px;
+    cursor:pointer; border-bottom:1px solid var(--line);
+  }
+  .limitPick:last-child { border-bottom:none; }
+  .limitPick:hover { background:var(--surface); }
+  .limitPick .dot { width:7px; height:7px; border-radius:50%; flex:none; align-self:center; }
+  .limitPick .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .limitPick .tag {
+    font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+    border:1px solid var(--line); border-radius:3px; padding:0 4px; flex:none;
+  }
+  .limitPick .meta {
+    margin-left:auto; font-family:Consolas, monospace; font-size:10.5px;
+    color:var(--muted); white-space:nowrap;
+  }
+  .limitPick .meta b { color:var(--ink2); font-weight:600; }
+  .limitPick.on { background:var(--surface); }
+  .limitPick.on .name { color:var(--good); }
+  .facts { width:100%; border-collapse:collapse; margin-top:8px; }
+  .facts td { padding:3px 0; font-size:11.5px; vertical-align:baseline; }
+  .facts td:first-child { color:var(--muted); white-space:nowrap; padding-right:12px; width:1%; }
+  .facts td:last-child { font-family:Consolas, monospace; color:var(--ink2); }
+  .facts td b { color:var(--ink); font-weight:600; }
+  .prov {
+    display:inline-block; margin-left:6px; padding:0 5px; border-radius:3px;
+    font-family:"Segoe UI", system-ui, sans-serif; font-size:9px; font-weight:700;
+    letter-spacing:.06em; text-transform:uppercase; vertical-align:1px;
+  }
+  .prov.reported, .prov.exact { background:var(--good-bg); color:var(--good); }
+  .prov.derived { background:var(--warn-bg); color:var(--warn); }
+  .splitRow { padding:7px 0; border-bottom:1px solid var(--line); }
+  /* Each row explains itself on hover: which agents spent that model's share. */
+  .splitRow[data-split] { cursor:help; }
+  .splitRow[data-split]:hover { background:var(--surface); }
+  .splitRow:last-child { border-bottom:none; }
+  .splitTop { display:flex; align-items:baseline; gap:8px; font-size:12px; }
+  .splitTop .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .splitTop .meta {
+    margin-left:auto; font-family:Consolas, monospace; font-size:10.5px; color:var(--muted);
+  }
+  .splitTop .meta b { color:var(--ink2); font-weight:600; }
+  .bar { height:3px; border-radius:2px; background:var(--line); margin-top:4px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--good); }
+  .kinds {
+    display:block; margin-top:3px; font-family:Consolas, monospace; font-size:10px;
+    color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
   h2 { font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:4px; }
 </style>
 </head>
@@ -184,10 +238,30 @@
       <svg class="pace" id="chart" data-tip="chart" viewBox="0 0 352 120" aria-label="Utilization against the pace line"></svg>
       <div class="tokline" id="tokline" data-tip="tokens"></div>
     </section>
-    <section><h2 data-tip="otherLimits">Other limits</h2><div id="limits"><div class="empty">–</div></div></section>
+    <section><h2 data-tip="otherLimits" data-limit-all title="Show every limit">Other limits</h2><div id="limits"><div class="empty">–</div></div></section>
     <section><h2 data-tip="agentBurn">Agents</h2><div id="agents"><div class="empty">–</div></div></section>
     <section><h2>Recent alarms</h2><div id="alarms"><div class="empty">None</div></div>
       <div class="tokline" id="conf" data-tip="confidence" style="margin-top:8px"></div></section>
+    <section id="limitView" hidden>
+      <div class="notifHead">
+        <h2 style="margin:0">All limits</h2>
+        <button id="limitBack" class="linkbtn" style="margin:0">Back</button>
+      </div>
+      <div id="limitPicker"><div class="empty">–</div></div>
+      <div id="limitBody" hidden>
+        <span class="chip idle" id="limitVerdict" data-tip="verdict"></span>
+        <div class="heroRow">
+          <span class="hero" id="limitHero" data-tip="hero">–</span>
+          <span class="rate" id="limitRate" data-tip="burnRate"></span>
+          <span class="heroMeta" id="limitMeta"></span>
+        </div>
+        <svg class="pace" id="limitChart" data-tip="chart" viewBox="0 0 352 120"
+             aria-label="Utilization against the pace line"></svg>
+        <div id="limitFacts"></div>
+        <h2 style="margin-top:14px" data-tip="tokens">Where it went</h2>
+        <div id="limitSplit"><div class="empty">–</div></div>
+      </div>
+    </section>
     <section id="notificationsView" hidden>
       <div class="notifHead">
         <h2 style="margin:0">Notification history</h2>

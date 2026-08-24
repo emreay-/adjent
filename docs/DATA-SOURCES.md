@@ -158,6 +158,20 @@ only the freshness timestamp and provenance tag differ:
 Append-only. Tail by byte offset. Carries turn events, token usage and the
 `rate_limits` payload above.
 
+**The model is not on the usage lines.** Token counts arrive on `event_msg` /
+`response_item` lines, which name no model; the model and reasoning effort live
+on `turn_context.payload.{model,effort}`, written once per turn context near
+the top of the rollout, with copies under `world_state.payload.state.model` and
+`session_meta.payload.base_instructions.provenance.model`. A reader that parses
+only usage lines therefore has tokens with no model to attribute them to.
+
+This also means identity cannot be recovered by tailing: after a restart the
+byte offset is already past every `turn_context`, so nothing new will ever
+name the model. The file has to be re-read from both ends — head for the
+opening context, tail for the newest — which is what `headChunk`/`tailChunk`
+in `collect/tail.ts` exist for. Claude is easier: `message.model` is on every
+assistant line, so its tail always answers.
+
 ### Thread index — `session_index.jsonl`
 `{id, thread_name, updated_at}` — human-readable names for the UI, cheaply.
 

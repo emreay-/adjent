@@ -12,8 +12,8 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { Agent, Backend, QuotaLimit, TokenTotals, UsageEvent } from '../../model/types.js';
-import { ZERO_TOTALS } from '../../model/types.js';
-import { asNum, asObj, asStr, parseLine, tailFile, type TailState } from '../../collect/tail.js';
+import { ZERO_TOTALS, isKnownModel } from '../../model/types.js';
+import { asNum, asObj, asStr, parseLine, tailChunk, tailFile, type TailState } from '../../collect/tail.js';
 import { pidAlive, type ProviderAdapter } from '../provider.js';
 
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
@@ -23,6 +23,11 @@ const MIN_POLL_MS = 60_000;
 const BACKOFF_MS = 5 * 60_000;
 /** Idle threshold for a session with no recent transcript activity. */
 const IDLE_MS = 5 * 60_000;
+/**
+ * How much of a transcript to re-read when recovering a session's model.
+ * Assistant lines carry it on every turn, so the tail always answers.
+ */
+const IDENTITY_CHUNK_BYTES = 256 * 1024;
 
 export interface ClaudeProviderOptions {
   /** Override for tests. Defaults to ~/.claude. */
@@ -51,6 +56,11 @@ export class ClaudeProvider implements ProviderAdapter {
   private readonly fetchFn: typeof fetch;
   private readonly tail: TailState = { offsets: {} };
   private readonly seenRequestIds = new Set<string>();
+  /** sessionId → transcript path, for retrospective identity lookups. */
+  private readonly sessionFiles = new Map<string, string>();
+  /** Sessions already searched retrospectively — each file is read at most once. */
+  private readonly identityResolved = new Set<string>();
+
   /** sessionId → latest observed model/effort/branch/activity, fed by collectUsage. */
   private readonly sessionObservations = new Map<
     string,
@@ -109,6 +119,7 @@ export class ClaudeProvider implements ProviderAdapter {
   // -------------------------------------------------------------------------
   async listAgents(): Promise<Agent[]> {
     const sessions = await this.readSessions();
+    await this.resolveMissingIdentity(sessions.map((x) => x.sessionId));
     const agents: Agent[] = [];
     for (const s of sessions) {
       const alive = s.pid !== null && pidAlive(s.pid);
@@ -121,7 +132,7 @@ export class ClaudeProvider implements ProviderAdapter {
         label: s.name ?? s.sessionId.slice(0, 8),
         projectPath: s.cwd,
         gitBranch: obs?.gitBranch ?? null,
-        model: obs?.model ?? null,
+        model: isKnownModel(obs?.model) ? obs.model : null,
         effort: obs?.effort ?? null,
         entrypoint: s.entrypoint,
         parentId: null,
@@ -173,6 +184,9 @@ export class ClaudeProvider implements ProviderAdapter {
     const files = await this.findTranscripts(projectsDir);
     const events: UsageEvent[] = [];
     for (const f of files) {
+      // The newest transcript for a session wins: subagent files share the
+      // parent's id, and the parent's own file is the one that names its model.
+      if (f.parentSessionId === null) this.sessionFiles.set(f.sessionId, f.path);
       const { lines } = await tailFile(this.tail, f.path);
       for (const line of lines) {
         // Cheap pre-filter: metadata-only rule — we only parse lines that can
@@ -241,6 +255,48 @@ export class ClaudeProvider implements ProviderAdapter {
   }
 
   /** Top-level transcripts + subagent transcripts (attributed to the parent session). */
+  /**
+   * Recover the model for sessions whose turns were all written before we
+   * started tailing. Incremental reading cannot find it — the byte offset is
+   * already past every assistant line — so the transcript is re-read directly
+   * from its tail, once per session.
+   *
+   * Metadata only: the scan stops at the first `message.model` it finds and
+   * keeps nothing else off the line (README rule 2).
+   */
+  private async resolveMissingIdentity(sessionIds: string[]): Promise<void> {
+    for (const sessionId of sessionIds) {
+      const obs = this.sessionObservations.get(sessionId);
+      if (isKnownModel(obs?.model)) continue;
+      if (this.identityResolved.has(sessionId)) continue;
+      const file = this.sessionFiles.get(sessionId);
+      if (file === undefined) continue;
+      this.identityResolved.add(sessionId);
+
+      const lines = await tailChunk(file, IDENTITY_CHUNK_BYTES);
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i] as string;
+        if (!line.includes('"model"')) continue;
+        const d = parseLine(line);
+        const msg = asObj(d?.['message']);
+        const model = asStr(msg?.['model']);
+        if (!isKnownModel(model)) continue;
+        const next = this.sessionObservations.get(sessionId) ?? {
+          model: null,
+          effort: null,
+          gitBranch: null,
+          lastTs: 0,
+          totals: { ...ZERO_TOTALS },
+        };
+        next.model = model;
+        next.effort = asStr(d?.['effort']) ?? next.effort;
+        next.gitBranch = asStr(d?.['gitBranch']) ?? next.gitBranch;
+        this.sessionObservations.set(sessionId, next);
+        break;
+      }
+    }
+  }
+
   private async findTranscripts(
     projectsDir: string,
   ): Promise<Array<{ path: string; sessionId: string; parentSessionId: string | null }>> {
