@@ -94,3 +94,4 @@ export {
   readPreset,
   type PresetName,
 } from './rules/presets.js';
+export { ConfigWatcher } from './rules/watch.js';

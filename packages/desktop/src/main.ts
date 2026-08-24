@@ -11,7 +11,16 @@
 import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, screen, shell } from 'electron';
 import type { BrowserWindow as BrowserWindowType, Tray as TrayType } from 'electron';
 import * as path from 'node:path';
-import type { Alarm, AppState, Monitor, Settings, Sink } from '@adjent/core' with { 'resolution-mode': 'import' };
+import type {
+  Alarm,
+  AlarmConfig,
+  AppState,
+  ConfigWatcher,
+  Diagnostic,
+  Monitor,
+  Settings,
+  Sink,
+} from '@adjent/core' with { 'resolution-mode': 'import' };
 import { makeTrayIcon } from './trayicon.js';
 
 const coreImport = import('@adjent/core');
@@ -30,6 +39,7 @@ const WIDGET_W = 340;
 const WIDGET_H = 96;
 
 let tray: TrayType | null = null;
+let configWatcher: ConfigWatcher | null = null;
 let panel: BrowserWindowType | null = null;
 let widget: BrowserWindowType | null = null;
 let monitor: Monitor;
@@ -85,6 +95,66 @@ function buildTrayMenu(): void {
       { label: 'Quit Adjent', click: () => app.quit() },
     ]),
   );
+}
+
+/**
+ * Hot reload of alarms.yaml, which ARCHITECTURE.md and ALARMS.md both promise.
+ *
+ * A broken file keeps the running rules rather than reverting to defaults:
+ * reverting would quietly replace someone's tuned rules with rules they never
+ * chose, at the moment they are editing and not looking at the tray. The
+ * problem is reported once, as an `info` alarm, on a cooldown — a save that is
+ * broken tends to be saved again a few seconds later.
+ */
+const CONFIG_INVALID_COOLDOWN_MS = 10 * 60_000;
+let lastConfigComplaintAt = 0;
+
+function startConfigReload(): void {
+  const path = core.configPath();
+  configWatcher = new core.ConfigWatcher(path);
+
+  configWatcher.on('config', (config: AlarmConfig) => {
+    monitor?.setConfig(config);
+    // Say so: a reload that changes behaviour silently is indistinguishable
+    // from one that did not happen.
+    notify({
+      id: 'config-reloaded',
+      ruleId: 'config',
+      severity: 'info',
+      title: 'Alarm rules reloaded',
+      body: `${config.rules.length} ${config.rules.length === 1 ? 'rule' : 'rules'} in force.`,
+      firedAt: Date.now(),
+      backend: null,
+      limitKey: null,
+      agentId: null,
+    });
+  });
+
+  configWatcher.on('invalid', (diagnostics: Diagnostic[]) => {
+    const now = Date.now();
+    if (now - lastConfigComplaintAt < CONFIG_INVALID_COOLDOWN_MS) return;
+    lastConfigComplaintAt = now;
+    const first = diagnostics.find((d) => d.level === 'error');
+    notify({
+      id: 'config-invalid',
+      ruleId: 'config',
+      severity: 'info',
+      title: 'alarms.yaml has an error — previous rules still running',
+      body: first ? `${first.path}: ${first.message}` : 'the file could not be parsed',
+      firedAt: now,
+      backend: null,
+      limitKey: null,
+      agentId: null,
+    });
+  });
+
+  void configWatcher.prime().then(() => configWatcher?.start());
+}
+
+/** Route an alarm Adjent raised about itself through the normal sinks. */
+function notify(alarm: Alarm): void {
+  recentAlarms.push(alarm);
+  void monitor?.router.route([alarm]);
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +357,7 @@ async function start(): Promise<void> {
   monitor = new core.Monitor({ providers: [new core.ClaudeProvider(), new core.CodexProvider()], config });
   monitor.router.register(new ToastSink());
   monitor.router.register(new TraySink());
+  startConfigReload();
 
   tray = new Tray(nativeImage.createEmpty());
   updateTray(0, 0, 'idle', 'Adjent — starting');
@@ -333,6 +404,8 @@ async function start(): Promise<void> {
     // over it — and a killed process never gets this far at all.
     tray?.destroy();
     tray = null;
+    configWatcher?.close();
+    configWatcher = null;
   });
 }
 
