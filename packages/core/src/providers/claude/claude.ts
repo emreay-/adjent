@@ -124,7 +124,11 @@ export class ClaudeProvider implements ProviderAdapter {
     for (const s of sessions) {
       const alive = s.pid !== null && pidAlive(s.pid);
       const obs = this.sessionObservations.get(s.sessionId);
-      const lastActivity = obs?.lastTs ?? s.startedAt ?? 0;
+      // 0 is not a timestamp, it is the absence of one. Passing it through as
+      // if it were makes every consumer compute an age of ~20,000 days.
+      const observed = obs?.lastTs && obs.lastTs > 0 ? obs.lastTs : null;
+      const started = s.startedAt && s.startedAt > 0 ? s.startedAt : null;
+      const lastActivity = observed ?? started ?? 0;
       const state = !alive ? 'ended' : this.now() - lastActivity > IDLE_MS ? 'idle' : 'live';
       agents.push({
         id: `claude:${s.sessionId}`,
@@ -291,6 +295,11 @@ export class ClaudeProvider implements ProviderAdapter {
         next.model = model;
         next.effort = asStr(d?.['effort']) ?? next.effort;
         next.gitBranch = asStr(d?.['gitBranch']) ?? next.gitBranch;
+        // Take the turn's timestamp too. Without it lastActivityAt falls back
+        // to the session file's startedAt, and when that is missing to 0 —
+        // which renders as an idle time of twenty thousand days.
+        const ts = Date.parse(asStr(d?.['timestamp']) ?? '');
+        if (Number.isFinite(ts)) next.lastTs = Math.max(next.lastTs, ts);
         this.sessionObservations.set(sessionId, next);
         break;
       }
@@ -343,7 +352,9 @@ export class ClaudeProvider implements ProviderAdapter {
     for (const e of entries) {
       const p = path.join(dir, e.name);
       if (e.isFile() && e.name.endsWith('.jsonl')) out.push(p);
-      else if (e.isDirectory()) out.push(...(await this.walkJsonl(p, depth + 1)));
+      // One at a time: a deep subagent tree can return more paths than the
+      // argument limit allows to be spread (see UsageLedger.add).
+      else if (e.isDirectory()) for (const f of await this.walkJsonl(p, depth + 1)) out.push(f);
     }
     return out;
   }

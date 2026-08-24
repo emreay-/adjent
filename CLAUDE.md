@@ -15,6 +15,7 @@ and rule-driven alarms. Design-first repo: read the docs before writing code.
 | [docs/UI.md](docs/UI.md) | form factor, component budget, hero number, mockups |
 | [docs/ALARMS.md](docs/ALARMS.md) | the three rule types, config schema, sinks |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | milestones, expansion, risks |
+| [docs/PACKAGING.md](docs/PACKAGING.md) | distribution channels, sandboxing, signing, update policy |
 
 ## Hard rules (from the design; do not relax without discussion)
 

@@ -10,6 +10,7 @@ import type {
   Alarm,
   AppState,
   Backend,
+  BackendId,
   Confidence,
   FireLog,
   LimitAssessment,
@@ -73,7 +74,7 @@ export class Monitor extends EventEmitter {
   private readonly store: Store | null;
   private restored = false;
   private lastStateSaveAt = 0;
-  private lastHistoryAt = new Map<string, { at: number; u: number }>();
+  private lastHistoryAt = new Map<string, { at: number; u: number; t?: number }>();
   /** Utilization samples for the current limits, newest last. */
   private history: HistorySample[] = [];
   /** Alarm log, oldest first. The notifications view reverses it. */
@@ -97,6 +98,11 @@ export class Monitor extends EventEmitter {
     this.restored = true;
     if (!this.store) return;
     const now = this.now();
+
+    // Before reading anything derived, check it was derived by this version.
+    if (await this.store.migrateIfStale()) {
+      this.emit('migrated', STORE_VERSION);
+    }
 
     const events = await this.store.loadLedger(now);
     if (events.length > 0) this.ledger.add(events);
@@ -126,7 +132,7 @@ export class Monitor extends EventEmitter {
     this.history = await this.store.loadHistory(now);
     for (const s of this.history) {
       const prev = this.lastHistoryAt.get(s.w);
-      if (!prev || s.t > prev.at) this.lastHistoryAt.set(s.w, { at: s.t, u: s.u });
+      if (!prev || s.t > prev.at) this.lastHistoryAt.set(s.w, { at: s.t, u: s.u, t: s.t });
     }
     this.alarmHistory = await this.store.loadAlarms(now);
   }
@@ -217,7 +223,10 @@ export class Monitor extends EventEmitter {
 
     // Feed the fit one poll per short (5h-class) window per backend — the
     // window whose Δu is most informative at our cadence.
-    let fitResult: FitResult | null = null;
+    // The exchange rate is a property of one vendor's meter, so fits are kept
+    // and applied per backend. Pricing a Codex agent with Claude's weights
+    // would be a category error that still produced a confident-looking number.
+    const fitByBackend = new Map<BackendId, { fit: ExchangeRateFit; result: FitResult }>();
     for (const w of limits) {
       if (w.windowMinutes > 0 && w.windowMinutes <= 600 && w.scope === null) {
         const key = `${w.backend}:${w.key}`;
@@ -225,24 +234,27 @@ export class Monitor extends EventEmitter {
         this.fits.set(key, fit);
         fit.observePoll(w, this.ledger);
         const r = fit.fit();
-        if (r && (!fitResult || r.confidence === 'high')) fitResult = r;
+        const held = fitByBackend.get(w.backend);
+        if (r && (held === undefined || r.confidence === 'high')) {
+          fitByBackend.set(w.backend, { fit, result: r });
+        }
       }
     }
 
     const assessments = this.assessor.assess(limits, now);
     this.applyWindowTotals(agents, assessments.find((a) => a.binding), now);
+    this.applyLimitTokens(assessments, now);
 
     // Per-agent burn: r_a = priced consumption over τ, scaled to an hour. Derived — render with ≈.
     const agentBurns: AgentBurn[] = [];
-    if (fitResult) {
-      const anyFit = [...this.fits.values()].find((f) => f.bootstrapped);
-      if (anyFit) {
-        for (const a of agents) {
-          const pct = anyFit.priceAgentConsumption(this.ledger, a.id, now - AGENT_BURN_LOOKBACK_MS, now, fitResult);
-          const pctPerHour = (pct * 3600_000) / AGENT_BURN_LOOKBACK_MS;
-          if (pctPerHour > 0.01) agentBurns.push({ agentId: a.id, pctPerHour, confidence: fitResult.confidence });
-        }
-      }
+    for (const a of agents) {
+      const held = fitByBackend.get(a.backend);
+      // No fit for this agent's own vendor yet — say nothing rather than
+      // borrow another vendor's weights.
+      if (held === undefined || !held.fit.bootstrapped) continue;
+      const pct = held.fit.priceAgentConsumption(this.ledger, a.id, now - AGENT_BURN_LOOKBACK_MS, now, held.result);
+      const pctPerHour = (pct * 3600_000) / AGENT_BURN_LOOKBACK_MS;
+      if (pctPerHour > 0.01) agentBurns.push({ agentId: a.id, pctPerHour, confidence: held.result.confidence });
     }
 
     // Consistency residual ε: gross burn per the vendor vs gross summed over
@@ -250,7 +262,12 @@ export class Monitor extends EventEmitter {
     // window's measured rate as the vendor side.
     this.updateEpsilon(assessments, agentBurns, now);
 
-    const fitConfidence: Confidence = fitResult?.confidence ?? 'low';
+    // Confidence belongs to the vendor whose limit is on the hero: it is that
+    // fit the ≈ numbers beside it came from. It can therefore change when the
+    // binding limit moves to another vendor, which the tooltip says explicitly.
+    const bindingBackend = assessments.find((a) => a.binding)?.limit.backend;
+    const fitConfidence: Confidence =
+      (bindingBackend !== undefined ? fitByBackend.get(bindingBackend)?.result.confidence : undefined) ?? 'low';
     const state: AppState = {
       generatedAt: now,
       backends,
@@ -275,6 +292,16 @@ export class Monitor extends EventEmitter {
 
     this.emit('state', state);
     return state;
+  }
+
+  /**
+   * Exact tokens inside every limit's own window, so the collapsed rows can
+   * say what filled each one rather than only the binding limit having an
+   * answer. Uses the same routine as the detail view, so the number in the
+   * list and the number behind the click can never disagree.
+   */
+  private applyLimitTokens(assessments: LimitAssessment[], now: number): void {
+    for (const a of assessments) a.tokens = limitBreakdown(this.ledger, a.limit, now).totals;
   }
 
   /**
@@ -364,10 +391,16 @@ export class Monitor extends EventEmitter {
       const changed = !prev || prev.u !== w.utilization;
       const stale = !prev || now - prev.at >= HISTORY_MIN_INTERVAL_MS;
       if (!changed && !stale) continue;
+      // A sample is stamped with the vendor's reading time, not ours. Claude
+      // re-reads every poll, so an unchanged value still draws a flat line
+      // forward. Codex readings freeze while it is idle, so the same record
+      // would be appended every five minutes forever — thousands of identical
+      // points that plot on top of each other and expire together.
+      if (prev && prev.u === w.utilization && prev.t === w.observedAt) continue;
       const sample: HistorySample = { t: w.observedAt, w: key, u: w.utilization };
       fresh.push(sample);
       this.history.push(sample);
-      this.lastHistoryAt.set(key, { at: now, u: w.utilization });
+      this.lastHistoryAt.set(key, { at: now, u: w.utilization, t: w.observedAt });
     }
     if (fresh.length > 0) await this.store?.appendHistory(fresh);
   }

@@ -280,3 +280,6 @@ click, and the spec for the one chart — is in **[UI.md](UI.md)**. In summary:
 * Unsigned to start, with the SmartScreen warning documented in the README. Code
   signing is a later, purely commercial step.
 * `electron-updater` against GitHub Releases once signing exists.
+
+Which channels those artefacts reach, and why Flatpak's sandbox suits a
+read-only quota monitor better than Snap's, is [PACKAGING.md](PACKAGING.md).

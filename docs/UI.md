@@ -177,7 +177,7 @@ click. This single rule is what keeps the panel from becoming a dashboard.
 | Tray icon | one arc, one status colour. Nothing else — no text badge. |
 | **Primary read** | verdict chip · hero % · rate · reset countdown · the chart — **≤4 numbers** |
 | Token line | one line: exact tokens **in the binding limit's window**, split by kind |
-| Other windows | ≤3, one collapsed line each |
+| Other limits | ≤3, one collapsed line each, all with the same cells: verdict dot, label, utilization, tokens in its window |
 | Agent rows | ≤4, sorted by burn |
 | Charts | exactly 1 on screen - the tier-3 limit view replaces the dashboard, it does not add a second |
 
@@ -293,6 +293,32 @@ consecutive polls** before it takes the slot, and the outgoing limit stays
 visible in the collapsed list. Window rollovers are exempt: when a limit resets,
 its claim genuinely vanishes and the switch is immediate.
 
+### The collapsed list is a ranking
+
+The three lines under the hero are ordered by **urgency**, by the same rule that
+picks the binding limit: anything projected to run out before it resets comes
+first, soonest at the top, and everything else falls back to how full it is. The
+list therefore continues the hero's ranking instead of offering a second
+opinion — read top to bottom, it is "what stops you first, then next".
+
+Each line carries the exact tokens counted inside *that* limit's own window, so
+a limit can be read without opening it. The number is the same one the detail
+view shows, computed by the same routine, because two token counts for one limit
+that differ by rounding is worse than one.
+
+**Every line prints the same cells, always** — dot, label, utilization, tokens,
+with an em dash where nothing was counted. A list whose rows each carry a
+different number of things reads as three unrelated lines rather than a column,
+and the eye cannot run down it. That rules out printing a reading time on the
+one row whose vendor happens to be stale: staleness is real and worth knowing,
+but four characters at the end of one row is the wrong place to say it. It
+lives in that row's hover explanation and in the limit detail's *Reading* line,
+both of which have room to say what it means.
+
+The hero follows the same rule. Its reading time used to *replace* the reset
+countdown once a limit went stale, which dropped the number the hero exists to
+support in favour of a caveat that was already one hover away.
+
 ### Any limit, on demand
 
 Everything above commits the resting panel to *one* limit. That is the right
@@ -397,7 +423,7 @@ marker rather than running past the frame.
 * **Projection** — dotted continuation in the same status hue at reduced alpha,
   visually distinct from measured data. It is a forecast and must never be
   mistaken for a reading.
-* **Colour** — the status palette (`good #0ca30c` / `warning #fab219` /
+* **Colour** — the status palette (`good #5ea30c` / `warning #fab219` /
   `critical #d03b3b`), fixed, never themed, never reused for anything else.
   Validated for CVD separation; `warning` sits below 3:1 on a light surface by
   design, which is why the verdict word and direct labels carry the meaning and
@@ -477,6 +503,19 @@ it last took a turn, its derived burn, and its token split. The **directory in
 full** is the point — sibling worktrees of the same repository share a folder
 name, so `adjent` and `adjent-<area>` are only distinguishable by path.
 
+## All agents, from the header
+
+The header already counts live agents. That count is the way into the full
+list — every agent, not the four the dashboard has room for, ordered by what
+each is costing: derived burn first, then tokens inside the current window, so
+the expensive ones stay at the top whether or not the fit has anything to say
+yet. Each row keeps its own hover detail, so the directory-in-full rule holds
+here too.
+
+The wordmark in the header is the way back. Any view — agents, notifications,
+settings, a limit — returns to the dashboard by clicking it, which means there
+is always one visible way home rather than a per-view back button and a guess.
+
 ## Progressive disclosure
 
 | Tier | Surface | Contains |
@@ -503,7 +542,12 @@ or **derived**.
   from this doc set. The panel, the widget and `adjent explain <term>` all read
   the same table, so a wrong explanation is fixed once.
 * Explainable elements carry a dotted underline on hover, so the help is
-  discoverable rather than hidden.
+  discoverable rather than hidden. **Anything that reveals something on hover
+  gets that underline** — dictionary tooltips, agent rows, notification rows and
+  token-split rows alike. A row that explains itself but does not say so is
+  indistinguishable from one that does not, and a mixture teaches the reader
+  that hovering is not worth trying. On rows the underline marks the row's name
+  rather than the whole line, so the numbers beside it stay clean.
 * Tooltips appear after a short delay, are keyed to the *current* context —
   a stale Codex reading explains staleness, a scoped limit explains scoping —
   and clamp to the panel edge so nothing is cut off.

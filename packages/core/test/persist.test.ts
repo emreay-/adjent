@@ -116,3 +116,67 @@ describe('restart survival', () => {
     expect(Math.abs((after.burn!.pctPerHour) - (burnBefore!.pctPerHour))).toBeLessThan(15);
   });
 });
+
+/**
+ * A store version bump means a *derivation* changed, not only a shape. The
+ * ledger is rebuilt from vendor transcripts, so discarding it is safe and
+ * correct; history is a record of readings that cannot be taken again, so it
+ * must survive.
+ */
+describe('Store.migrateIfStale', () => {
+  it('does nothing when there is no persisted state at all', async () => {
+    const s = new Store(dir);
+    expect(await s.migrateIfStale()).toBe(false);
+  });
+
+  it('does nothing when the version already matches', async () => {
+    const s = new Store(dir);
+    await s.saveState({
+      version: STORE_VERSION,
+      savedAt: 1,
+      tailOffsets: {},
+      fits: {},
+      assessor: null,
+      fireLog: null,
+      epsilon: null,
+      tiers: {},
+    });
+    expect(await s.migrateIfStale()).toBe(false);
+    expect(await s.loadState()).not.toBeNull();
+  });
+
+  it('discards the ledger and the offsets when the version moved', async () => {
+    const s = new Store(dir);
+    const now = Date.now();
+    await s.saveLedger(
+      [
+        {
+          ts: now,
+          backend: 'codex',
+          agentId: 'codex:a',
+          model: 'model-x',
+          effort: null,
+          tokens: { input: 999_999_999, cacheWrite: 0, cacheRead: 0, output: 0, thinking: 0 },
+          requests: 1,
+          requestId: 'bad-1',
+        },
+      ],
+      now,
+    );
+    await s.appendHistory([{ t: now, w: 'codex:codex:7d', u: 3 }]);
+    // A state file written by an older version.
+    writeFileSync(
+      path.join(dir, 'state.json'),
+      JSON.stringify({ version: STORE_VERSION - 1, tailOffsets: { codex: { f: 10 } } }),
+    );
+
+    expect(await s.migrateIfStale()).toBe(true);
+
+    // The corrupt ledger is gone, and so are the offsets that would stop it
+    // being rebuilt.
+    expect(await s.loadLedger(now)).toHaveLength(0);
+    expect(await s.loadState()).toBeNull();
+    // The readings survive: they cannot be taken again.
+    expect(await s.loadHistory(now)).toHaveLength(1);
+  });
+});

@@ -187,7 +187,11 @@ function pushState(): void {
   if (!s) return;
   const binding = s.limits.find((w) => w.binding);
   const payload = {
-    state: s,
+    // Ordered by urgency for display — soonest to stop you first — so the
+    // collapsed list continues the ranking the hero started rather than
+    // arriving in whatever order the vendors happened to report. Sorted on a
+    // copy: nothing else should depend on the order limits are stored in.
+    state: { ...s, limits: [...s.limits].sort(core.compareUrgency) },
     // Recent few for the summary strip; the full log for the notifications tab.
     alarms: recentAlarms.slice(-5),
     alarmHistory: monitor.alarms(),
@@ -323,6 +327,12 @@ async function start(): Promise<void> {
   // Flush durable state on the way out so the next launch is not a cold start.
   app.on('before-quit', () => {
     void monitor.flush();
+    // Hand the icon back explicitly. Windows keeps a tray icon on screen until
+    // its owner removes it, so a shell that exits without doing so leaves a
+    // dead glyph behind that only disappears when the user happens to mouse
+    // over it — and a killed process never gets this far at all.
+    tray?.destroy();
+    tray = null;
   });
 }
 

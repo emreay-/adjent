@@ -149,6 +149,25 @@ export class LimitAssessor {
   }
 }
 
+/**
+ * Order limits by how soon they can stop you — the same question the binding
+ * choice answers, so the collapsed list reads as a ranking that continues from
+ * the hero rather than an unrelated order.
+ *
+ * A limit can only stop you if it runs out before it resets, so those come
+ * first, soonest-exhausting at the top. Nothing else is at risk, so the rest
+ * fall back to how full they are (docs/UI.md § Choosing the binding limit).
+ */
+export function compareUrgency(a: LimitAssessment, b: LimitAssessment): number {
+  const risky = (x: LimitAssessment): boolean =>
+    x.exhaustsAt !== null && x.limit.resetsAt !== null && x.exhaustsAt < x.limit.resetsAt;
+  const ra = risky(a);
+  const rb = risky(b);
+  if (ra !== rb) return ra ? -1 : 1;
+  if (ra && rb) return (a.exhaustsAt as number) - (b.exhaustsAt as number);
+  return b.limit.utilization - a.limit.utilization;
+}
+
 /** Elapsed fraction of the window × 100 — where the pace line sits (GLOSSARY). */
 export function paceLine(w: QuotaLimit, now: number): number | null {
   if (w.resetsAt === null || w.windowMinutes <= 0) return null;

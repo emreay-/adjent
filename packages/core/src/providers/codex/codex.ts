@@ -25,6 +25,8 @@ const LIST_HORIZON_MS = 12 * 3600_000;
  * ends are searched and the middle — which is all message content — is not.
  */
 const IDENTITY_CHUNK_BYTES = 256 * 1024;
+/** How many rollouts to search when recovering quota after a cold start. */
+const QUOTA_RECOVERY_FILES = 40;
 
 export interface CodexProviderOptions {
   root?: string;
@@ -44,6 +46,9 @@ export class CodexProvider implements ProviderAdapter {
     string,
     { model: string | null; effort: string | null; lastTs: number; totals: TokenTotals; cwd: string | null }
   >();
+
+  /** threadId → last cumulative usage seen, for differencing. */
+  private readonly lastCumulative = new Map<string, Record<string, number>>();
 
   /** threadId → rollout path, so identity can be re-read without a rescan. */
   private readonly threadFiles = new Map<string, string>();
@@ -129,8 +134,21 @@ export class CodexProvider implements ProviderAdapter {
   async collectUsage(): Promise<UsageEvent[]> {
     const files = await this.findActiveRollouts();
     const events: UsageEvent[] = [];
+    await this.recoverRateLimits(files);
+
+    const listCutoff = this.now() - LIST_HORIZON_MS;
     for (const f of files) {
       this.threadFiles.set(f.threadId, f.path);
+      // Identity first. A usage line inherits the thread's model, so the model
+      // has to be known *before* the first line is parsed — resolving it
+      // afterwards still writes a batch of placeholder-model events into the
+      // ledger, and those are what kept surfacing as "gpt-unknown".
+      //
+      // Only for threads new enough to reach the agent list: when quota is
+      // still unknown the file horizon stretches to two weeks, and re-reading
+      // both ends of every rollout in it would be a great deal of I/O for
+      // threads that get dropped from the list anyway.
+      if (f.mtime >= listCutoff) await this.resolveIdentityFor(f.threadId, f.path);
       const { lines } = await tailFile(this.tail, f.path);
       for (const line of lines) {
         if (line.includes('"rate_limits"')) this.captureRateLimits(line);
@@ -155,7 +173,7 @@ export class CodexProvider implements ProviderAdapter {
   private parseUsageLine(line: string, threadId: string): UsageEvent | null {
     const d = parseLine(line);
     if (!d) return null;
-    const usage = this.findTokenUsage(d, 0);
+    const usage = this.turnTokens(d, threadId);
     if (!usage) return null;
 
     const input = asNum(usage['input_tokens']) ?? 0;
@@ -198,6 +216,74 @@ export class CodexProvider implements ProviderAdapter {
     this.threadObservations.set(threadId, obs);
 
     return { ts, backend: 'codex', agentId: `codex:${threadId}`, model, effort, tokens, requests: 1, requestId };
+  }
+
+  /**
+   * The tokens spent by *one* turn.
+   *
+   * A rollout carries two usage objects and they mean opposite things:
+   * `last_token_usage` is the turn's own cost, `total_token_usage` is the
+   * session's running total. A depth-first search for "an object with
+   * input_tokens" finds whichever comes first, and summing the cumulative one
+   * across n turns counts the session roughly n²/2 times — which is how a
+   * week of Codex arrived at 1.46 *trillion* tokens.
+   *
+   * So: take the delta when the vendor provides it. When only a cumulative
+   * figure exists, difference it against the last one seen for that thread,
+   * which is the same quantity by another route.
+   */
+  private turnTokens(d: Record<string, unknown>, threadId: string): Record<string, unknown> | null {
+    const delta = this.findUsageNamed(d, 'last_token_usage', 0);
+    if (delta) return delta;
+
+    const cumulative = this.findUsageNamed(d, 'total_token_usage', 0);
+    if (cumulative) return this.differenceCumulative(cumulative, threadId);
+
+    // Neither name present: an older or newer shape. Fall back to the first
+    // usage-shaped object, which is what this did before either name existed.
+    return this.findTokenUsage(d, 0);
+  }
+
+  /** Depth-limited search for a usage object stored under an exact key. */
+  private findUsageNamed(o: Record<string, unknown>, name: string, depth: number): Record<string, unknown> | null {
+    if (depth > 5) return null;
+    const direct = asObj(o[name]);
+    if (direct && ('input_tokens' in direct || 'output_tokens' in direct)) return direct;
+    for (const v of Object.values(o)) {
+      const child = asObj(v);
+      if (child) {
+        const hit = this.findUsageNamed(child, name, depth + 1);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Turn a running total into this turn's share. A total that went *down*
+   * means the thread was compacted or restarted, so the new total is taken
+   * whole rather than yielding a negative turn.
+   */
+  private differenceCumulative(
+    cumulative: Record<string, unknown>,
+    threadId: string,
+  ): Record<string, unknown> | null {
+    const FIELDS = ['input_tokens', 'cached_input_tokens', 'cache_read_input_tokens', 'output_tokens', 'reasoning_output_tokens'];
+    const prev = this.lastCumulative.get(threadId);
+    const now: Record<string, number> = {};
+    const out: Record<string, unknown> = {};
+    let any = false;
+    for (const f of FIELDS) {
+      const v = asNum(cumulative[f]);
+      if (v === null) continue;
+      now[f] = v;
+      const before = prev?.[f] ?? 0;
+      const step = v >= before ? v - before : v;
+      out[f] = step;
+      if (step > 0) any = true;
+    }
+    this.lastCumulative.set(threadId, now);
+    return any ? out : null;
   }
 
   /** Depth-limited search for an object holding *_tokens fields. */
@@ -243,35 +329,62 @@ export class CodexProvider implements ProviderAdapter {
    * head carries session metadata and the opening turn context, the tail the
    * newest turn context and the latest activity.
    */
-  private async resolveMissingIdentity(): Promise<void> {
-    for (const [threadId, file] of this.threadFiles) {
-      const known = this.threadObservations.get(threadId);
-      if (known !== undefined && isKnownModel(known.model)) continue;
-      if (this.identityResolved.has(threadId)) continue;
-      this.identityResolved.add(threadId);
-
-      const tail = await tailChunk(file, IDENTITY_CHUNK_BYTES);
-      const head = await headChunk(file, IDENTITY_CHUNK_BYTES);
-      // Tail first: if the model changed mid-session, the newest one wins.
-      for (const chunk of [tail, head]) {
-        for (let i = chunk.length - 1; i >= 0; i--) {
-          const line = chunk[i] as string;
-          if (line.includes('"session_meta"')) this.captureSessionMeta(line, threadId);
-          if (line.includes('"model"')) this.captureIdentityLine(line, threadId);
-        }
+  /**
+   * Recover the newest `rate_limits` record from rollouts we have already read.
+   *
+   * Codex quota is not an endpoint; it rides along inside session rollouts, so
+   * it only reaches us while Codex is active. The byte offsets persist across a
+   * restart but the captured record does not — so after a restart with no
+   * Codex activity since, the tail has nothing new to give and the vendor's
+   * quota disappears from the app altogether. The record is still sitting in
+   * the files. Read it back.
+   *
+   * Newest file first, stopping at the first record that carries a real
+   * window, and capped: this is a cold-start path, not a per-tick cost.
+   */
+  private async recoverRateLimits(files: Array<{ path: string; mtime: number }>): Promise<void> {
+    if (this.latestRateLimits !== null) return;
+    const newest = [...files].sort((a, b) => b.mtime - a.mtime).slice(0, QUOTA_RECOVERY_FILES);
+    for (const f of newest) {
+      for (const line of await tailChunk(f.path, IDENTITY_CHUNK_BYTES)) {
+        if (line.includes('"rate_limits"')) this.captureRateLimits(line);
       }
-
-      // Liveness comes from the newest timestamp in the file, not from when we
-      // happened to read it — otherwise a restored thread looks brand new.
-      let newest = 0;
-      for (let i = tail.length - 1; i >= 0 && newest === 0; i--) {
-        const d = parseLine(tail[i] as string);
-        const ts = Date.parse(asStr(d?.['timestamp']) ?? '');
-        if (Number.isFinite(ts)) newest = ts;
-      }
-      const obs = this.threadObservations.get(threadId);
-      if (obs !== undefined && newest > obs.lastTs) obs.lastTs = newest;
+      if (this.latestRateLimits !== null) return;
     }
+  }
+
+  private async resolveMissingIdentity(): Promise<void> {
+    for (const [threadId, file] of this.threadFiles) await this.resolveIdentityFor(threadId, file);
+  }
+
+  /** One thread, at most once: see resolveMissingIdentity for why. */
+  private async resolveIdentityFor(threadId: string, file: string): Promise<void> {
+    const known = this.threadObservations.get(threadId);
+    if (known !== undefined && isKnownModel(known.model)) return;
+    if (this.identityResolved.has(threadId)) return;
+    this.identityResolved.add(threadId);
+
+    const tail = await tailChunk(file, IDENTITY_CHUNK_BYTES);
+    const head = await headChunk(file, IDENTITY_CHUNK_BYTES);
+    // Tail first: if the model changed mid-session, the newest one wins.
+    for (const chunk of [tail, head]) {
+      for (let i = chunk.length - 1; i >= 0; i--) {
+        const line = chunk[i] as string;
+        if (line.includes('"session_meta"')) this.captureSessionMeta(line, threadId);
+        if (line.includes('"model"')) this.captureIdentityLine(line, threadId);
+      }
+    }
+
+    // Liveness comes from the newest timestamp in the file, not from when we
+    // happened to read it — otherwise a restored thread looks brand new.
+    let newest = 0;
+    for (let i = tail.length - 1; i >= 0 && newest === 0; i--) {
+      const d = parseLine(tail[i] as string);
+      const ts = Date.parse(asStr(d?.['timestamp']) ?? '');
+      if (Number.isFinite(ts)) newest = ts;
+    }
+    const obs = this.threadObservations.get(threadId);
+    if (obs !== undefined && newest > obs.lastTs) obs.lastTs = newest;
   }
 
   /**
@@ -346,11 +459,11 @@ export class CodexProvider implements ProviderAdapter {
     return null;
   }
 
-  private async findActiveRollouts(): Promise<Array<{ path: string; threadId: string }>> {
+  private async findActiveRollouts(): Promise<Array<{ path: string; threadId: string; mtime: number }>> {
     // Until a rate_limits record with windows is found, look further back so
     // quota survives idle stretches; afterwards the short horizon suffices.
     const horizon = this.latestRateLimits === null ? QUOTA_HORIZON_MS : ACTIVE_HORIZON_MS;
-    const out: Array<{ path: string; threadId: string }> = [];
+    const out: Array<{ path: string; threadId: string; mtime: number }> = [];
     const sessionsDir = path.join(this.root, 'sessions');
     const cutoff = this.now() - horizon;
     // sessions/YYYY/MM/DD/rollout-*.jsonl — walk only recent date directories.
@@ -366,14 +479,16 @@ export class CodexProvider implements ProviderAdapter {
         const p = path.join(dir, e.name);
         if (e.isDirectory()) await walk(p, depth + 1);
         else if (e.isFile() && e.name.startsWith('rollout-') && e.name.endsWith('.jsonl')) {
+          let mtime: number;
           try {
             const st = await fs.stat(p);
             if (st.mtimeMs < cutoff) continue;
+            mtime = st.mtimeMs;
           } catch {
             continue;
           }
           const m = /rollout-.*T[\d-]+-([0-9a-f-]{36})\.jsonl$/.exec(e.name);
-          out.push({ path: p, threadId: m?.[1] ?? e.name });
+          out.push({ path: p, threadId: m?.[1] ?? e.name, mtime });
         }
       }
     };

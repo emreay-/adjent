@@ -16,7 +16,13 @@ export class UsageLedger {
 
   add(evs: UsageEvent[]): void {
     if (evs.length === 0) return;
-    this.events.push(...evs);
+    // Appended one at a time on purpose. `push(...evs)` passes every element as
+    // an argument, and V8 overflows the stack somewhere above ~100k of them —
+    // so a first run over a large vendor history threw RangeError, the caller
+    // treated the whole provider as broken, and the byte offsets had already
+    // advanced, so the events were gone for good. The cold-start path is
+    // exactly the one where the batch is biggest.
+    for (const e of evs) this.events.push(e);
     this.sorted = false;
     if (this.events.length > MAX_EVENTS) {
       this.ensureSorted();

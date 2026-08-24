@@ -102,7 +102,7 @@ export const EXPLANATIONS: Record<string, Explanation> = {
   confidence: {
     title: 'Fit confidence',
     body:
-      'How much to trust the ≈ numbers. Adjent cross-checks the per-agent rates against the vendor-reported rate; the two are computed by completely different routes, so their agreement is evidence the model is sound. Low early on, and it improves as your usage varies across models.',
+      'How much to trust the ≈ numbers. Adjent cross-checks the per-agent rates against the vendor-reported rate; the two are computed by completely different routes, so their agreement is evidence the model is sound. Low early on, and it improves as your usage varies across models. This is per vendor — each meters differently, so each is fitted separately and an agent is only ever priced with its own vendor\'s weights. What you see here belongs to the vendor whose limit is currently binding, so it can change when the hero moves to the other vendor, which has its own history and may be less far along.',
   },
   epsilon: {
     title: 'Consistency residual (ε)',

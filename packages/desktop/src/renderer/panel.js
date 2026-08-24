@@ -12,6 +12,15 @@ const VERDICT = {
 
 const $ = (id) => document.getElementById(id);
 
+/**
+ * Longest duration worth printing. Anything past this is not a long-running
+ * agent, it is a missing timestamp being subtracted from the clock — an
+ * absent `lastActivityAt` renders as ~20,000 days, which is how it surfaced.
+ */
+const MAX_SANE_DUR_MS = 400 * 24 * 3600_000;
+/** Null when a timestamp is missing or absurd, so callers can say nothing. */
+const durOrNull = (ms) => (!Number.isFinite(ms) || ms <= 0 || ms > MAX_SANE_DUR_MS ? null : fmtDur(ms));
+
 function fmtDur(ms) {
   if (ms <= 0) return '0m';
   const min = Math.round(ms / 60000);
@@ -54,8 +63,19 @@ function fmtWhen(t, now) {
 const fmtAxis = (t, windowMinutes) =>
   windowMinutes > 1440 ? `${new Date(t).toLocaleDateString(undefined, { weekday: 'short' })} ${fmtTime(t)}` : fmtTime(t);
 
+/** Billable kinds only — thinking is already inside output for both vendors. */
+const sumKinds = (t) => (t ? (t.input || 0) + (t.cacheWrite || 0) + (t.cacheRead || 0) + (t.output || 0) : 0);
+
 const fmtTok = (n) =>
   n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
+
+/**
+ * Providers write `unknown` / `gpt-unknown` into the ledger when a turn names
+ * no model — the bucket needs a key. They are placeholders, not models, and
+ * must never be displayed as one: mirrors isKnownModel in core.
+ */
+const UNKNOWN_MODELS = new Set(['unknown', 'gpt-unknown']);
+const modelName = (m) => (m && !UNKNOWN_MODELS.has(m) ? m : null);
 
 function esc(s) {
   const div = document.createElement('div');
@@ -190,10 +210,13 @@ function render(payload) {
       ? `${binding.burn.pctPerHour >= 0 ? '+' : ''}${binding.burn.pctPerHour.toFixed(1)} %/h`
       : '';
   const resetIn = binding.limit.resetsAt !== null ? `resets in ${fmtDur(binding.limit.resetsAt - now)}` : '';
-  const stale = now - binding.limit.observedAt > 10 * 60000 ? `as of ${fmtTime(binding.limit.observedAt)}` : '';
-  $('heroMeta').setAttribute('data-tip', stale ? 'stale' : 'binding');
+  const isStale = now - binding.limit.observedAt > 10 * 60000;
+  $('heroMeta').setAttribute('data-tip', isStale ? 'stale' : 'binding');
   $('heroMeta').setAttribute('data-limit', limitKeyOf(binding.limit));
-  $('heroMeta').innerHTML = `${esc(binding.limit.label)}<br>${esc(stale || resetIn)}`;
+  // Always the reset countdown. It used to be displaced by "as of 20:57" when
+  // a reading went stale, which dropped the one number the hero is there to
+  // support in favour of a caveat the tooltip already carries.
+  $('heroMeta').innerHTML = `${esc(binding.limit.label)}<br>${esc(resetIn)}`;
   try {
     renderChart(binding, now, payload.history);
   } catch (err) {
@@ -223,9 +246,19 @@ function render(payload) {
     others
       .map((a) => {
         const vv = VERDICT[a.verdict] || VERDICT.idle;
-        const staleW = now - a.limit.observedAt > 10 * 60000 ? ` · as of ${fmtTime(a.limit.observedAt)}` : '';
-        const tip = staleW ? 'stale' : a.limit.scope ? 'scoped' : 'otherLimits';
-        return `<div class="row" data-tip="${tip}" data-limit="${esc(limitKeyOf(a.limit))}"><span class="dot" style="background:${vv.color}"></span><span class="name">${esc(a.limit.label)}</span><span class="meta"><b>${Math.round(a.limit.utilization)}%</b>${a.limit.severity === 'warning' ? ' ⚠' : ''}${esc(staleW)}</span></div>`;
+        // Staleness changes which explanation the row carries, but not what it
+        // prints: a reading time on one row and not the others made the list
+        // ragged for a detail that belongs in the hover and the detail view,
+        // where it can be said properly rather than in four characters.
+        const isStale = now - a.limit.observedAt > 10 * 60000;
+        const tip = isStale ? 'stale' : a.limit.scope ? 'scoped' : 'otherLimits';
+        // Every row carries the same cells in the same order, so the list reads
+        // as a column rather than three differently-shaped lines. An em dash
+        // says "none counted", which is a fact; omitting the cell just looked
+        // like the row had less to say.
+        const tok = a.tokens ? sumKinds(a.tokens) : 0;
+        const tokStr = ` · ${tok > 0 ? fmtTok(tok) : '—'}`;
+        return `<div class="row" data-tip="${tip}" data-limit="${esc(limitKeyOf(a.limit))}"><span class="dot" style="background:${vv.color}"></span><span class="name">${esc(a.limit.label)}</span><span class="meta"><b>${Math.round(a.limit.utilization)}%</b>${a.limit.severity === 'warning' ? ' ⚠' : ''}${esc(tokStr)}</span></div>`;
       })
       .join('') || '<div class="empty">None</div>';
 
@@ -237,15 +270,9 @@ function render(payload) {
     .map((a) => {
       const burn = burnOf.get(a.id);
       const proj = a.projectPath ? a.projectPath.split(/[\\/]/).pop() : a.label;
-      const model = [a.model || '?', a.effort].filter(Boolean).join(' · ');
-      const metaStr =
-        burn !== undefined
-          ? `${esc(model)} · <b>≈${burn.toFixed(1)} %/h</b>`
-          : a.state === 'idle'
-            ? `${esc(model)} · idle ${fmtDur(now - a.lastActivityAt)}`
-            : `${esc(model)} · —`;
-      const dotColor = burn !== undefined && burn > 8 ? 'var(--crit)' : a.state === 'live' ? 'var(--good)' : 'var(--idle)';
-      return `<div class="row" data-agent="${esc(a.id)}"><span class="dot" style="background:${dotColor}"></span><span class="name">${esc(proj)}</span><span class="meta">${metaStr}</span></div>`;
+      const model = [modelName(a.model) || '?', a.effort].filter(Boolean).join(' · ');
+      const status = agentStatus(a, burn, now);
+      return `<div class="row" data-agent="${esc(a.id)}"><span class="dot" style="background:${status.color}"></span><span class="name">${esc(proj)}</span><span class="meta">${esc(model)} · ${status.label}</span></div>`;
     });
   $('agents').innerHTML = rows.join('') || '<div class="empty">None</div>';
 
@@ -299,17 +326,31 @@ function agentDetailHtml(agent, burn) {
   const tot = agent.totals;
   const all = tot.input + tot.cacheWrite + tot.cacheRead + tot.output;
   const state =
-    agent.state === 'live' ? 'Live' : agent.state === 'idle' ? `Idle ${fmtDur(now - agent.lastActivityAt)}` : 'Ended';
+    agent.state === 'live'
+      ? 'Live'
+      : agent.state === 'idle'
+        ? `Idle ${durOrNull(now - agent.lastActivityAt) ?? ''}`.trim()
+        : 'Ended';
 
   let html = `<span class="t">${esc(agent.projectPath ? agent.projectPath.split(/[\\/]/).pop() : agent.label)}</span>`;
-  html += esc([state, agent.model, agent.effort].filter(Boolean).join(' · '));
+  html += esc([state, modelName(agent.model), agent.effort].filter(Boolean).join(' · '));
   html += ctxRows([
     ['Directory', agent.projectPath ? pathCell(agent.projectPath) : null],
     ['Branch', agent.gitBranch ? esc(agent.gitBranch) : null],
     ['Session', esc(agent.label)],
     ['Backend', esc(agent.backend) + (agent.entrypoint ? ` · ${esc(agent.entrypoint)}` : '')],
-    ['Started', agent.startedAt ? `${fmtWhen(agent.startedAt, now)} · ${fmtDur(now - agent.startedAt)} ago` : null],
-    ['Last turn', agent.lastActivityAt ? `${fmtDur(now - agent.lastActivityAt)} ago` : null],
+    [
+      'Started',
+      agent.startedAt && durOrNull(now - agent.startedAt)
+        ? `${fmtWhen(agent.startedAt, now)} · ${durOrNull(now - agent.startedAt)} ago`
+        : null,
+    ],
+    [
+      'Last turn',
+      agent.lastActivityAt && durOrNull(now - agent.lastActivityAt)
+        ? `${durOrNull(now - agent.lastActivityAt)} ago`
+        : null,
+    ],
     ['Burn', burn !== undefined ? `<b>≈${burn.toFixed(1)} %/h</b>` : '—'],
     ['Tokens', `${esc(fmtTok(all))} · ${esc(fmtTok(tot.cacheRead))} cached · ${esc(fmtTok(tot.output))} out`],
   ]);
@@ -340,7 +381,7 @@ function splitDetailHtml(model) {
   const agents = lastPayload?.state?.agents ?? [];
   const share = b.total > 0 ? (row.total / b.total) * 100 : 0;
 
-  let html = `<span class="t">${esc(row.model)}</span>`;
+  let html = `<span class="t">${esc(modelName(row.model) || 'unknown model')}</span>`;
   html += esc(`${fmtTok(row.total)} tokens · ${share.toFixed(0)}% of this limit · ${row.requests} requests`);
   html += ctxRows([
     ['Input', esc(fmtTok(row.tokens.input))],
@@ -564,6 +605,79 @@ function updateBellDot() {
   $('bellDot').classList.toggle('on', newest > lastSeenAlarmAt);
 }
 
+/**
+ * How one agent's state reads — the dot's colour and the words beside it,
+ * decided together.
+ *
+ * They used to be decided separately and disagreed: the agents view called
+ * anything without a burn figure "idle", including live agents, while the dot
+ * next to it stayed green. Missing burn means the fit has nothing to say yet —
+ * no fit for that vendor, or a rate below the reporting floor — not that the
+ * agent stopped working. Liveness comes from the provider's own state, and
+ * nothing else is entitled to an opinion about it.
+ */
+function agentStatus(a, burn, now) {
+  const rate = burn !== undefined ? `<b>≈${burn.toFixed(1)} %/h</b>` : null;
+  const join = (...parts) => parts.filter(Boolean).join(' · ');
+  if (a.state === 'ended') return { color: 'var(--idle)', label: join('ended', rate) };
+  // An idle agent can still be inside the burn lookback, so keep the number
+  // when there is one — but the state is what the dot and the first word say.
+  if (a.state === 'idle') {
+    const since = a.lastActivityAt ? durOrNull(now - a.lastActivityAt) : null;
+    return { color: 'var(--idle)', label: join(since ? `idle ${esc(since)}` : 'idle', rate) };
+  }
+  return {
+    color: burn !== undefined && burn > 8 ? 'var(--crit)' : 'var(--good)',
+    label: rate ?? 'live',
+  };
+}
+
+// --------------------------------------------------------------------------
+// All agents. The header already counts them; clicking that count lists them
+// in full, ordered by what they are costing — burn first, then tokens in the
+// window, so the expensive ones are always at the top whether or not the fit
+// has anything to say yet. The resting panel still shows only four.
+// --------------------------------------------------------------------------
+function renderAgents() {
+  const state = lastPayload?.state;
+  const list = $('agentList');
+  if (!state) {
+    list.innerHTML = '<div class="empty">None</div>';
+    return;
+  }
+  const now = state.generatedAt;
+  const burnOf = new Map(state.agentBurns.map((b) => [b.agentId, b.pctPerHour]));
+  const rows = [...state.agents]
+    .sort(
+      (a, b) =>
+        (burnOf.get(b.id) ?? 0) - (burnOf.get(a.id) ?? 0) ||
+        sumKinds(b.totals) - sumKinds(a.totals) ||
+        b.lastActivityAt - a.lastActivityAt,
+    )
+    .map((a) => {
+      const burn = burnOf.get(a.id);
+      const proj = a.projectPath ? a.projectPath.split(/[\\/]/).pop() : a.label;
+      const tok = sumKinds(a.totals);
+      const status = agentStatus(a, burn, now);
+      const sub = [
+        modelName(a.model) || 'model unknown',
+        a.effort,
+        a.gitBranch,
+        tok > 0 ? `${fmtTok(tok)} tok` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return (
+        `<div class="agentRow" data-agent="${esc(a.id)}"><div class="top">` +
+        `<span class="dot" style="background:${status.color}"></span>` +
+        `<span class="name">${esc(proj)}</span>` +
+        `<span class="meta">${status.label}</span></div>` +
+        `<span class="sub">${esc(sub)}</span></div>`
+      );
+    });
+  list.innerHTML = rows.join('') || '<div class="empty">None</div>';
+}
+
 // --------------------------------------------------------------------------
 // Tier 3: any limit, on demand (docs/UI.md § Any limit, on demand).
 //
@@ -603,9 +717,8 @@ function openLimits(key) {
 
 /** Every limit, binding first, then fullest — the part that beats the ≤3 cap. */
 function renderLimitPicker() {
-  const ls = [...allLimits()].sort(
-    (a, b) => Number(b.binding) - Number(a.binding) || b.limit.utilization - a.limit.utilization,
-  );
+  // The main process already ordered them by urgency; binding stays on top.
+  const ls = [...allLimits()].sort((a, b) => Number(b.binding) - Number(a.binding));
   if (ls.length === 0) {
     $('limitPicker').innerHTML = '<div class="empty">No limits reported yet.</div>';
     return;
@@ -621,7 +734,8 @@ function renderLimitPicker() {
         `<span class="dot" style="background:${v.color}"></span>` +
         `<span class="name">${esc(a.limit.label)}</span>${tag}` +
         `<span class="meta"><b>${Math.round(a.limit.utilization)}%</b>` +
-        `${a.limit.severity === 'warning' ? ' ⚠' : ''}</span></div>`
+        `${a.limit.severity === 'warning' ? ' ⚠' : ''}` +
+        `${sumKinds(a.tokens) > 0 ? ` · ${fmtTok(sumKinds(a.tokens))}` : ''}</span></div>`
       );
     })
     .join('');
@@ -746,7 +860,7 @@ function renderLimitSplit(b) {
         .join(' · ');
       return (
         `<div class="splitRow" data-split="${esc(r.model)}"><div class="splitTop">` +
-        `<span class="name">${esc(r.model)}</span>` +
+        `<span class="name">${esc(modelName(r.model) || 'unknown model')}</span>` +
         `<span class="meta"><b>${esc(fmtTok(r.total))}</b> · ${share.toFixed(0)}%</span></div>` +
         `<div class="bar"><i style="width:${width.toFixed(1)}%"></i></div>` +
         `<span class="kinds">${esc(kinds)} · ${esc(String(r.requests))} req</span></div>`
@@ -764,7 +878,7 @@ function renderLimitSplit(b) {
 // Settings view. Every control writes through to the main process, which
 // persists to ~/.adjent/settings.json and applies live.
 // --------------------------------------------------------------------------
-const OVERLAYS = ['settingsView', 'notificationsView', 'limitView'];
+const OVERLAYS = ['settingsView', 'notificationsView', 'limitView', 'agentsView'];
 const DATA_SECTIONS = () =>
   [...document.querySelectorAll('main > section')].filter((el) => !OVERLAYS.includes(el.id));
 let activeView = null; // null = the dashboard
@@ -776,8 +890,11 @@ function showView(view) {
   $('settingsView').hidden = view !== 'settings';
   $('notificationsView').hidden = view !== 'notifications';
   $('limitView').hidden = view !== 'limits';
+  $('agentsView').hidden = view !== 'agents';
+  $('liveCount').classList.toggle('on', view === 'agents');
   $('gear').classList.toggle('on', view === 'settings');
   $('bell').classList.toggle('on', view === 'notifications');
+  if (view === 'agents') renderAgents();
   if (view === 'limits') {
     if (selectedLimit === null) selectedLimit = defaultLimitKey();
     renderLimitPicker();
@@ -833,6 +950,13 @@ document.addEventListener('click', (ev) => {
   }
 });
 $('limitBack').addEventListener('click', () => showView(null));
+$('agentsBack').addEventListener('click', () => showView(null));
+// The wordmark is the way home from any view.
+$('brandHome').addEventListener('click', () => showView(null));
+$('brandHome').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') showView(null);
+});
+$('liveCount').addEventListener('click', () => showView(activeView === 'agents' ? null : 'agents'));
 $('gear').addEventListener('click', () => showView(activeView === 'settings' ? null : 'settings'));
 $('bell').addEventListener('click', () => showView(activeView === 'notifications' ? null : 'notifications'));
 $('clearAlarms').addEventListener('click', () => window.adjent.clearAlarms());
@@ -896,6 +1020,12 @@ window.adjent.onState((payload) => {
       render(payload);
     } catch (err) {
       reportRenderError('panel', err);
+    }
+  } else if (activeView === 'agents') {
+    try {
+      renderAgents();
+    } catch (err) {
+      reportRenderError('agents', err);
     }
   } else if (activeView === 'limits') {
     // The detail view is as live as the dashboard: same tick, same numbers.

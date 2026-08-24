@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Adjent robot on-pace">
   <title>Adjent robot on-pace</title>
-  <g id="antenna"><rect x="61" y="12" width="6" height="18" rx="3" fill="#0CA30C" stroke="#131A22" stroke-width="3"/><circle cx="64" cy="11" r="8" fill="#0CA30C" stroke="#131A22" stroke-width="3"/></g>
-  <g id="pods"><rect x="3" y="58" width="14" height="28" rx="7" fill="#0CA30C" stroke="#131A22" stroke-width="3"/><rect x="111" y="58" width="14" height="28" rx="7" fill="#0CA30C" stroke="#131A22" stroke-width="3"/></g>
-  <g id="head"><rect x="12" y="24" width="104" height="88" rx="28" fill="#0CA30C" stroke="#131A22" stroke-width="4"/></g>
+  <g id="antenna"><rect x="61" y="12" width="6" height="18" rx="3" fill="#81FF00" stroke="#131A22" stroke-width="3"/><circle cx="64" cy="11" r="8" fill="#81FF00" stroke="#131A22" stroke-width="3"/></g>
+  <g id="pods"><rect x="3" y="58" width="14" height="28" rx="7" fill="#81FF00" stroke="#131A22" stroke-width="3"/><rect x="111" y="58" width="14" height="28" rx="7" fill="#81FF00" stroke="#131A22" stroke-width="3"/></g>
+  <g id="head"><rect x="12" y="24" width="104" height="88" rx="28" fill="#81FF00" stroke="#131A22" stroke-width="4"/></g>
   <g id="gauge"><path d="M39.75 62 A28 28 0 0 1 88.25 62" fill="none" stroke="#131A22" stroke-width="9" stroke-linecap="butt"/><path d="M45.39 62.48 L38.11 57.19" stroke="#131A22" stroke-width="3" stroke-linecap="round"/><path d="M50.48 57.39 L45.19 50.11" stroke="#131A22" stroke-width="3" stroke-linecap="round"/><path d="M56.89 54.13 L54.11 45.57" stroke="#131A22" stroke-width="3" stroke-linecap="round"/><path d="M64 53 L64 44" stroke="#131A22" stroke-width="3" stroke-linecap="round"/><path d="M71.11 54.13 L73.89 45.57" stroke="#131A22" stroke-width="3" stroke-linecap="round"/><path d="M77.52 57.39 L82.81 50.11" stroke="#131A22" stroke-width="3" stroke-linecap="round"/><path d="M82.61 62.48 L89.89 57.19" stroke="#131A22" stroke-width="3" stroke-linecap="round"/></g>
   <g id="needle"><path d="M89.89 57.19 L59.89 70.34 L68.11 81.66 Z" fill="#FFFFFF" stroke="#131A22" stroke-width="2.5" stroke-linejoin="round"/></g>
   <g id="visor"><rect x="30" y="66" width="68" height="40" rx="17" fill="#131A22"/></g>

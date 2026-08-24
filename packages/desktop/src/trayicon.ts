@@ -19,10 +19,20 @@
 import type { NativeImage } from 'electron';
 import type { TrayStyle } from '@adjent/core' with { 'resolution-mode': 'import' };
 
+/**
+ * The tray palette, and *only* the tray palette.
+ *
+ * These are chosen for a glyph sitting on a taskbar, not for text: they are
+ * bright and near-saturated, which is exactly right for a 16px shape on a dark
+ * bar (contrast 12.6 / 10.3 / 4.0) and exactly wrong for a word on a light
+ * panel, where the green would land at 1.3 against white. The in-app chip
+ * therefore keeps its own, darker values of the same three hues — see
+ * brand/Adjent-Asset-Brief.md for the split and the numbers behind it.
+ */
 export const VERDICT_RGB: Record<string, [number, number, number]> = {
-  'on-pace': [0x0c, 0xa3, 0x0c],
-  ahead: [0xff, 0x8f, 0x00],
-  over: [0xb3, 0x18, 0x1f],
+  'on-pace': [0x81, 0xff, 0x00],
+  ahead: [0xff, 0xc6, 0x00],
+  over: [0xe8, 0x40, 0x0c],
   idle: [0x86, 0x93, 0xa0],
 };
 

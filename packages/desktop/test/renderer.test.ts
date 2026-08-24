@@ -59,7 +59,10 @@ class El {
   getAttribute(k: string) {
     return this.attrs[k] ?? null;
   }
-  addEventListener() {}
+  handlers: Record<string, ((ev: unknown) => void)[]> = {};
+  addEventListener(type: string, cb: (ev: unknown) => void) {
+    (this.handlers[type] ??= []).push(cb);
+  }
   getBoundingClientRect() {
     return { top: 10, bottom: 30, left: 10, right: 100, width: 90, height: 20 };
   }
@@ -98,6 +101,8 @@ interface Harness {
   flush: () => Promise<void>;
   /** Script what the main process answers `limit:detail` with. */
   setDetail: (fn: (key: string) => unknown) => void;
+  /** Fire an element's own listener, as a real click on it would. */
+  fire: (id: string, type?: string, ev?: unknown) => void;
 }
 
 /** Load panel.js with a fake document/window and return a handle to drive it. */
@@ -172,7 +177,12 @@ function loadPanel(): Harness {
   const setDetail = (fn: (key: string) => unknown): void => {
     detailFor = fn;
   };
-  return { els, onState, errors, hover, click, flush, setDetail };
+  const fire = (id: string, type = 'click', ev: unknown = {}): void => {
+    const el = els.get(id);
+    if (!el) throw new Error(`no element #${id}`);
+    for (const cb of el.handlers[type] ?? []) cb(ev);
+  };
+  return { els, onState, errors, hover, click, flush, setDetail, fire };
 }
 
 // -------------------------------------------------------------------- state
@@ -797,5 +807,412 @@ describe('chart labels never overlap', () => {
         expect(b.r, `label "${b.text}" runs past the frame`).toBeLessThanOrEqual(352.5);
       }
     }
+  });
+});
+
+describe('header navigation', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  it('the live count opens the agents view, and toggles back', () => {
+    h.onState(payload());
+    h.fire('liveCount');
+    expect(h.els.get('agentsView')!.hidden).toBe(false);
+    expect(h.els.get('agentList')!.innerHTML).toContain('demo');
+    h.fire('liveCount');
+    expect(h.els.get('agentsView')!.hidden).toBe(true);
+  });
+
+  it('the wordmark returns to the dashboard from anywhere', () => {
+    h.onState(payload());
+    h.fire('gear');
+    expect(h.els.get('settingsView')!.hidden).toBe(false);
+    h.fire('brandHome');
+    expect(h.els.get('settingsView')!.hidden).toBe(true);
+    expect(h.els.get('agentsView')!.hidden).toBe(true);
+    expect(h.els.get('limitView')!.hidden).toBe(true);
+  });
+
+  it('the wordmark also answers the keyboard', () => {
+    h.onState(payload());
+    h.fire('bell');
+    expect(h.els.get('notificationsView')!.hidden).toBe(false);
+    h.fire('brandHome', 'keydown', { key: 'Enter' });
+    expect(h.els.get('notificationsView')!.hidden).toBe(true);
+  });
+});
+
+describe('all agents view', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  /** Four agents: two with burn, one idle, one whose model is a placeholder. */
+  function manyAgents() {
+    const p = payload() as { state: { agents: unknown[]; agentBurns: unknown[] } };
+    const base = p.state.agents[0] as Record<string, unknown>;
+    const mk = (id: string, project: string, model: string | null, tokens: number, state = 'live') => ({
+      ...base,
+      id,
+      label: id,
+      projectPath: `/w/${project}`,
+      model,
+      state,
+      totals: { input: tokens, cacheWrite: 0, cacheRead: 0, output: 0, thinking: 0 },
+    });
+    p.state.agents = [
+      mk('claude:a1', 'alpha', 'model-x', 1000),
+      mk('claude:a2', 'bravo', 'gpt-unknown', 9000),
+      mk('claude:a3', 'charlie', null, 50, 'idle'),
+      mk('claude:a4', 'delta', 'model-y', 30),
+    ];
+    p.state.agentBurns = [{ agentId: 'claude:a4', pctPerHour: 12.5, confidence: 'high' }];
+    return p;
+  }
+
+  it('lists every agent, not just the four the dashboard shows', () => {
+    h.onState(manyAgents());
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+    for (const p of ['alpha', 'bravo', 'charlie', 'delta']) expect(list).toContain(p);
+    expect(h.errors).toHaveLength(0);
+  });
+
+  it('orders by cost: burn first, then tokens in the window', () => {
+    h.onState(manyAgents());
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+    const order = ['delta', 'bravo', 'alpha', 'charlie'].map((n) => list.indexOf(n));
+    // delta burns; bravo has the most tokens; charlie the fewest.
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it('never shows a placeholder as if it were a model', () => {
+    h.onState(manyAgents());
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+    expect(list).not.toContain('gpt-unknown');
+    expect(list).toContain('model unknown');
+  });
+
+  it('stays live as ticks arrive', () => {
+    h.onState(manyAgents());
+    h.fire('liveCount');
+    const p2 = manyAgents() as { state: { agents: Record<string, unknown>[] } };
+    p2.state.agents[0]!.projectPath = '/w/renamed';
+    h.onState(p2);
+    expect(h.els.get('agentList')!.innerHTML).toContain('renamed');
+    expect(h.errors).toHaveLength(0);
+  });
+});
+
+describe('other limits carry their own numbers', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  it('shows what filled each limit, not only the binding one', () => {
+    const p = payload() as { state: { limits: Record<string, unknown>[] } };
+    p.state.limits[1]!.tokens = { input: 400_000, cacheWrite: 0, cacheRead: 1_000_000, output: 100_000 };
+    h.onState(p);
+    // 1.5M across the billable kinds.
+    expect(h.els.get('limits')!.innerHTML).toContain('1.5M');
+  });
+
+  it('says nothing rather than zero when a limit has no ledger yet', () => {
+    const p = payload() as { state: { limits: Record<string, unknown>[] } };
+    p.state.limits[1]!.tokens = null;
+    h.onState(p);
+    expect(h.els.get('limits')!.innerHTML).not.toContain(' · 0');
+    expect(h.errors).toHaveLength(0);
+  });
+});
+
+describe('placeholder models never reach the split', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  it('renders an unattributable model honestly', async () => {
+    const p = manyLimits();
+    h.onState(p);
+    h.setDetail((key) =>
+      detailOf(p, key, {
+        rows: [
+          {
+            model: 'gpt-unknown',
+            tokens: { input: 10, cacheWrite: 0, cacheRead: 0, output: 5 },
+            total: 15,
+            requests: 1,
+            agents: [{ agentId: 'claude:a1', total: 15, requests: 1 }],
+          },
+        ],
+        total: 15,
+      }),
+    );
+    h.click(rowFor('claude:7d'));
+    await h.flush();
+
+    const split = h.els.get('limitSplit')!.innerHTML;
+    // The attribute stays the raw key — it is how the hover finds the row.
+    // What a reader sees must not be the placeholder.
+    const shown = /<span class="name">([^<]*)<\/span>/.exec(split)?.[1];
+    expect(shown).toBe('unknown model');
+
+    const el = new El();
+    el.setAttribute('data-split', 'gpt-unknown');
+    const tip = h.hover(el);
+    expect(tip).toContain('unknown model');
+    expect(/<span class="t">([^<]*)<\/span>/.exec(tip)?.[1]).toBe('unknown model');
+  });
+});
+
+/**
+ * The dot and the words beside it are one claim about an agent, so they must
+ * come from one place. They did not: the agents view called anything without a
+ * burn figure "idle", live agents included, while the dot stayed green.
+ */
+describe('agent state reads consistently', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  function withStates() {
+    const p = payload() as { state: { agents: Record<string, unknown>[]; agentBurns: unknown[] } };
+    const base = p.state.agents[0] as Record<string, unknown>;
+    const mk = (id: string, project: string, state: string) => ({
+      ...base,
+      id,
+      label: id,
+      projectPath: `/w/${project}`,
+      state,
+      lastActivityAt: T0 - 3 * 60_000,
+    });
+    p.state.agents = [
+      mk('claude:live-noburn', 'liveone', 'live'),
+      mk('claude:idle', 'idleone', 'idle'),
+      mk('claude:ended', 'endedone', 'ended'),
+    ];
+    // Nothing has a burn figure: the fit has nothing to say yet.
+    p.state.agentBurns = [];
+    return p;
+  }
+
+  const rowOf = (html: string, id: string) => {
+    const i = html.indexOf(`data-agent="${id}"`);
+    return i === -1 ? '' : html.slice(i, html.indexOf('</div><div class="agentRow"', i + 1) + 1 || undefined);
+  };
+
+  it('does not call a live agent idle just because it has no burn figure', () => {
+    h.onState(withStates());
+    h.fire('liveCount');
+    const row = rowOf(h.els.get('agentList')!.innerHTML, 'claude:live-noburn');
+    expect(row).toContain('--good');
+    expect(row, 'a live agent was labelled idle').not.toContain('idle');
+  });
+
+  it('gives an idle agent the idle colour and the idle word together', () => {
+    h.onState(withStates());
+    h.fire('liveCount');
+    const row = rowOf(h.els.get('agentList')!.innerHTML, 'claude:idle');
+    expect(row).toContain('--idle');
+    expect(row).toContain('idle');
+    expect(row).not.toContain('--good');
+  });
+
+  it('marks an ended agent as ended, never green', () => {
+    h.onState(withStates());
+    h.fire('liveCount');
+    const row = rowOf(h.els.get('agentList')!.innerHTML, 'claude:ended');
+    expect(row).toContain('ended');
+    expect(row).not.toContain('--good');
+  });
+
+  it('keeps the dashboard rows saying the same thing as the list', () => {
+    const p = withStates();
+    h.onState(p);
+    const dash = h.els.get('agents')!.innerHTML;
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+    for (const [id, colour] of [
+      ['claude:live-noburn', '--good'],
+      ['claude:idle', '--idle'],
+      ['claude:ended', '--idle'],
+    ] as const) {
+      expect(rowOf(dash, id) || dash, `dashboard ${id}`).toContain(colour);
+      expect(rowOf(list, id), `list ${id}`).toContain(colour);
+    }
+  });
+});
+
+/**
+ * An absent timestamp must never be rendered as a duration. `lastActivityAt`
+ * of 0 subtracted from the clock produced "idle 20689d 18h" — half a century
+ * of idleness, printed with total confidence.
+ */
+describe('durations from missing timestamps', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  function agentsWith(over: Record<string, unknown>) {
+    const p = payload() as { state: { agents: Record<string, unknown>[]; agentBurns: unknown[] } };
+    p.state.agents = [{ ...p.state.agents[0], id: 'claude:x', projectPath: '/w/thing', state: 'idle', ...over }];
+    p.state.agentBurns = [];
+    return p;
+  }
+
+  const ABSURD = /\b\d{3,}d\b/;
+
+  it('says just "idle" when there is no activity time at all', () => {
+    h.onState(agentsWith({ lastActivityAt: 0 }));
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+    expect(list).toContain('idle');
+    expect(list, 'printed a duration from a missing timestamp').not.toMatch(ABSURD);
+  });
+
+  it('keeps the same guard on the dashboard rows', () => {
+    h.onState(agentsWith({ lastActivityAt: 0 }));
+    expect(h.els.get('agents')!.innerHTML).not.toMatch(ABSURD);
+  });
+
+  it('keeps it in the hover card too', () => {
+    h.onState(agentsWith({ lastActivityAt: 0, startedAt: 0 }));
+    const el = new El();
+    el.setAttribute('data-agent', 'claude:x');
+    const tip = h.hover(el);
+    expect(tip).not.toMatch(ABSURD);
+    // The rows it cannot fill are dropped rather than filled with nonsense.
+    expect(tip).not.toContain('Last turn');
+  });
+
+  it('still prints an ordinary idle time', () => {
+    h.onState(agentsWith({ lastActivityAt: T0 - 42 * 60_000 }));
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+    expect(list).toContain('idle 42m');
+    expect(list).not.toMatch(ABSURD);
+  });
+});
+
+/**
+ * The collapsed limit rows are a column, not three independent lines: they
+ * carry the same cells in the same order so the eye can run down them.
+ */
+describe('limit rows keep one shape', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  it('shows a token cell on every row, even when nothing was counted', () => {
+    const p = payload() as { state: { limits: Record<string, unknown>[] } };
+    p.state.limits[1]!.tokens = { input: 0, cacheWrite: 0, cacheRead: 0, output: 0 };
+    h.onState(p);
+    const html = h.els.get('limits')!.innerHTML;
+    // An em dash states "none counted"; an absent cell just looked ragged.
+    expect(html).toContain('—');
+    expect(h.errors).toHaveLength(0);
+  });
+
+  it('gives every row the same cell count', () => {
+    const p = payload() as { state: { limits: Record<string, unknown>[] } };
+    const base = p.state.limits[1]!;
+    p.state.limits = [
+      p.state.limits[0]!,
+      { ...base, tokens: { input: 5_000, cacheWrite: 0, cacheRead: 0, output: 0 } },
+      { ...base, limit: { ...(base.limit as object), key: 'b', label: 'B' }, tokens: null },
+    ] as Record<string, unknown>[];
+    h.onState(p);
+    const rows = h.els.get('limits')!.innerHTML.split('<div class="row"').slice(1);
+    expect(rows.length).toBe(2);
+    // Count separators in the meta cell only: the label itself contains one
+    // ("Claude · 7d"), which would otherwise be measured as shape.
+    const seps = rows.map((r) => {
+      const meta = /<span class="meta">(.*?)<\/span>/s.exec(r)?.[1] ?? '';
+      return (meta.match(/·/g) ?? []).length;
+    });
+    expect(new Set(seps).size, `rows had different shapes: ${seps.join(', ')}`).toBe(1);
+  });
+});
+
+/**
+ * A reading time on one row and not the others made the collapsed list ragged
+ * for a detail that belongs in the hover and the detail view. The rows now
+ * print the same cells whatever the age of the reading — but staleness is not
+ * discarded, it moves to where there is room to say it properly.
+ */
+describe('staleness leaves the row, not the app', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  /** `other` (index 1) is the non-binding row the collapsed list renders. */
+  function withStaleOther() {
+    const p = payload() as { state: { generatedAt: number; limits: Record<string, unknown>[] } };
+    const other = p.state.limits[1]!;
+    // An hour old: comfortably past the ten-minute staleness threshold.
+    other.limit = { ...(other.limit as object), observedAt: T0 - 60 * 60_000 };
+    other.tokens = { input: 1_000, cacheWrite: 0, cacheRead: 0, output: 0 };
+    return p;
+  }
+
+  const metaOf = (html: string) => {
+    const out: string[] = [];
+    const re = /<span class="meta">(.*?)<\/span>/gs;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) out.push(m[1]!);
+    return out;
+  };
+
+  it('prints no reading time on a stale row', () => {
+    h.onState(withStaleOther());
+    const html = h.els.get('limits')!.innerHTML;
+    expect(html).not.toContain('as of');
+    expect(h.errors).toHaveLength(0);
+  });
+
+  it('gives a stale row the same shape as a fresh one', () => {
+    const p = withStaleOther() as { state: { limits: Record<string, unknown>[] } };
+    const stale = p.state.limits[1]!;
+    const fresh = {
+      ...stale,
+      limit: { ...(stale.limit as { observedAt: number }), observedAt: T0, key: 'fresh', label: 'Fresh' },
+    };
+    p.state.limits = [p.state.limits[0]!, stale, fresh] as Record<string, unknown>[];
+    h.onState(p);
+
+    const metas = metaOf(h.els.get('limits')!.innerHTML);
+    expect(metas).toHaveLength(2);
+    const seps = metas.map((m) => (m.match(/·/g) ?? []).length);
+    expect(new Set(seps).size, `stale and fresh rows differ: ${seps.join(' vs ')}`).toBe(1);
+  });
+
+  it('still explains staleness on hover, so the fact is not lost', () => {
+    h.onState(withStaleOther());
+    // The row switches its explanation key rather than printing a time.
+    expect(h.els.get('limits')!.innerHTML).toContain('data-tip="stale"');
+  });
+
+  it('keeps the reset countdown on the hero when its reading is stale', () => {
+    const p = payload() as { state: { limits: Record<string, unknown>[] } };
+    const binding = p.state.limits[0]!;
+    binding.limit = { ...(binding.limit as object), observedAt: T0 - 60 * 60_000 };
+    h.onState(p);
+
+    const meta = h.els.get('heroMeta')!.innerHTML;
+    // Staleness used to displace this, dropping the number the hero exists for.
+    expect(meta).toContain('resets in');
+    expect(meta).not.toContain('as of');
+    expect(h.els.get('heroMeta')!.getAttribute('data-tip')).toBe('stale');
   });
 });

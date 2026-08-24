@@ -189,3 +189,138 @@ describe('CodexProvider retrospective identity', () => {
     expect(agents[0]!.model).toBeNull();
   });
 });
+
+/**
+ * Codex quota is not an endpoint — it rides along inside session rollouts, so
+ * it only arrives while Codex is active. Byte offsets persist across a restart
+ * and the captured record does not, so a restart with no Codex activity since
+ * left `quota()` returning nothing and the whole vendor disappeared from the
+ * app. The record is still in the file.
+ */
+describe('CodexProvider quota survives a restart', () => {
+  function seedWithQuota(): void {
+    const dir = path.join(root, 'sessions', '2026', '08', '24');
+    mkdirSync(dir, { recursive: true });
+    const ts = new Date(T0 + 60_000).toISOString();
+    const lines = [
+      { timestamp: ts, type: 'turn_context', payload: { model: 'model-x', effort: 'medium' } },
+      {
+        timestamp: ts,
+        type: 'event_msg',
+        payload: {
+          rate_limits: {
+            plan_type: 'demo',
+            primary: { used_percent: 12.5, window_minutes: 10_080, resets_at: Math.floor((T0 + 5 * 24 * 3600_000) / 1000) },
+            secondary: null,
+          },
+        },
+      },
+    ];
+    writeFileSync(
+      path.join(dir, `rollout-2026-08-24T15-11-02-${THREAD}.jsonl`),
+      lines.map((l) => JSON.stringify(l)).join('\n') + '\n',
+    );
+  }
+
+  it('reports the limit on a first, cold run', async () => {
+    seedWithQuota();
+    const p = new CodexProvider({ root, now: () => T0 + 120_000 });
+    await p.collectUsage();
+    const q = await p.quota();
+    expect(q).toHaveLength(1);
+    expect(q[0]!.utilization).toBe(12.5);
+    expect(q[0]!.key).toBe('codex:7d');
+  });
+
+  it('still reports it after a restart with nothing new to read', async () => {
+    seedWithQuota();
+    const first = new CodexProvider({ root, now: () => T0 + 120_000 });
+    await first.collectUsage();
+    const offsets = first.getTailOffsets();
+
+    const restarted = new CodexProvider({ root, now: () => T0 + 120_000 });
+    restarted.setTailOffsets(offsets);
+    const fresh = await restarted.collectUsage();
+    expect(fresh, 'nothing new to read — this is the failing condition').toHaveLength(0);
+
+    const q = await restarted.quota();
+    expect(q, 'the vendor vanished from the app entirely').toHaveLength(1);
+    expect(q[0]!.utilization).toBe(12.5);
+  });
+
+  it('ignores records that carry no window', async () => {
+    const dir = path.join(root, 'sessions', '2026', '08', '24');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, `rollout-2026-08-24T15-11-02-${THREAD}.jsonl`),
+      JSON.stringify({
+        timestamp: new Date(T0 + 60_000).toISOString(),
+        type: 'event_msg',
+        payload: { rate_limits: { plan_type: 'demo', primary: null, secondary: null } },
+      }) + '\n',
+    );
+    const p = new CodexProvider({ root, now: () => T0 + 120_000 });
+    await p.collectUsage();
+    expect(await p.quota()).toHaveLength(0);
+  });
+});
+
+/**
+ * `lastActivityAt` used to fall back to 0 when a session had neither an
+ * observation nor a `startedAt`. Zero is not a timestamp, it is the absence of
+ * one, and subtracting it from the clock renders as "idle 20689d 18h".
+ */
+describe('ClaudeProvider activity timestamps', () => {
+  const sessionFile = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      pid: process.pid,
+      sessionId: SESSION,
+      cwd: 'c:\\work\\demo',
+      version: '2.1.0',
+      entrypoint: 'cli',
+      name: 'demo-session',
+      ...over,
+    });
+
+  it('recovers last activity from the transcript, not just the model', async () => {
+    mkdirSync(path.join(root, 'sessions'), { recursive: true });
+    mkdirSync(path.join(root, 'projects', 'c--work-demo'), { recursive: true });
+    // No startedAt at all: the transcript is the only source of a time.
+    writeFileSync(path.join(root, 'sessions', '12345.json'), sessionFile());
+    const turnAt = T0 + 60_000;
+    writeFileSync(
+      path.join(root, 'projects', 'c--work-demo', `${SESSION}.jsonl`),
+      JSON.stringify({
+        type: 'assistant',
+        timestamp: new Date(turnAt).toISOString(),
+        requestId: 'req_ts_001',
+        message: { model: 'model-a', usage: { input_tokens: 5, output_tokens: 5 } },
+      }) + '\n',
+    );
+
+    const first = new ClaudeProvider({ root, now: () => T0 + 120_000 });
+    await first.collectUsage();
+    const offsets = first.getTailOffsets();
+
+    const restarted = new ClaudeProvider({ root, now: () => T0 + 120_000 });
+    restarted.setTailOffsets(offsets);
+    await restarted.collectUsage();
+    const [a] = await restarted.listAgents();
+
+    expect(a!.lastActivityAt).toBe(turnAt);
+    expect(a!.lastActivityAt).toBeGreaterThan(0);
+  });
+
+  it('never reports epoch zero as an activity time', async () => {
+    mkdirSync(path.join(root, 'sessions'), { recursive: true });
+    // A session file with an explicit zero and no transcript anywhere.
+    writeFileSync(path.join(root, 'sessions', '12345.json'), sessionFile({ startedAt: 0 }));
+    const p = new ClaudeProvider({ root, now: () => T0 });
+    await p.collectUsage();
+    const [a] = await p.listAgents();
+    // Still zero here — there is genuinely nothing to report — but it must be
+    // exactly zero so the renderer can recognise it as "unknown" rather than
+    // subtract it from the clock. The guard for that lives in the panel.
+    expect(a!.lastActivityAt).toBe(0);
+  });
+});

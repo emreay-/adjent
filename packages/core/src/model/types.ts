@@ -153,6 +153,16 @@ export interface LimitAssessment {
   /** Epoch ms projected exhaustion, null if burn <= 0. */
   exhaustsAt: number | null;
   binding: boolean;
+  /**
+   * Exact tokens counted inside this limit's own window, so every limit can
+   * show what filled it and not just the binding one. Null until the monitor
+   * attaches it — the assessor works from utilization alone and never sees
+   * the ledger.
+   *
+   * Billable kinds only: thinking is already counted inside `output` by both
+   * vendors, so listing it beside them would double it.
+   */
+  tokens?: Record<TokenKind, number> | null;
 }
 
 export interface AppState {

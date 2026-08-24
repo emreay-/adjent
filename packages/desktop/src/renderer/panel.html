@@ -8,13 +8,13 @@
   /* Status palette is fixed and never themed (docs/UI.md). */
   :root {
     --bg:#F3F5F7; --surface:#FFFFFF; --line:#D9DFE6; --ink:#12171D; --ink2:#3C4752; --muted:#65727F;
-    --good:#0ca30c; --warn:#ff8f00; --crit:#b3181f;
-    --good-bg:#E4F3E4; --warn-bg:#FBF0D8; --crit-bg:#F7E2E2; --idle:#808890;
+    --good:#5ea30c; --warn:#ff8f00; --crit:#b3181f;
+    --good-bg:#EDF4DF; --warn-bg:#FBF0D8; --crit-bg:#F7E2E2; --idle:#808890;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg:#0D1116; --surface:#151B22; --line:#2A333D; --ink:#E3E9EF; --ink2:#B4BFCA; --muted:#8593A0;
-      --good-bg:#132615; --warn-bg:#2C2411; --crit-bg:#2E1817;
+      --good-bg:#1C2611; --warn-bg:#2C2411; --crit-bg:#2E1817;
     }
   }
   * { box-sizing:border-box; margin:0; }
@@ -28,7 +28,14 @@
     border-bottom:1px solid var(--line); font-size:11px; letter-spacing:.08em; text-transform:uppercase;
     color:var(--muted); -webkit-app-region:drag;
   }
-  header .live { font-variant-numeric:tabular-nums; }
+  header .live {
+    font-variant-numeric:tabular-nums; -webkit-app-region:no-drag;
+    background:none; border:none; padding:0; cursor:pointer; color:inherit;
+    font:inherit; letter-spacing:inherit; text-transform:inherit;
+  }
+  header .live:hover, header .live.on { color:var(--ink); }
+  header .brand { -webkit-app-region:no-drag; cursor:pointer; }
+  header .brand:hover { color:var(--ink); }
   header .brand { display:flex; align-items:center; gap:7px; }
   main { flex:1; overflow-y:auto; }
   section { padding:12px 14px; border-bottom:1px solid var(--line); }
@@ -96,8 +103,16 @@
   }
   /* Hover explanations. A dotted underline marks anything explainable, so the
      help is discoverable rather than hidden (docs/UI.md: clarity is the goal). */
-  [data-tip] { cursor:help; }
-  [data-tip]:hover { text-decoration:underline dotted var(--muted) 1px; text-underline-offset:3px; }
+  [data-tip], [data-agent], [data-alarm], [data-split] { cursor:help; }
+  /* Anything that reveals something on hover says so the same way. On rows the
+     underline goes under the row's name rather than the whole line, which
+     would otherwise underline the numbers too. */
+  [data-tip]:hover,
+  [data-agent]:hover .name,
+  [data-split]:hover .name,
+  [data-alarm]:hover .t {
+    text-decoration:underline dotted var(--muted) 1px; text-underline-offset:3px;
+  }
   #tip {
     position:fixed; z-index:99; max-width:280px; pointer-events:none; opacity:0;
     transition:opacity .12s ease; background:var(--surface); color:var(--ink2);
@@ -134,11 +149,9 @@
     color:var(--ink2); word-break:break-all; line-height:1.35;
   }
   #tip .ctx td .path { margin-top:0; }
-  .row[data-agent] { cursor:help; }
   #tip .ag .mt {
     display:block; font-family:Consolas, monospace; font-size:10px; color:var(--muted);
   }
-  .notif { cursor:help; }
   .notif:hover { background:var(--surface); }
   .notif .when .more {
     margin-left:8px; color:var(--muted); opacity:0; transition:opacity .12s;
@@ -206,7 +219,6 @@
   .prov.derived { background:var(--warn-bg); color:var(--warn); }
   .splitRow { padding:7px 0; border-bottom:1px solid var(--line); }
   /* Each row explains itself on hover: which agents spent that model's share. */
-  .splitRow[data-split] { cursor:help; }
   .splitRow[data-split]:hover { background:var(--surface); }
   .splitRow:last-child { border-bottom:none; }
   .splitTop { display:flex; align-items:baseline; gap:8px; font-size:12px; }
@@ -221,11 +233,25 @@
     display:block; margin-top:3px; font-family:Consolas, monospace; font-size:10px;
     color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
+  .agentRow { padding:7px 0; border-bottom:1px solid var(--line); }
+  .agentRow:last-child { border-bottom:none; }
+  .agentRow:hover { background:var(--surface); }
+  .agentRow .top { display:flex; align-items:baseline; gap:8px; font-size:12px; }
+  .agentRow .dot { width:7px; height:7px; border-radius:50%; flex:none; align-self:center; }
+  .agentRow .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .agentRow .meta {
+    margin-left:auto; font-family:Consolas, monospace; font-size:10.5px; color:var(--muted); white-space:nowrap;
+  }
+  .agentRow .meta b { color:var(--ink2); font-weight:600; }
+  .agentRow .sub {
+    display:block; margin-top:2px; margin-left:15px; font-family:Consolas, monospace;
+    font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
   h2 { font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:4px; }
 </style>
 </head>
 <body>
-  <header><span class="brand"><img src="adjent-logo.svg" width="18" height="18" alt="">Adjent</span><span class="live" id="liveCount" data-tip="liveCount"></span><button id="bell" class="iconbtn" title="Notifications">&#128276;<span id="bellDot"></span></button><button id="gear" class="iconbtn" title="Settings">&#9881;</button></header>
+  <header><span class="brand" id="brandHome" title="Back to the dashboard" role="button" tabindex="0"><img src="adjent-logo.svg" width="18" height="18" alt="">Adjent</span><button id="liveCount" class="live" data-tip="liveCount" title="All agents"></button><button id="bell" class="iconbtn" title="Notifications">&#128276;<span id="bellDot"></span></button><button id="gear" class="iconbtn" title="Settings">&#9881;</button></header>
   <div id="renderError" hidden></div>
   <main>
     <section id="primary">
@@ -242,6 +268,13 @@
     <section><h2 data-tip="agentBurn">Agents</h2><div id="agents"><div class="empty">–</div></div></section>
     <section><h2>Recent alarms</h2><div id="alarms"><div class="empty">None</div></div>
       <div class="tokline" id="conf" data-tip="confidence" style="margin-top:8px"></div></section>
+    <section id="agentsView" hidden>
+      <div class="notifHead">
+        <h2 style="margin:0" data-tip="agentBurn">All agents</h2>
+        <button id="agentsBack" class="linkbtn" style="margin:0">Back</button>
+      </div>
+      <div id="agentList"><div class="empty">None</div></div>
+    </section>
     <section id="limitView" hidden>
       <div class="notifHead">
         <h2 style="margin:0">All limits</h2>

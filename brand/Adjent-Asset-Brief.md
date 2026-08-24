@@ -247,7 +247,7 @@ UI, the docs and the alarm copy:
 
 | State | Use this | App ships today | First artwork round |
 | --- | --- | --- | --- |
-| `on-pace` | `#0CA30C` | `#0CA30C` | `#4FD06A` |
+| `on-pace` | `#5EA30C` | `#5EA30C` | `#4FD06A` |
 | `ahead` | **`#FF8F00`** | `#FAB219` | `#E9E24F` |
 | `over` | **`#B3181F`** | `#D03B3B` | `#F02F30` |
 | `idle` | `#8693A0` | `#8693A0` | — |
@@ -257,8 +257,50 @@ to yellow to read as a warning at 16px, and the shipped red is too light to
 separate from it. The app's tokens will be updated to match, so **use the
 "Use this" column** — these are now the single source of truth, not the app.
 
-Everything else stays on the app's values; the tray icon and the in-app verdict
-chip must never be different greens.
+### Two palettes, on purpose
+
+The table above is the **in-app** palette: chip text, dots, the widget. The
+tray glyph has its own, brighter set:
+
+| State | Tray glyph | In-app text | Hue |
+| --- | --- | --- | --- |
+| `on-pace` | `#81FF00` | `#5EA30C` | 90 / 87 |
+| `ahead` | `#FFC600` | `#FF8F00` | 47 / 34 |
+| `over` | `#E8400C` | `#B3181F` | 14 / 357 |
+| `idle` | `#8693A0` | `#8693A0` | — |
+
+This overrides the older rule that the tray and the chip must never differ. They
+differ because they are not the same kind of mark, and one palette cannot serve
+both:
+
+* The **tray glyph** is a filled shape on a taskbar. Bright, near-saturated
+  colour is what reads at 16px: against a dark Windows 11 taskbar the three
+  land at contrast **12.6 / 10.3 / 4.0**.
+* The **chip** is *text* on a panel. The same green against a white panel is
+  **1.3** — invisible. The amber is **1.6**. Text needs 4.5 for AA, which is
+  why the in-app values stay darker.
+
+What the two palettes share is hue: 90 against 87 for green is the same lime,
+tuned for its medium. Keep that relationship if either moves.
+
+**The one number to re-check before changing these.** `ahead` and `over` sit 32
+degrees apart, and `on-pace` and `ahead` 43. Those gaps carry the whole
+colour-blind story at 16px, which is also why `over` inverts to a light glyph on
+a solid plate — it differs in *form*, not only hue, and survives with colour
+removed entirely.
+
+**Known limitation:** the tray palette is fixed and does not follow the
+taskbar's theme. On a *light* taskbar the green sits at 1.17 and the amber at
+1.42, so the body of the glyph washes out and only its ink details read.
+Windows 11 defaults to a dark taskbar, so this is a minority case, but the fix
+if it matters is a second tray palette keyed on `nativeTheme`, not a compromise
+value that serves neither.
+
+The gauge-track ramp in `assets/logo/adjent-logo.svg` keeps the original
+`#0CA30C` at its cold end: it is a scale from good to bad, not the verdict
+token, and its second stop (`#7BC62D`) is already at hue 89 — starting the ramp
+at lime would collapse its first step. `Assets.dc.html` embeds copies of that
+logo and matches it.
 
 ---
 

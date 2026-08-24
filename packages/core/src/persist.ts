@@ -20,7 +20,17 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { Alarm, FireLog, UsageEvent } from './model/types.js';
 
-export const STORE_VERSION = 1;
+/**
+ * Bump when a *derivation* changes, not only when a shape does.
+ *
+ * 2 — Codex turn accounting: earlier ledgers summed a cumulative field and
+ *     over-counted by orders of magnitude.
+ * 3 — the rebuild 2 triggered could itself fail: appending a large batch threw
+ *     RangeError, so a backend's events were dropped while its byte offsets
+ *     advanced anyway. Any store written by 2 may be missing a vendor
+ *     entirely, with no way to notice and nothing left to re-read.
+ */
+export const STORE_VERSION = 3;
 
 /** Windows of retention, chosen so the files stay small on a busy machine. */
 export const RETENTION = {
@@ -122,6 +132,38 @@ export class Store {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Throw away derived data when the store version moves.
+   *
+   * The ledger is *derived*: every event in it can be read again from the
+   * vendor's own transcripts, which Adjent never writes to. So when a bug in
+   * the derivation is fixed, the honest migration is to discard and rebuild,
+   * not to carry numbers we now know to be wrong. `state.json` goes with it
+   * because it holds the byte offsets — without resetting those, nothing would
+   * ever be re-read.
+   *
+   * `history.jsonl` is kept deliberately. It is a record of vendor-reported
+   * utilization over time, which is *not* re-derivable — the readings are gone
+   * once the moment passes — and it was never affected by a token bug.
+   * `alarms.jsonl` is a record too, and stays.
+   *
+   * Returns true when something was discarded.
+   */
+  async migrateIfStale(): Promise<boolean> {
+    let version: unknown;
+    try {
+      const raw: unknown = JSON.parse(await fs.readFile(this.p('state.json'), 'utf-8'));
+      version = (raw as { version?: unknown } | null)?.version;
+    } catch {
+      return false; // nothing persisted yet: nothing to migrate
+    }
+    if (version === STORE_VERSION) return false;
+    for (const f of ['ledger.jsonl', 'state.json']) {
+      await fs.rm(this.p(f), { force: true }).catch(() => {});
+    }
+    return true;
   }
 
   async saveState(state: PersistedState): Promise<void> {
