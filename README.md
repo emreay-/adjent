@@ -6,9 +6,18 @@ A cross-platform (Windows/Linux) desktop tray widget that answers, at a glance:
 
 Plus a rule-driven alarm engine that tells you **before** you hit a wall.
 
+[![CI](https://github.com/emreay-/adjent/actions/workflows/ci.yml/badge.svg)](https://github.com/emreay-/adjent/actions/workflows/ci.yml)
+
 ## Status
 
-Design phase. No code yet. Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Working, unreleased. Core, CLI and desktop shell all build; both providers read
+live data; the tray, panel, alarm engine and notification log are in. Every push
+builds, typechecks and tests on Windows and Linux — see
+[.github/workflows/ci.yml](.github/workflows/ci.yml).
+
+Not yet done: signed builds and a published release. How that will work is
+[docs/PACKAGING.md](docs/PACKAGING.md). Start with
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 | Doc | What it covers |
 | --- | --- |

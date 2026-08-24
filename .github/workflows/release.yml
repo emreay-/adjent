@@ -1,0 +1,101 @@
+name: Release
+
+# Tag-driven, per docs/PACKAGING.md: GitHub Releases is the source of truth and
+# every package manager is a mirror of these artefacts. Nothing is ever built
+# by hand for one channel.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (for a dry run; the release stays a draft)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: --linux
+            artifacts: |
+              packages/desktop/release/*.AppImage
+              packages/desktop/release/*.deb
+          - os: windows-latest
+            platform: --win
+            artifacts: |
+              packages/desktop/release/*.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+
+      # Never ship something that has not passed. A release is the one build
+      # where "it probably still works" is not good enough.
+      - run: pnpm -r test
+
+      # `--publish never`: electron-builder will happily upload on its own when
+      # it sees a token and a tag, which would bypass the draft step below and
+      # publish before anyone has looked at it.
+      - name: Package
+        working-directory: packages/desktop
+        run: pnpm exec electron-builder --config electron-builder.yml ${{ matrix.platform }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adjent-${{ matrix.os }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+          retention-days: 7
+
+  draft:
+    name: draft release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # Checksums are what a package manifest pins against — Scoop and WinGet
+      # both want a SHA256 per file, so publish them with the release rather
+      # than making every downstream manifest compute its own.
+      - name: Checksum
+        run: |
+          set -euo pipefail
+          cd artifacts
+          ls -la
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      # Draft, never live: unsigned Windows builds trip SmartScreen, so a human
+      # decides when a release is ready to be seen (docs/PACKAGING.md § Signing).
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'untagged-dry-run' }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --draft \
+            --title "Adjent $TAG" \
+            --generate-notes \
+            artifacts/* \
+            || gh release upload "$TAG" --repo "${{ github.repository }}" --clobber artifacts/*

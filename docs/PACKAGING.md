@@ -119,9 +119,27 @@ assumes it happens after there is something worth installing.
 
 ## Order of work
 
-1. **CI that releases.** GitHub Actions matrix (`windows-latest`,
-   `ubuntu-latest`), tag → build → draft release with checksums. Everything else
-   depends on this existing, and nothing else can start until it does.
+1. ~~**CI that releases.**~~ **Done** — two workflows:
+   * [`ci.yml`](../.github/workflows/ci.yml) builds, typechecks and tests on
+     `ubuntu-latest` and `windows-latest` for every push and pull request, and
+     enforces two repository rules that were previously only written down: no
+     usernames, home paths or key-shaped strings in tracked files, and LF line
+     endings in the index.
+   * [`release.yml`](../.github/workflows/release.yml) runs on a `v*` tag:
+     build, test, then `electron-builder` per platform, and a **draft** release
+     carrying every artefact plus a `SHA256SUMS` file — which is exactly what a
+     Scoop or WinGet manifest pins against.
+
+   Two deliberate choices there. `electron-builder` runs with `--publish never`,
+   because given a token and a tag it will upload on its own and skip the draft
+   step entirely. And the release is a draft rather than live, because an
+   unsigned Windows build trips SmartScreen and a person should decide when
+   that is ready to be seen.
+
+   Packaging is verified, not assumed: a Windows build produces a working NSIS
+   installer and portable `.exe`, and the `@adjent/core` workspace dependency
+   resolves into the asar correctly despite pnpm's symlinked layout — the usual
+   failure mode for pnpm plus electron-builder.
 2. **Scoop manifest + AppImage.** The two channels that need no permission from
    anyone. This is a complete distribution story for the launch audience.
 3. **Flathub submission.** The manifest, the read-only grants, and a check that

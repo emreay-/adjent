@@ -7,7 +7,9 @@ node_modules/
 dist/
 out/
 build/
-release/           # electron-builder artifacts
+# electron-builder artifacts. Note: .gitignore has no trailing comments —
+# a pattern with one becomes a literal filename and silently matches nothing.
+release/
 coverage/
 .vite/
 .turbo/

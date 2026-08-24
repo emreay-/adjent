@@ -26,7 +26,7 @@ entire product — a tray is decoration on top of it.
 
 ### M2 — Tray + panel + threshold alarms (~1 week)
 Electron shell, tray badge, popover panel, native notifications, `threshold`
-rules. Packaged installers from CI, unsigned.
+rules. Packaged installers from CI, unsigned — see [PACKAGING.md](PACKAGING.md).
 
 Exit criteria: installs on a clean Windows and a clean Ubuntu box and notifies at
 80%.

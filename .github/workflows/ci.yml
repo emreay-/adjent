@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Both platforms report even when one fails: the interesting case is
+      # usually "passes on Linux, fails on Windows", and fail-fast hides it.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from `packageManager` in package.json — one source of truth.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Build before typechecking: the desktop and CLI packages typecheck
+      # against @adjent/core's *built* declarations, so on a clean checkout
+      # `typecheck` alone fails with "has no exported member".
+      - name: Build
+        run: pnpm -r build
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Test
+        run: pnpm -r test
+
+  hygiene:
+    name: no personal data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # CLAUDE.md makes this a hard rule; a rule nothing checks is a wish.
+      # Scans tracked files only — ignored working files are not our business.
+      - name: Scan tracked files for personal or secret data
+        run: |
+          set -uo pipefail
+          pattern='[a-z]:[\\/]+users[\\/]+[a-z0-9._-]+|/home/[a-z0-9._-]+|sk-[a-z0-9]{16,}|ghp_[a-z0-9]{20,}|xox[baprs]-[a-z0-9-]{10,}'
+          # Placeholders are the whole point of the rule, so they are allowed,
+          # as are CI's own paths and shell/CI variable references.
+          allow='<user>|\$\{|%USERNAME%|/home/runner|USERPROFILE'
+          hits=$(git ls-files -z \
+            | xargs -0 grep -IniE "$pattern" 2>/dev/null \
+            | grep -viE "$allow" || true)
+          if [ -n "$hits" ]; then
+            echo "::error::Personal or secret data found in tracked files (CLAUDE.md hard rule)."
+            echo "$hits"
+            echo
+            echo "Use placeholders instead: ~, <user>, C:\\Users\\<user>\\..."
+            exit 1
+          fi
+          echo "Clean: no usernames, home paths or key-shaped strings in tracked files."
+
+      # LF is enforced by .gitattributes; a CRLF file that slips in breaks the
+      # renderer tests on one platform only, which is a miserable way to find out.
+      - name: Check line endings
+        run: |
+          set -uo pipefail
+          bad=$(git ls-files -z --eol \
+            | tr '\0' '\n' \
+            | grep -E '^i/crlf' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Files committed with CRLF (.gitattributes says LF)."
+            echo "$bad"
+            exit 1
+          fi
+          echo "Clean: every tracked text file is LF in the index."
