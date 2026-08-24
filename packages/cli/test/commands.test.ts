@@ -336,3 +336,104 @@ describe('human output', () => {
     expect(r.stdout).toContain('terms:');
   });
 });
+
+// ------------------------------------------------------------------- check
+/**
+ * `check` is what a CI step gates on, so the mapping from result to exit code
+ * is the contract — not the wording. The distinctions under test are the ones
+ * a script branches on: "no" (4) is not "broken" (1), and neither is "I cannot
+ * say" (3).
+ */
+describe('check maps a predicate onto an exit code', () => {
+  const used = (pct: number) => {
+    const s = state();
+    s.limits[0]!.limit.utilization = pct;
+    return s;
+  };
+
+  it('exits 0 when the predicate holds', async () => {
+    const r = await run('check', ['--budget', '20%'], used(40));
+    expect(r.code).toBe(EXIT.OK);
+    expect(r.stdout).toMatch(/^ok —/m);
+  });
+
+  it('exits 4 — not 1 — when it does not', async () => {
+    const r = await run('check', ['--budget', '70%'], used(40));
+    expect(r.code).toBe(EXIT.PREDICATE_FAILED);
+    expect(r.stdout).toMatch(/^no —/m);
+  });
+
+  it('answers the acceptance case: 100% budget, used versus fresh', async () => {
+    expect((await run('check', ['--budget', '100%'], used(1))).code).toBe(EXIT.PREDICATE_FAILED);
+    expect((await run('check', ['--budget', '100%'], used(0))).code).toBe(EXIT.OK);
+  });
+
+  it('exits 3 when there is nothing to judge', async () => {
+    const r = await run('check', ['--budget', '20%'], EMPTY);
+    expect(r.code).toBe(EXIT.NO_DATA);
+    expect(r.stderr).toMatch(/no backend detected/);
+  });
+
+  it('exits 3 when a filter matches no limit', async () => {
+    const r = await run('check', ['--limit', 'nonexistent']);
+    expect(r.code).toBe(EXIT.NO_DATA);
+    expect(r.stderr).toMatch(/no limit matched/);
+  });
+
+  it('exits 5 only when staleness is the sole complaint', async () => {
+    const stale = state();
+    stale.limits[0]!.limit.observedAt = T0 - 60 * 60_000;
+    expect((await run('check', ['--max-age', '10m'], stale)).code).toBe(EXIT.STALE);
+
+    // Stale and over budget is a budget failure: reporting freshness would
+    // hide the problem that actually matters.
+    stale.limits[0]!.limit.utilization = 99;
+    expect((await run('check', ['--budget', '50%', '--max-age', '10m'], stale)).code).toBe(
+      EXIT.PREDICATE_FAILED,
+    );
+  });
+
+  it('ignores staleness entirely when --max-age was not given', async () => {
+    const stale = state();
+    stale.limits[0]!.limit.observedAt = T0 - 60 * 60_000;
+    expect((await run('check', ['--budget', '20%'], stale)).code).toBe(EXIT.OK);
+  });
+
+  it('refuses a condition it cannot read rather than dropping it', async () => {
+    // Silently ignoring an unparseable threshold would leave a gate that looks
+    // configured and enforces nothing.
+    const r = await run('check', ['--budget', 'loads']);
+    expect(r.code).toBe(EXIT.USAGE);
+    expect(r.stderr).toMatch(/--budget: cannot read/);
+    expect(r.ticks, 'a usage error must not cost a collection pass').toBe(0);
+  });
+
+  it('refuses an unknown verdict', async () => {
+    const r = await run('check', ['--pace', 'fine']);
+    expect(r.code).toBe(EXIT.USAGE);
+    expect(r.stderr).toMatch(/unknown verdict/);
+  });
+
+  it('says nothing at all under --quiet', async () => {
+    const r = await run('check', ['--budget', '70%', '--quiet'], used(40));
+    expect(r.stdout).toBe('');
+    expect(r.code).toBe(EXIT.PREDICATE_FAILED);
+  });
+
+  it('emits one object under --json, and still sets the code', async () => {
+    const r = await run('check', ['--budget', '70%', '--json'], used(40));
+    const obj = soleJson(r);
+    expect(obj['ok']).toBe(false);
+    expect(obj['predicate']).toContain('at least 70%');
+    const evaluated = obj['evaluated'] as Record<string, unknown>[];
+    expect(evaluated[0]!['failed']).toEqual(['budget']);
+    expect(evaluated[0]!['remainingPct']).toBe(60);
+    expect(r.code).toBe(EXIT.PREDICATE_FAILED);
+  });
+
+  it('names which condition failed in human output', async () => {
+    const r = await run('check', ['--max-utilization', '10'], used(90));
+    expect(r.stdout).toContain('max-utilization');
+    expect(r.stdout).toContain('90% used');
+  });
+});

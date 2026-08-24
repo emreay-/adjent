@@ -15,12 +15,15 @@ import {
   EXPLANATION_KEYS,
   PROVENANCE_NOTE,
   SCHEMA_VERSION,
+  check as checkPredicate,
+  staleOnly,
   toSnapshot,
   type AppState,
+  type CheckOptions,
   type Snapshot,
 } from '@adjent/core';
 import { EXIT, type ExitCode } from './exit.js';
-import type { Flags } from './args.js';
+import { parseDuration, parsePercent, type Flags } from './args.js';
 import {
   degradationNote,
   renderAgents,
@@ -142,12 +145,93 @@ export const explain: Command = async (ctx, flags) => {
   return EXIT.OK;
 };
 
+/**
+ * `adjent check` — the budget gate.
+ *
+ * The CLI's whole job here is mapping a pure result onto an exit code, which is
+ * why the predicate lives in core. The mapping carries the meaning:
+ *
+ * - **4, not 1**, when a condition fails. The gate answering "no" is Adjent
+ *   working correctly; conflating it with an internal error would make a CI
+ *   step unable to tell "you are out of budget" from "the tool broke".
+ * - **5 only when `--max-age` was given**, and only when staleness is the sole
+ *   complaint. A stale reading that also blew the budget is a budget failure —
+ *   reporting the freshness problem would hide the real one.
+ * - **3 when nothing could be judged.** "I cannot say" is not "yes", and a gate
+ *   that passed on no data would open exactly when Adjent had stopped working.
+ */
+export const check: Command = async (ctx, flags) => {
+  const budgetPct = parsePercent(flags.values['budget']);
+  const maxUtilizationPct = parsePercent(flags.values['max-utilization']);
+  const maxAgeMs = parseDuration(flags.values['max-age']);
+  const paceRaw = flags.values['pace'];
+
+  // A flag given but unreadable is a usage error, never a silently ignored
+  // condition — a gate that drops a condition it did not understand is worse
+  // than one that refuses to run.
+  for (const [name, raw, parsed] of [
+    ['budget', flags.values['budget'], budgetPct],
+    ['max-utilization', flags.values['max-utilization'], maxUtilizationPct],
+    ['max-age', flags.values['max-age'], maxAgeMs],
+  ] as const) {
+    if (raw !== undefined && parsed === null) {
+      ctx.err(`--${name}: cannot read ${JSON.stringify(raw)}`);
+      return EXIT.USAGE;
+    }
+  }
+
+  const pace = paceRaw ? paceRaw.split(',').map((p) => p.trim()) : null;
+  const VERDICTS = ['on-pace', 'ahead', 'over', 'idle'];
+  const unknown = pace?.find((p) => !VERDICTS.includes(p));
+  if (unknown !== undefined) {
+    ctx.err(`--pace: unknown verdict ${JSON.stringify(unknown)} (one of ${VERDICTS.join(', ')})`);
+    return EXIT.USAGE;
+  }
+
+  const state = await ctx.monitor.tick();
+  const snapshot = toSnapshot(state, { machineId: ctx.machineId });
+  const opts: CheckOptions = {
+    budgetPct,
+    maxUtilizationPct,
+    pace,
+    backend: flags.values['backend'] ?? null,
+    limitKey: flags.values['limit'] ?? null,
+    maxAgeMs,
+  };
+  const result = checkPredicate(snapshot, opts, snapshot.generatedAt);
+
+  if (flags.json) {
+    emit(ctx, { ok: result.ok, predicate: result.predicate, evaluated: result.evaluated });
+  } else if (!flags.quiet) {
+    if (result.noData) {
+      ctx.out('no limit to check');
+    } else {
+      ctx.out(`${result.ok ? 'ok' : 'no'} — ${result.predicate}`);
+      for (const e of result.evaluated) {
+        const why = e.ok ? '' : `  (${e.failed.join(', ')})`;
+        ctx.out(
+          `  ${e.ok ? '✓' : '✗'} ${e.label}  ${Math.round(e.utilization)}% used, ` +
+            `${Math.round(e.remainingPct)}% left, ${e.verdict}${why}`,
+        );
+      }
+    }
+  }
+
+  if (result.noData) {
+    ctx.err(degradationNote(snapshot) ?? 'no limit matched the given filters');
+    return EXIT.NO_DATA;
+  }
+  if (result.ok) return EXIT.OK;
+  return staleOnly(result) ? EXIT.STALE : EXIT.PREDICATE_FAILED;
+};
+
 export const COMMANDS: Record<string, Command> = {
   status,
   statusline,
   limits,
   agents,
   explain,
+  check,
 };
 
 export const USAGE = `usage: adjent <command> [options]
@@ -157,10 +241,19 @@ export const USAGE = `usage: adjent <command> [options]
   agents                every live and idle session, most expensive first
   statusline            one line, for Claude Code's statusLine setting
   explain <term>        plain-language definition of any metric shown
+  check                 budget gate for scripts; the exit code is the answer
   watch                 continuous loop with alarms
 
 options:
   --json                machine-readable output on stdout (see docs/API.md)
   --quiet               print nothing; the exit code is the answer
+
+check options:
+  --budget <pct>        at least this share of the limit must remain
+  --max-utilization <pct>   utilization must be at most this
+  --pace <verdict,...>  acceptable verdicts (on-pace, ahead, over, idle)
+  --backend <id>        narrow to one vendor
+  --limit <key>         narrow to one limit, instead of the binding one
+  --max-age <dur>       reject a reading older than this (90s, 15m, 2h)
 
 exit codes: 0 ok · 2 usage · 3 no data — full table in docs/API.md`;

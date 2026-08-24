@@ -60,3 +60,12 @@ export {
   type ProvenanceMap,
 } from './api/snapshot.js';
 export { machineId } from './api/machineid.js';
+export {
+  check,
+  limitsInScope,
+  staleOnly,
+  type CheckOptions,
+  type CheckResult,
+  type CheckEvaluation,
+  type CheckFailure,
+} from './api/check.js';

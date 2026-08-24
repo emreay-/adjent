@@ -208,6 +208,7 @@ one object on stdout and nothing else.
 | `adjent agents` | what is running and what it costs | `{ agents[], generatedAt }` |
 | `adjent statusline` | one line for a status bar | `{ bindingLimit, text }` |
 | `adjent explain <term>` | what a number means | `{ term, title, body, provenance }` |
+| `adjent check` | may I start more work? | `{ ok, predicate, evaluated[] }` |
 | `adjent watch` | a live loop | *(JSONL — see the event stream)* |
 
 `limits` and `agents` are the sections of `status`, lifted out so a script can
@@ -219,6 +220,39 @@ snapshot, and `bindingLimit` is `null` — present, not omitted — when there i
 data. The rendered `text` rides along so a status bar needs no formatter.
 
 `--quiet` prints nothing on any command; the exit code is the whole answer.
+
+### `adjent check` — the budget gate
+
+```
+adjent check [--budget <pct>] [--max-utilization <pct>] [--pace <verdict,...>]
+             [--backend <id>] [--limit <key>] [--max-age <dur>] [--json] [--quiet]
+```
+
+`--budget 20%` means **"at least 20% of the limit must remain"** — that is,
+utilization at most 80. It is phrased as headroom rather than usage because
+that is the question being asked: *do I have room to start something?*
+
+Scope is **the binding limit** unless `--limit` or `--backend` narrows it. When
+several limits are in scope, **the predicate must hold for all of them** — a
+gate that passed because *one* limit had room would green-light work the weekly
+limit cannot afford.
+
+Every condition given must hold. `--max-age` is the only one that is ignored
+when absent: what counts as too old is the caller's business.
+
+```sh
+# Only start the batch if a fifth of the week's budget is still there.
+adjent check --budget 20% --limit 7d --quiet || exit 0
+
+# Refuse to act on a reading older than ten minutes.
+adjent check --budget 20% --max-age 10m --quiet
+```
+
+Exit codes carry the answer: **0** it holds, **4** it does not, **5** the only
+problem was staleness, **3** there was nothing to judge, **2** a condition could
+not be read. A flag Adjent cannot parse is a usage error rather than a silently
+dropped condition — a gate that looks configured and enforces nothing is worse
+than one that refuses to run.
 
 ## Exit codes
 
