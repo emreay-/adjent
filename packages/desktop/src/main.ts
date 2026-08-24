@@ -151,10 +151,14 @@ function startConfigReload(): void {
   void configWatcher.prime().then(() => configWatcher?.start());
 }
 
-/** Route an alarm Adjent raised about itself through the normal sinks. */
+/**
+ * Raise an alarm about Adjent itself. Goes through the monitor so it is
+ * recorded in alarms.jsonl like any other — the notifications view reads that
+ * file, and a config error is exactly the sort someone reads later.
+ */
 function notify(alarm: Alarm): void {
   recentAlarms.push(alarm);
-  void monitor?.router.route([alarm]);
+  void monitor?.recordAlarm(alarm);
 }
 
 // ---------------------------------------------------------------------------

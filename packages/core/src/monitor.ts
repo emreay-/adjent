@@ -162,6 +162,22 @@ export class Monitor extends EventEmitter {
     };
   }
 
+  /**
+   * Record an alarm Adjent raised about itself — a config that failed to
+   * reload, say — through the same path a rule-fired alarm takes.
+   *
+   * Routing without recording would leave it visible only as a transient
+   * toast, while ALARMS.md promises every alarm outlives its notification in
+   * `alarms.jsonl`. A config error is exactly the kind a person reads later,
+   * having wondered all afternoon why nothing fired.
+   */
+  async recordAlarm(alarm: Alarm): Promise<void> {
+    this.alarmHistory.push(alarm);
+    await this.store?.appendAlarms([alarm]);
+    await this.router.route([alarm]);
+    this.emit('alarm', alarm);
+  }
+
   /** The alarm log, newest first — what the notifications view renders. */
   alarms(): Alarm[] {
     return [...this.alarmHistory].reverse();
