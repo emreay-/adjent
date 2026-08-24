@@ -23,5 +23,5 @@
       "text": "Not done yet\n\n1. The 16px tray glyphs. These masters are the spec, not the shipped art — scaled-down vector is exactly what failed at 16px twice. Each style and state gets hand-authored on the pixel grid, flat and hard-edged.\n\n2. The trayIconStyle setting: robot / ring / a-mark, defaulting to robot, and the app tokens moving to #FF8F00 and #B3181F.\n\n3. The .ico and PNG icon set, rasterised from the logo master.\n\nAll three are unblocked now — say the word."
     }
   ],
-  "launch": { "view": "focused", "file": "Assets.dc.html" }
+  "launch": { "view": "canvas" }
 }

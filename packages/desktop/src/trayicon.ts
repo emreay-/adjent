@@ -81,6 +81,31 @@ class Grid {
       }
     }
   }
+  /** Rectangle with cut-back corners — hard-edged, no antialiasing. */
+  roundedBox(x0: number, y0: number, w: number, h: number, r: number, v: number): void {
+    const rad = Math.max(0, Math.min(r, Math.floor(Math.min(w, h) / 2)));
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const dx = x < rad ? rad - x : x >= w - rad ? x - (w - 1 - rad) : 0;
+        const dy = y < rad ? rad - y : y >= h - rad ? y - (h - 1 - rad) : 0;
+        if (dx * dx + dy * dy > rad * rad) continue;
+        this.set(x0 + x, y0 + y, v);
+      }
+    }
+  }
+  /** A band of ring between two radii, limited to an angular span. */
+  annulus(cx: number, cy: number, rIn: number, rOut: number, a0: number, a1: number, v: number): void {
+    for (let y = Math.floor(cy - rOut); y <= Math.ceil(cy + rOut); y++) {
+      for (let x = Math.floor(cx - rOut); x <= Math.ceil(cx + rOut); x++) {
+        const d = Math.hypot(x - cx, y - cy);
+        if (d < rIn || d > rOut) continue;
+        let a = (Math.atan2(cy - y, x - cx) * 180) / Math.PI;
+        if (a < 0) a += 360;
+        if (a > a0 || a < a1) continue;
+        this.set(x, y, v);
+      }
+    }
+  }
   /** A 1px line from the centre outwards, for the needle. */
   ray(cx: number, cy: number, r0: number, r1: number, deg: number, v: number): void {
     const th = (deg * Math.PI) / 180;
@@ -108,13 +133,32 @@ const frameFor = (n: number, inverted: boolean): Frame => {
 function robot(g: Grid, f: Frame, body: number): void {
   const P = (k: number): number => Math.round(f.s * k);
   const pad = Math.max(1, P(0.125));
-  g.box(f.x + P(0.4375), f.y, Math.max(1, P(0.125)), pad, body); // antenna
-  g.box(f.x + pad, f.y + pad, f.s - 2 * pad, f.s - 2 * pad, body); // head
+  const cx = f.x + (f.s - 1) / 2;
+
+  // Ear pods need about two pixels each side before they stop being noise.
+  if (f.s >= 24) {
+    const pw = Math.max(2, P(0.07));
+    const ph = Math.max(3, P(0.2));
+    g.box(f.x, f.y + P(0.42), pw, ph, body);
+    g.box(f.x + f.s - pw, f.y + P(0.42), pw, ph, body);
+  }
+
+  const stem = Math.max(1, P(0.06));
+  g.box(Math.round(cx - stem / 2), f.y, Math.max(1, stem), pad, body); // antenna
+  g.roundedBox(f.x + pad, f.y + pad, f.s - 2 * pad, f.s - 2 * pad, P(0.14), body); // head
+
+  // The forehead gauge only earns its pixels once the band is at least two rows.
+  if (f.s >= 28) {
+    const gy = f.y + P(0.5);
+    g.annulus(cx, gy, P(0.2), P(0.29), 140, 40, DARK);
+    if (f.s >= 40) g.ray(cx, gy, P(0.05), P(0.31), 36, LIGHT);
+  }
+
   const vx = P(0.1875);
-  g.box(f.x + vx, f.y + P(0.4375), f.s - 2 * vx, Math.max(2, P(0.3125)), DARK); // visor
-  const eye = Math.max(1, P(0.125));
-  g.box(f.x + P(0.3125), f.y + P(0.5625), eye, eye, EYES);
-  g.box(f.x + P(0.5625), f.y + P(0.5625), eye, eye, EYES);
+  g.roundedBox(f.x + vx, f.y + P(0.46), f.s - 2 * vx, Math.max(2, P(0.3)), P(0.08), DARK);
+  const eye = Math.max(1, P(0.11));
+  g.box(f.x + P(0.31), f.y + P(0.57), eye, eye, EYES);
+  g.box(f.x + P(0.58), f.y + P(0.57), eye, eye, EYES);
 }
 
 function ring(g: Grid, f: Frame, body: number): void {
@@ -159,7 +203,10 @@ const SHAPES: Record<string, (g: Grid, f: Frame, body: number) => void> = {
 
 /** The glyph as a logical-resolution level mask — the whole design lives here. */
 export function renderTrayMask(o: TrayIconOptions): { mask: Uint8Array; n: number } {
-  const n = Math.max(8, Math.round(o.logicalSize));
+  // Author at the resolution the display actually gives us. Upscaling a 16px
+  // grid onto a 2x panel wastes half the pixels and keeps the glyph coarse;
+  // drawing at 32 or 48 is what lets the gauge and the pods exist at all.
+  const n = Math.max(8, Math.round(o.logicalSize * Math.max(1, o.scaleFactor)));
   const g = new Grid(n);
   const inverted = o.verdict === 'over';
   if (inverted) g.plate(PLATE);
@@ -173,8 +220,7 @@ export function renderTrayMask(o: TrayIconOptions): { mask: Uint8Array; n: numbe
  */
 export function renderTrayBuffer(o: TrayIconOptions): { buf: Buffer; px: number } {
   const { mask, n } = renderTrayMask(o);
-  const scale = Math.max(1, Math.round(o.scaleFactor));
-  const size = n * scale;
+  const size = n;
   const buf = Buffer.alloc(size * size * 4);
   const verdict = VERDICT_RGB[o.verdict] ?? VERDICT_RGB['idle']!;
   const inverted = o.verdict === 'over';
@@ -197,9 +243,8 @@ export function renderTrayBuffer(o: TrayIconOptions): { buf: Buffer; px: number 
   };
 
   for (let y = 0; y < size; y++) {
-    const my = Math.floor(y / scale);
     for (let x = 0; x < size; x++) {
-      const v = mask[my * n + Math.floor(x / scale)]!;
+      const v = mask[y * n + x]!;
       if (v === EMPTY) continue;
       const c = colour(v);
       if (!c) continue;
