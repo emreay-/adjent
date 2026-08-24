@@ -16,6 +16,13 @@ import { makeTrayIcon } from './trayicon.js';
 
 const coreImport = import('@adjent/core');
 
+/**
+ * The packaged icon, used for the taskbar button and alt-tab. Absent in a
+ * dev checkout until `pnpm icons` has run, and Electron ignores a missing
+ * path, so this needs no guard.
+ */
+const APP_ICON = path.join(__dirname, '..', 'icons', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
+
 /** Design sizes at uiScale = 1; both scale with the setting. */
 const PANEL_W = 380;
 const PANEL_H = 560;
@@ -85,6 +92,7 @@ function buildTrayMenu(): void {
 // ---------------------------------------------------------------------------
 function createPanel(): BrowserWindowType {
   const win = new BrowserWindow({
+    icon: APP_ICON,
     width: Math.round(PANEL_W * settings.uiScale),
     height: Math.round(PANEL_H * settings.uiScale),
     show: false,
@@ -135,6 +143,7 @@ function createWidget(): BrowserWindowType {
   const wa = screen.getPrimaryDisplay().workArea;
   const pos = settings.widgetPosition ?? { x: wa.x + wa.width - w - 16, y: wa.y + wa.height - h - 16 };
   const win = new BrowserWindow({
+    icon: APP_ICON,
     width: w,
     height: h,
     x: pos.x,
