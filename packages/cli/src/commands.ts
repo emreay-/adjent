@@ -17,12 +17,17 @@ import {
   DEFAULT_CONFIG,
   SCHEMA_VERSION,
   check as checkPredicate,
+  fmtDur,
+  fmtWhen,
   hasErrors,
   parseConfig,
+  replayHistory,
   staleOnly,
   toSnapshot,
   type AlarmConfig,
   type AppState,
+  type HistorySample,
+  type ReplayResult,
   type CheckOptions,
   type Snapshot,
 } from '@adjent/core';
@@ -49,6 +54,8 @@ export interface Ctx {
   configPath: string;
   /** Reads a config file. Injected for the same reason. */
   readFile: (path: string) => Promise<string>;
+  /** Where recorded utilization history lives. */
+  historyPath: string;
   /** Machine-readable output. Exactly one object per invocation. */
   out: (line: string) => void;
   /** Notes, warnings, degradation. Never parsed by anyone. */
@@ -298,11 +305,151 @@ function renderEffective(config: AlarmConfig): string {
   return lines.join('\n');
 }
 
+/**
+ * `adjent rules test --against <history>` — would this rule have fired?
+ *
+ * The default history is the user's own recorded past, which is what makes the
+ * answer persuasive rather than theoretical: not "this rule is well-formed" but
+ * "this rule would have interrupted you four times last week, the quietest
+ * stretch being two days".
+ *
+ * `--rules` reads an alternative file, so a rule can be tried before it is
+ * adopted — nothing under ~/.adjent is written.
+ */
+const rulesTest: Command = async (ctx, flags) => {
+  const historyPath = flags.values['against'] ?? ctx.historyPath;
+  const rulesPath = flags.values['rules'] ?? ctx.configPath;
+
+  let config = DEFAULT_CONFIG;
+  try {
+    const parsed = parseConfig(await ctx.readFile(rulesPath));
+    config = parsed.config;
+    // A rule that will be dropped cannot be tested; say so rather than
+    // reporting an empty timeline for it.
+    for (const d of parsed.diagnostics.filter((x) => x.level === 'error')) {
+      ctx.err(`${d.path}: ${d.message}`);
+    }
+  } catch {
+    ctx.err(`no rules at ${rulesPath} — testing the built-in defaults`);
+  }
+
+  let samples: HistorySample[];
+  try {
+    samples = parseHistory(await ctx.readFile(historyPath));
+  } catch {
+    ctx.err(`cannot read history at ${historyPath}`);
+    return EXIT.NO_DATA;
+  }
+  if (samples.length === 0) {
+    ctx.err(`no usable samples in ${historyPath}`);
+    return EXIT.NO_DATA;
+  }
+
+  const result = replayHistory(samples, config.rules, {
+    // History records the key but never the window length, so the caller has
+    // to supply it. These are the windows the two vendors actually publish.
+    windowMinutes: WINDOW_MINUTES,
+    defaultWindowMinutes: 300,
+  });
+
+  if (flags.json) {
+    emit(ctx, {
+      alarms: result.alarms,
+      byRule: result.byRule,
+      notEvaluable: result.notEvaluable,
+      samples: result.samples,
+      from: result.from,
+      to: result.to,
+      longestSilenceMs: result.longestSilenceMs,
+    });
+  } else if (!flags.quiet) {
+    ctx.out(renderReplay(result));
+  }
+
+  return EXIT.OK;
+};
+
+/** Windows the vendors publish, by the key history stores them under. */
+const WINDOW_MINUTES: Record<string, number> = {
+  'claude:session': 300,
+  'claude:weekly_all': 10_080,
+  'codex:codex:5h': 300,
+  'codex:codex:7d': 10_080,
+};
+
+/** JSONL in, samples out. A torn line is skipped, never fatal. */
+function parseHistory(text: string): HistorySample[] {
+  const out: HistorySample[] = [];
+  for (const line of text.split('\n')) {
+    if (line.trim().length === 0) continue;
+    try {
+      const d = JSON.parse(line) as Partial<HistorySample>;
+      if (typeof d.t === 'number' && typeof d.w === 'string' && typeof d.u === 'number') {
+        out.push({ t: d.t, w: d.w, u: d.u });
+      }
+    } catch {
+      /* one torn line is not a corrupt file */
+    }
+  }
+  return out;
+}
+
+const SEVERITY_MARK: Record<string, string> = { info: '·', warn: '▲', critical: '■' };
+
+function renderReplay(r: ReplayResult): string {
+  const lines: string[] = [];
+  const span =
+    r.from !== null && r.to !== null
+      ? `${r.samples} samples over ${fmtDur(r.to - r.from)}`
+      : `${r.samples} samples`;
+  lines.push(`Replayed ${span}`, '');
+
+  if (r.alarms.length === 0) {
+    lines.push('  (no alarms)');
+  } else {
+    for (const { alarm, sample } of r.alarms) {
+      const mark = SEVERITY_MARK[alarm.severity] ?? '·';
+      // Say *why* it fired. A pace rule has two triggers, and showing the pace
+      // line for the other one reads as a bug: "4% (pace line 34%)" looks
+      // impossible until you know the alarm was about projected exhaustion.
+      const c = alarm.context;
+      const early = c?.exhaustsAt != null && c.resetsAt != null && c.exhaustsAt < c.resetsAt;
+      const at = early
+        ? ` (runs out ${fmtWhen(c.exhaustsAt as number, alarm.firedAt)})`
+        : c?.paceLinePct != null
+          ? ` (pace line ${Math.round(c.paceLinePct)}%)`
+          : '';
+      lines.push(
+        `  ${fmtWhen(alarm.firedAt, r.to ?? alarm.firedAt)}  ${mark} ${alarm.severity.padEnd(8)} ` +
+          `${alarm.ruleId.padEnd(14)} ${sample.w} at ${Math.round(sample.u)}%${at}`,
+      );
+    }
+  }
+
+  lines.push('', 'By rule');
+  for (const [id, n] of Object.entries(r.byRule)) {
+    lines.push(`  ${id.padEnd(16)} ${String(n).padStart(4)} ${n === 1 ? 'alarm' : 'alarms'}`);
+  }
+  if (r.longestSilenceMs !== null) {
+    // The number that says whether a rule is usable or merely correct.
+    lines.push('', `Longest quiet stretch between alarms: ${fmtDur(r.longestSilenceMs)}`);
+  }
+
+  if (r.notEvaluable.length > 0) {
+    lines.push('', 'Not evaluated');
+    for (const n of r.notEvaluable) {
+      lines.push(`  ${n.ruleId.padEnd(16)} [${n.type}] ${n.reason}`);
+    }
+  }
+  return lines.join('\n');
+}
+
 /** `rules` is a group, so it dispatches on its first positional. */
 export const rules: Command = async (ctx, flags) => {
   const sub = flags.positional[0];
   if (sub === 'validate') return rulesValidate(ctx, flags);
-  ctx.err(sub ? `unknown subcommand: rules ${sub}` : 'usage: adjent rules validate [path]');
+  if (sub === 'test') return rulesTest(ctx, flags);
+  ctx.err(sub ? `unknown subcommand: rules ${sub}` : 'usage: adjent rules <validate|test>');
   return EXIT.USAGE;
 };
 
@@ -325,6 +472,11 @@ export const USAGE = `usage: adjent <command> [options]
   explain <term>        plain-language definition of any metric shown
   check                 budget gate for scripts; the exit code is the answer
   rules validate [path] check alarms.yaml and print what will actually run
+  rules test            replay rules against recorded history
+
+rules test options:
+  --against <file>      history JSONL to replay (default ~/.adjent/history.jsonl)
+  --rules <file>        rules to test, instead of the live alarms.yaml
   watch                 continuous loop with alarms
 
 options:

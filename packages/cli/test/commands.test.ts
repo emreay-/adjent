@@ -134,6 +134,7 @@ async function drive(
     monitor,
     machineId: MACHINE,
     configPath: '/fake/alarms.yaml',
+    historyPath: '/fake/history.jsonl',
     readFile,
     out: (l) => stdout.push(l),
     err: (l) => stderr.push(l),
@@ -635,5 +636,155 @@ alarms:
   it('rejects an unknown subcommand', async () => {
     expect((await withFile(GOOD, ['explode'])).code).toBe(EXIT.USAGE);
     expect((await withFile(GOOD, [])).code).toBe(EXIT.USAGE);
+  });
+});
+
+// ------------------------------------------------------------------ rules test
+/**
+ * `rules test` answers "would this have fired?" against the user's own recorded
+ * past. The persuasive part is not that a rule is well-formed but that it would
+ * have interrupted you four times last week — so the timeline, the counts and
+ * the quiet stretch are all part of the contract.
+ */
+describe('rules test', () => {
+  const T = 1_700_000_000_000 - (1_700_000_000_000 % (5 * 3600_000));
+
+  /** Utilization climbing from `from` to `to` over `n` samples. */
+  const history = (n: number, from: number, to: number, stepMs = 5 * 60_000): string =>
+    Array.from({ length: n }, (_, i) =>
+      JSON.stringify({
+        t: T + i * stepMs,
+        w: 'claude:session',
+        u: from + ((to - from) * i) / Math.max(1, n - 1),
+      }),
+    ).join('\n');
+
+  const PACE_ONLY = `
+alarms:
+  - id: pace-any
+    type: pace
+    tolerance_pp: 10
+    cooldown: 20m
+`;
+
+  /** Serve a rules file and a history file by path. */
+  const files = (rules: string, hist: string) => (p: string) =>
+    p.includes('history') || p.includes('.jsonl')
+      ? Promise.resolve(hist)
+      : Promise.resolve(rules);
+
+  it('prints a timeline for a front-loaded limit', async () => {
+    const r = await runWith('rules', ['test'], state(), files(PACE_ONLY, history(13, 0, 80)));
+    expect(r.code).toBe(EXIT.OK);
+    expect(r.stdout).toContain('Replayed 13 samples');
+    expect(r.stdout).toContain('pace-any');
+    expect(r.stdout).toContain('claude:session at');
+    expect(r.stdout).toContain('By rule');
+  });
+
+  it('says so plainly when a rule would never have fired', async () => {
+    const r = await runWith('rules', ['test'], state(), files(PACE_ONLY, history(20, 2, 4)));
+    expect(r.stdout).toContain('(no alarms)');
+    // A zero here means "ran, and stayed quiet" — the rule was genuinely asked.
+    expect(r.stdout).toMatch(/pace-any\s+0 alarms/);
+  });
+
+  it('names the rules history cannot answer for, rather than reporting silence', async () => {
+    const r = await runWith(
+      'rules',
+      ['test'],
+      state(),
+      files(
+        `
+alarms:
+  - id: runaway
+    type: agent_burn
+    window: 10m
+`,
+        history(20, 0, 90),
+      ),
+    );
+    expect(r.stdout).toContain('Not evaluated');
+    expect(r.stdout).toContain('runaway');
+    expect(r.stdout).toContain('per-agent');
+  });
+
+  it('reports the longest quiet stretch, which says whether a rule is usable', async () => {
+    const r = await runWith('rules', ['test'], state(), files(PACE_ONLY, history(60, 0, 99)));
+    if (r.stdout.includes('Longest quiet stretch')) {
+      expect(r.stdout).toMatch(/Longest quiet stretch between alarms: \d+/);
+    }
+  });
+
+  it('tests an alternative rules file without touching the live one', async () => {
+    // The point of --rules: try a rule before adopting it.
+    const seen: string[] = [];
+    const r = await runWith('rules', ['test', '--rules', '/tmp/candidate.yaml'], state(), (p) => {
+      seen.push(p);
+      return Promise.resolve(p.includes('candidate') ? PACE_ONLY : history(13, 0, 80));
+    });
+    expect(seen).toContain('/tmp/candidate.yaml');
+    expect(seen).not.toContain('/fake/alarms.yaml');
+    expect(r.code).toBe(EXIT.OK);
+  });
+
+  it('reads the history file named by --against', async () => {
+    const seen: string[] = [];
+    await runWith('rules', ['test', '--against', '/tmp/past.jsonl'], state(), (p) => {
+      seen.push(p);
+      return Promise.resolve(p.endsWith('.jsonl') ? history(13, 0, 80) : PACE_ONLY);
+    });
+    expect(seen).toContain('/tmp/past.jsonl');
+  });
+
+  it('emits one object under --json carrying the whole result', async () => {
+    const r = await runWith(
+      'rules',
+      ['test', '--json'],
+      state(),
+      files(PACE_ONLY, history(13, 0, 80)),
+    );
+    const obj = soleJson(r);
+    expect(obj['samples']).toBe(13);
+    expect(obj).toHaveProperty('byRule');
+    expect(obj).toHaveProperty('notEvaluable');
+    expect(Array.isArray(obj['alarms'])).toBe(true);
+  });
+
+  it('exits 3 when there is no history to replay', async () => {
+    const r = await runWith('rules', ['test'], state(), (p) =>
+      p.endsWith('.jsonl') ? Promise.reject(new Error('ENOENT')) : Promise.resolve(PACE_ONLY),
+    );
+    expect(r.code).toBe(EXIT.NO_DATA);
+    expect(r.stderr).toContain('cannot read history');
+  });
+
+  it('exits 3 on a history file with nothing usable in it', async () => {
+    const r = await runWith('rules', ['test'], state(), files(PACE_ONLY, 'not json\n{"nope":1}\n'));
+    expect(r.code).toBe(EXIT.NO_DATA);
+    expect(r.stderr).toContain('no usable samples');
+  });
+
+  it('skips a torn line instead of failing the whole replay', async () => {
+    const good = history(13, 0, 80);
+    const torn = good.split('\n').slice(0, 6).join('\n') + '\n{"t":broken\n' + good.split('\n').slice(6).join('\n');
+    const r = await runWith('rules', ['test'], state(), files(PACE_ONLY, torn));
+    expect(r.code).toBe(EXIT.OK);
+    expect(r.stdout).toContain('Replayed 13 samples');
+  });
+
+  it('warns when a rule in the file will be dropped before it can be tested', async () => {
+    const r = await runWith(
+      'rules',
+      ['test'],
+      state(),
+      files('alarms:\n  - id: a\n    type: teleport\n', history(13, 0, 80)),
+    );
+    expect(r.stderr).toContain('unknown rule type');
+  });
+
+  it('never collects: replay reads files, not vendors', async () => {
+    const r = await runWith('rules', ['test'], state(), files(PACE_ONLY, history(13, 0, 80)));
+    expect(r.ticks).toBe(0);
   });
 });

@@ -19,7 +19,7 @@ import type { Alarm, AppState, LimitAssessment, QuotaLimit, Rule } from '../mode
 import type { HistorySample } from '../persist.js';
 import { emptyFireLog } from '../model/types.js';
 import { evaluate } from './evaluate.js';
-import { paceLine, verdictFor, exhaustion } from '../quota/assess.js';
+import { LimitAssessor } from '../quota/assess.js';
 
 export interface ReplayOptions {
   /**
@@ -82,11 +82,7 @@ const backendOf = (key: string): 'claude' | 'codex' => (key.startsWith('codex') 
  * it — which is why `windowMinutes` is a caller-supplied option rather than a
  * guess buried in here.
  */
-function stateAt(
-  sample: HistorySample,
-  windowMinutes: number,
-  track: Map<string, { at: number; u: number }>,
-): AppState {
+function stateAt(sample: HistorySample, windowMinutes: number, assessor: LimitAssessor): AppState {
   const windowMs = windowMinutes * 60_000;
   const resetsAt = Math.ceil(sample.t / windowMs) * windowMs;
 
@@ -104,24 +100,13 @@ function stateAt(
     observedAt: sample.t,
   };
 
-  // Burn between consecutive samples of the same limit, in points per hour —
-  // the same quantity the live assessor measures, computed the same way.
-  const prev = track.get(sample.w);
-  const dt = prev ? sample.t - prev.at : 0;
-  const burn =
-    prev && dt > 0 ? { pctPerHour: ((sample.u - prev.u) / dt) * 3600_000, updatedAt: sample.t } : null;
-  track.set(sample.w, { at: sample.t, u: sample.u });
-
-  const pace = paceLine(limit, sample.t);
-  const assessment: LimitAssessment = {
-    limit,
-    burn,
-    verdict: verdictFor(limit, burn, pace),
-    paceLinePct: pace,
-    exhaustsAt: exhaustion(limit, burn, sample.t),
-    binding: true,
-    tokens: null,
-  };
+  // Assessed by the live assessor, not by a parallel implementation. Raw
+  // sample-to-sample deltas are far spikier than what the app actually sees —
+  // one jump gets extrapolated into an exhaustion projection — so a replay
+  // built on them fires alarms that never happened. Since the whole point is
+  // "would this have fired", it has to run the same smoothing, hysteresis and
+  // verdict logic the live path does.
+  const assessment = assessor.assess([limit], sample.t)[0] as LimitAssessment;
 
   return {
     generatedAt: sample.t,
@@ -156,13 +141,15 @@ export function replayHistory(
   // threshold rearming only mean anything if events arrive as they happened.
   const ordered = [...samples].sort((a, b) => a.t - b.t);
   const fireLog = emptyFireLog();
-  const track = new Map<string, { at: number; u: number }>();
+  // One assessor across the whole replay: its EWMA state per limit is exactly
+  // the memory that makes a burn rate meaningful.
+  const assessor = new LimitAssessor();
   const alarms: ReplayedAlarm[] = [];
 
   for (const sample of ordered) {
     const windowMinutes =
       opts.windowMinutes?.[sample.w] ?? opts.defaultWindowMinutes ?? DEFAULT_WINDOW_MINUTES;
-    const fired = evaluate(stateAt(sample, windowMinutes, track), runnable, fireLog, sample.t);
+    const fired = evaluate(stateAt(sample, windowMinutes, assessor), runnable, fireLog, sample.t);
     for (const alarm of fired) {
       alarms.push({ alarm, sample });
       byRule[alarm.ruleId] = (byRule[alarm.ruleId] ?? 0) + 1;

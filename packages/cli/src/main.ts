@@ -13,10 +13,12 @@ import {
   Monitor,
   configPath,
   loadConfig,
+  storeDir,
   machineId,
   type Alarm,
 } from '@adjent/core';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { COMMANDS, USAGE, type Ctx } from './commands.js';
 import { EXIT, type ExitCode } from './exit.js';
 import { parseArgs, parseDuration } from './args.js';
@@ -131,6 +133,7 @@ async function main(): Promise<void> {
         },
     machineId: await machineId(),
     configPath: configPath(),
+    historyPath: join(storeDir(), 'history.jsonl'),
     readFile: (p) => readFile(p, 'utf-8'),
     // stdout carries the answer; stderr carries everything else.
     out: (line) => process.stdout.write(line + '\n'),

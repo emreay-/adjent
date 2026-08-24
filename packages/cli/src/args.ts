@@ -35,6 +35,8 @@ export const VALUE_FLAGS = new Set([
   'max-age',
   'pace',
   'interval',
+  'against',
+  'rules',
 ]);
 
 const BOOLEAN_FLAGS = new Set(['json', 'quiet', 'help', 'prime']);
