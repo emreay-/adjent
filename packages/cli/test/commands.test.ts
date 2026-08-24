@@ -437,3 +437,65 @@ describe('check maps a predicate onto an exit code', () => {
     expect(r.stdout).toContain('90% used');
   });
 });
+
+/**
+ * One collection pass per invocation.
+ *
+ * `status` used to tick twice so burn and dedup state existed. For a person
+ * that is invisible; for a scripted consumer it doubles latency and re-reads
+ * every transcript. It is unnecessary because the assessor's burn tracks are
+ * persisted and restored, so a warm store already has the samples an EWMA
+ * needs — the second tick was recomputing what was on disk.
+ *
+ * A counting stub is the only honest way to assert this: the cost is invisible
+ * in the output.
+ */
+describe('collection cost', () => {
+  for (const [name, argv] of [
+    ['status', []],
+    ['status', ['--json']],
+    ['limits', ['--json']],
+    ['agents', ['--json']],
+    ['statusline', ['--json']],
+    ['check', ['--budget', '10%']],
+  ] as const) {
+    it(`${name} ${argv.join(' ')} collects exactly once`, async () => {
+      const r = await run(name, [...argv]);
+      expect(r.ticks).toBe(1);
+    });
+  }
+
+  it('explain never collects at all', async () => {
+    // It answers from a static table, so it must work with nothing installed.
+    expect((await run('explain', ['hero'])).ticks).toBe(0);
+    expect((await run('explain', [])).ticks).toBe(0);
+  });
+
+  it('a usage error costs no collection pass', async () => {
+    expect((await run('check', ['--budget', 'loads'])).ticks).toBe(0);
+    expect((await run('check', ['--pace', 'fine'])).ticks).toBe(0);
+  });
+
+  it('reports the burn a warm store already knows about', async () => {
+    // The state a restored assessor yields: burn present on the first tick.
+    const r = await run('status', ['--json']);
+    const snap = soleJson(r)['snapshot'] as { limits: Record<string, unknown>[] };
+    expect(snap.limits[0]!['burnPctPerHour']).toBe(8.1);
+    expect(r.ticks).toBe(1);
+  });
+
+  it('reports null rather than inventing a burn on a cold store', async () => {
+    // Nothing measured yet is an honest null, not a zero and not a guess.
+    const cold = state();
+    cold.limits[0]!.burn = null;
+    cold.agentBurns = [];
+    const snap = soleJson(await run('status', ['--json'], cold))['snapshot'] as {
+      limits: Record<string, unknown>[];
+      agents: Record<string, unknown>[];
+    };
+    expect(snap.limits[0]!['burnPctPerHour']).toBeNull();
+    expect(snap.agents[0]!['burnPctPerHour']).toBeNull();
+    // And no provenance entry, since Adjent produced no such number.
+    expect(snap.limits[0]!['provenance']).not.toHaveProperty('burnPctPerHour');
+  });
+});
