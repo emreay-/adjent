@@ -69,16 +69,26 @@ export async function loadConfig(file: string = configPath()): Promise<AlarmConf
     return DEFAULT_CONFIG;
   }
   try {
-    const doc = parseYaml(text) as { alarms?: unknown[]; routing?: Record<string, unknown> } | null;
+    const doc: unknown = parseYaml(text);
     if (!doc || typeof doc !== 'object') return DEFAULT_CONFIG;
-    const rules = Array.isArray(doc.alarms) ? doc.alarms.map(coerceRule).filter((r): r is Rule => r !== null) : [];
-    return {
-      rules: rules.length > 0 ? rules : DEFAULT_CONFIG.rules,
-      routing: coerceRouting(doc.routing),
-    };
+    return buildConfig(doc as { alarms?: unknown; routing?: unknown });
   } catch {
     return DEFAULT_CONFIG; // broken YAML degrades to defaults, never to silence
   }
+}
+
+/**
+ * Document → config. The single place coercion happens, so `loadConfig` and
+ * `parseConfig` can never understand a file differently.
+ */
+function buildConfig(doc: { alarms?: unknown; routing?: unknown }): AlarmConfig {
+  const rules = Array.isArray(doc.alarms)
+    ? doc.alarms.map(coerceRule).filter((r): r is Rule => r !== null)
+    : [];
+  return {
+    rules: rules.length > 0 ? rules : DEFAULT_CONFIG.rules,
+    routing: coerceRouting(doc.routing as Record<string, unknown> | undefined),
+  };
 }
 
 // --------------------------------------------------------------------------
@@ -169,3 +179,216 @@ function coerceRouting(raw: Record<string, unknown> | undefined): Routing {
     critical: list(raw?.['critical'], DEFAULT_CONFIG.routing.critical),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Diagnostics
+//
+// Loading and *judging* a config are different jobs. `loadConfig` must stay
+// lenient — a broken file degrades to defaults, never to silence, because an
+// alarm engine that quietly stops alarming is the worst possible failure. But
+// leniency with no way to ask "what did you actually understand?" means a typo
+// costs you a rule and says nothing.
+//
+// So the coercion below is untouched, and this is a separate inspection pass
+// over the same document. It changes no behaviour; it only reports. Typo
+// detection is most of the value: `tolerence_pp` is a silently ignored key
+// today, and that is exactly the mistake a person makes at 2am.
+// ---------------------------------------------------------------------------
+
+export interface Diagnostic {
+  level: 'error' | 'warn';
+  /** Where, in the file's own terms: `alarms[2].tolerance_pp`. */
+  path: string;
+  message: string;
+}
+
+export interface ParsedConfig {
+  config: AlarmConfig;
+  diagnostics: Diagnostic[];
+}
+
+/** Keys each rule type understands. Anything else is almost certainly a typo. */
+const COMMON_KEYS = ['id', 'type', 'scope', 'backend', 'limit', 'severity', 'cooldown'];
+const KNOWN_KEYS: Record<string, string[]> = {
+  pace: [...COMMON_KEYS, 'tolerance_pp', 'project_exhaustion_lead', 'window'],
+  threshold: [...COMMON_KEYS, 'levels', 'window'],
+  // `window` here is a *time span*, not the deprecated scope key (GLOSSARY).
+  agent_burn: ['id', 'type', 'severity', 'cooldown', 'window', 'trigger'],
+};
+const SCOPE_KEYS = ['backend', 'limit', 'window'];
+const TRIGGER_KEYS = ['rel_to_median', 'share_pct', 'abs_pct_per_hour'];
+const RULE_TYPES = Object.keys(KNOWN_KEYS);
+
+const err = (path: string, message: string): Diagnostic => ({ level: 'error', path, message });
+const warn = (path: string, message: string): Diagnostic => ({ level: 'warn', path, message });
+
+/** Report a value that is present but not a finite number. */
+function checkNumber(o: Record<string, unknown>, key: string, at: string, out: Diagnostic[]): void {
+  const v = o[key];
+  if (v === undefined) return;
+  if (typeof v === 'number' && Number.isFinite(v)) return;
+  out.push(err(`${at}.${key}`, `expected a number, got ${JSON.stringify(v)}`));
+}
+
+/** Report a duration that is neither a number nor `20m` / `1h` / `2d`. */
+function checkDuration(o: Record<string, unknown>, key: string, at: string, out: Diagnostic[]): void {
+  const v = o[key];
+  if (v === undefined) return;
+  if (typeof v === 'number' && Number.isFinite(v)) return;
+  if (typeof v === 'string' && /^\d+(?:\.\d+)?\s*(m|h|d)?$/.test(v.trim())) return;
+  out.push(err(`${at}.${key}`, `expected a duration like 20m, 1h or a number of minutes, got ${JSON.stringify(v)}`));
+}
+
+function checkUnknownKeys(o: Record<string, unknown>, known: string[], at: string, out: Diagnostic[]): void {
+  for (const k of Object.keys(o)) {
+    if (!known.includes(k)) {
+      out.push(warn(`${at}.${k}`, `unknown key — ignored. Expected one of: ${known.join(', ')}`));
+    }
+  }
+}
+
+function validateRule(raw: unknown, at: string, seen: Set<string>, out: Diagnostic[]): void {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    out.push(err(at, 'expected a rule object'));
+    return;
+  }
+  const r = raw as Record<string, unknown>;
+
+  const id = r['id'];
+  if (typeof id !== 'string' || id.length === 0) {
+    out.push(err(`${at}.id`, 'every rule needs a string id — this rule is ignored'));
+  } else if (seen.has(id)) {
+    // Two rules with one id: the fire log keys on it, so the second silently
+    // shares the first's cooldown state.
+    out.push(err(`${at}.id`, `duplicate rule id ${JSON.stringify(id)}`));
+  } else {
+    seen.add(id);
+  }
+
+  const type = r['type'];
+  if (typeof type !== 'string' || !RULE_TYPES.includes(type)) {
+    out.push(
+      err(`${at}.type`, `unknown rule type ${JSON.stringify(type)} — this rule is ignored. Expected one of: ${RULE_TYPES.join(', ')}`),
+    );
+    return; // Without a type there is nothing further to check against.
+  }
+
+  checkUnknownKeys(r, KNOWN_KEYS[type]!, at, out);
+
+  const scope = r['scope'];
+  if (scope !== undefined) {
+    if (typeof scope !== 'object' || scope === null || Array.isArray(scope)) {
+      out.push(err(`${at}.scope`, 'expected a mapping'));
+    } else {
+      checkUnknownKeys(scope as Record<string, unknown>, SCOPE_KEYS, `${at}.scope`, out);
+      if ('window' in (scope as Record<string, unknown>)) {
+        out.push(
+          warn(`${at}.scope.window`, 'deprecated — use `limit:`. A window is a UI element; `limit` is the vendors\' own word'),
+        );
+      }
+    }
+  }
+  if (type !== 'agent_burn' && 'window' in r) {
+    out.push(warn(`${at}.window`, 'deprecated — use `limit:`'));
+  }
+
+  checkDuration(r, 'cooldown', at, out);
+
+  if (type === 'pace') {
+    checkNumber(r, 'tolerance_pp', at, out);
+    checkDuration(r, 'project_exhaustion_lead', at, out);
+  }
+
+  if (type === 'threshold') {
+    const levels = r['levels'];
+    if (levels !== undefined) {
+      if (!Array.isArray(levels)) {
+        out.push(err(`${at}.levels`, 'expected a list of percentages'));
+      } else {
+        const nums = levels.filter((l): l is number => typeof l === 'number' && Number.isFinite(l));
+        if (nums.length !== levels.length) {
+          out.push(err(`${at}.levels`, 'every level must be a number'));
+        }
+        if (nums.length === 0) {
+          out.push(warn(`${at}.levels`, 'empty — the default levels are used instead'));
+        }
+        // Levels are announced in order as utilization climbs, so an unsorted
+        // list reads as a bug in Adjent rather than in the file.
+        const sorted = [...nums].sort((a, b) => a - b);
+        if (nums.some((n, i) => n !== sorted[i])) {
+          out.push(warn(`${at}.levels`, `not in ascending order — expected ${JSON.stringify(sorted)}`));
+        }
+      }
+    }
+  }
+
+  if (type === 'agent_burn') {
+    checkDuration(r, 'window', at, out);
+    const trig = r['trigger'];
+    if (trig !== undefined) {
+      if (typeof trig !== 'object' || trig === null || Array.isArray(trig)) {
+        out.push(err(`${at}.trigger`, 'expected a mapping'));
+      } else {
+        const t = trig as Record<string, unknown>;
+        checkUnknownKeys(t, TRIGGER_KEYS, `${at}.trigger`, out);
+        for (const k of TRIGGER_KEYS) checkNumber(t, k, `${at}.trigger`, out);
+      }
+    }
+  }
+}
+
+/**
+ * Parse and judge in one pass. The config is built by exactly the same
+ * coercion `loadConfig` uses, so the diagnostics can never disagree with what
+ * actually runs.
+ */
+export function parseConfig(text: string): ParsedConfig {
+  const diagnostics: Diagnostic[] = [];
+
+  let doc: unknown;
+  try {
+    doc = parseYaml(text);
+  } catch (e) {
+    diagnostics.push(err('$', `not valid YAML: ${e instanceof Error ? e.message : String(e)}`));
+    return { config: DEFAULT_CONFIG, diagnostics };
+  }
+
+  if (doc === null || doc === undefined) {
+    diagnostics.push(warn('$', 'empty file — the built-in defaults are used'));
+    return { config: DEFAULT_CONFIG, diagnostics };
+  }
+  if (typeof doc !== 'object' || Array.isArray(doc)) {
+    diagnostics.push(err('$', 'expected a mapping with `alarms:` and optionally `routing:`'));
+    return { config: DEFAULT_CONFIG, diagnostics };
+  }
+
+  const d = doc as { alarms?: unknown; routing?: unknown };
+  checkUnknownKeys(doc as Record<string, unknown>, ['alarms', 'routing'], '$', diagnostics);
+
+  if (d.alarms === undefined) {
+    diagnostics.push(warn('$.alarms', 'no rules defined — the built-in defaults are used'));
+  } else if (!Array.isArray(d.alarms)) {
+    diagnostics.push(err('$.alarms', 'expected a list of rules'));
+  } else {
+    const seen = new Set<string>();
+    d.alarms.forEach((raw, i) => validateRule(raw, `alarms[${i}]`, seen, diagnostics));
+  }
+
+  if (d.routing !== undefined) {
+    if (typeof d.routing !== 'object' || d.routing === null || Array.isArray(d.routing)) {
+      diagnostics.push(err('$.routing', 'expected a mapping of severity to sink list'));
+    } else {
+      checkUnknownKeys(d.routing as Record<string, unknown>, ['info', 'warn', 'critical'], '$.routing', diagnostics);
+      for (const [k, v] of Object.entries(d.routing as Record<string, unknown>)) {
+        if (v !== undefined && !Array.isArray(v)) {
+          diagnostics.push(err(`$.routing.${k}`, 'expected a list of sink names'));
+        }
+      }
+    }
+  }
+
+  return { config: buildConfig(d), diagnostics };
+}
+
+/** True when nothing in the file will be ignored. */
+export const hasErrors = (diagnostics: Diagnostic[]): boolean => diagnostics.some((x) => x.level === 'error');

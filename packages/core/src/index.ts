@@ -13,7 +13,17 @@ export {
 export { ExchangeRateFit, type FitResult } from './quota/fit.js';
 export { LimitAssessor, paceLine, verdictFor, exhaustion, compareUrgency } from './quota/assess.js';
 export { evaluate, fmtDur, fmtTime, fmtWhen, calendarDaysBetween } from './rules/evaluate.js';
-export { loadConfig, configPath, DEFAULT_CONFIG, type AlarmConfig, type Routing } from './rules/config.js';
+export {
+  loadConfig,
+  parseConfig,
+  hasErrors,
+  configPath,
+  DEFAULT_CONFIG,
+  type AlarmConfig,
+  type Routing,
+  type Diagnostic,
+  type ParsedConfig,
+} from './rules/config.js';
 export { ConsoleSink, WebhookSink, SinkRouter, type Sink } from './sinks/sink.js';
 export { Monitor, type MonitorOptions, type LimitDetail } from './monitor.js';
 export {
