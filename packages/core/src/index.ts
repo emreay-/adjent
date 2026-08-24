@@ -86,3 +86,11 @@ export {
   type ReplayedAlarm,
   type NotEvaluable,
 } from './rules/replay.js';
+export {
+  PRESET_NAMES,
+  PRESET_SUMMARY,
+  isPresetName,
+  presetsDir,
+  readPreset,
+  type PresetName,
+} from './rules/presets.js';

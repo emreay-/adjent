@@ -15,11 +15,14 @@ import {
   EXPLANATION_KEYS,
   PROVENANCE_NOTE,
   DEFAULT_CONFIG,
+  PRESET_NAMES,
+  PRESET_SUMMARY,
   SCHEMA_VERSION,
   check as checkPredicate,
   fmtDur,
   fmtWhen,
   hasErrors,
+  isPresetName,
   parseConfig,
   replayHistory,
   staleOnly,
@@ -56,6 +59,10 @@ export interface Ctx {
   readFile: (path: string) => Promise<string>;
   /** Where recorded utilization history lives. */
   historyPath: string;
+  /** Writes into ~/.adjent only. Injected so tests never touch a real home. */
+  writeFile: (path: string, content: string) => Promise<void>;
+  /** The shipped YAML for a preset, comments intact. */
+  readPreset: (name: string) => Promise<string>;
   /** Machine-readable output. Exactly one object per invocation. */
   out: (line: string) => void;
   /** Notes, warnings, degradation. Never parsed by anyone. */
@@ -444,12 +451,77 @@ function renderReplay(r: ReplayResult): string {
   return lines.join('\n');
 }
 
+/**
+ * `adjent rules init [--preset <name>] [--force]`.
+ *
+ * Writes `~/.adjent/alarms.yaml` — Adjent's own directory, so this is the one
+ * place writing is allowed (README rule 1 is about *vendor* directories).
+ *
+ * The preset is copied verbatim, comments and all, because the file is the
+ * documentation a person will actually read. Dumping parsed rules back out as
+ * YAML would strip exactly the part that teaches the schema.
+ */
+const rulesInit: Command = async (ctx, flags) => {
+  const name = flags.values['preset'] ?? 'default';
+  if (!isPresetName(name)) {
+    ctx.err(`unknown preset: ${name}`);
+    ctx.err('available:');
+    for (const p of PRESET_NAMES) ctx.err(`  ${p.padEnd(14)} ${PRESET_SUMMARY[p]}`);
+    return EXIT.USAGE;
+  }
+
+  const target = flags.positional[1] ?? ctx.configPath;
+  const force = flags.values['force'] === 'true';
+
+  // Never clobber a config someone has tuned. This is the one destructive
+  // thing the CLI can do, and the cost of getting it wrong is their rules.
+  if (!force) {
+    let exists = false;
+    try {
+      await ctx.readFile(target);
+      exists = true;
+    } catch {
+      /* absent is the normal case */
+    }
+    if (exists) {
+      ctx.err(`${target} already exists — pass --force to overwrite it`);
+      return EXIT.USAGE;
+    }
+  }
+
+  const yaml = await ctx.readPreset(name);
+  await ctx.writeFile(target, yaml);
+
+  if (flags.json) {
+    emit(ctx, { ok: true, preset: name, path: target, bytes: yaml.length });
+  } else if (!flags.quiet) {
+    ctx.out(`wrote ${target}  (preset: ${name})`);
+    ctx.out(PRESET_SUMMARY[name]);
+    ctx.out('');
+    ctx.out('Next: `adjent rules validate` to see what Adjent understood,');
+    ctx.out('      `adjent rules test` to see what it would have done last week.');
+  }
+  return EXIT.OK;
+};
+
+/** `adjent rules presets` — what can be chosen, and what each is for. */
+const rulesPresets: Command = async (ctx, flags) => {
+  if (flags.json) {
+    emit(ctx, { presets: PRESET_NAMES.map((p) => ({ name: p, summary: PRESET_SUMMARY[p] })) });
+  } else if (!flags.quiet) {
+    for (const p of PRESET_NAMES) ctx.out(`  ${p.padEnd(14)} ${PRESET_SUMMARY[p]}`);
+  }
+  return EXIT.OK;
+};
+
 /** `rules` is a group, so it dispatches on its first positional. */
 export const rules: Command = async (ctx, flags) => {
   const sub = flags.positional[0];
   if (sub === 'validate') return rulesValidate(ctx, flags);
   if (sub === 'test') return rulesTest(ctx, flags);
-  ctx.err(sub ? `unknown subcommand: rules ${sub}` : 'usage: adjent rules <validate|test>');
+  if (sub === 'init') return rulesInit(ctx, flags);
+  if (sub === 'presets') return rulesPresets(ctx, flags);
+  ctx.err(sub ? `unknown subcommand: rules ${sub}` : 'usage: adjent rules <init|validate|test|presets>');
   return EXIT.USAGE;
 };
 
@@ -473,10 +545,16 @@ export const USAGE = `usage: adjent <command> [options]
   check                 budget gate for scripts; the exit code is the answer
   rules validate [path] check alarms.yaml and print what will actually run
   rules test            replay rules against recorded history
+  rules init            write ~/.adjent/alarms.yaml from a preset
+  rules presets         list the presets and what each is for
 
 rules test options:
   --against <file>      history JSONL to replay (default ~/.adjent/history.jsonl)
   --rules <file>        rules to test, instead of the live alarms.yaml
+
+rules init options:
+  --preset <name>       default | conservative | weekly-guard | fleet | ci-gate
+  --force               overwrite an existing alarms.yaml
   watch                 continuous loop with alarms
 
 options:

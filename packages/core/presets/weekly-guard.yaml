@@ -1,0 +1,32 @@
+# Weekly guard — "don't burn the week by Tuesday".
+#
+# The five-hour limit forgives itself: wait, and it resets. The weekly one does
+# not, and by the time it is obviously a problem there is no way back. This
+# preset watches the long limit and gives itself a long lead time.
+
+alarms:
+  - id: weekly-pace
+    type: pace
+    scope:
+      backend: any
+      limit: 7d
+    tolerance_pp: 8       # tight: on a weekly limit, small drift compounds
+    project_exhaustion_lead: 24h   # a full day's warning, not forty minutes
+    cooldown: 4h
+    severity: warn
+
+  - id: weekly-steps
+    type: threshold
+    scope:
+      backend: any
+      limit: 7d
+    levels: [50, 75, 90]
+    severity:
+      50: info
+      75: warn
+      90: critical
+
+routing:
+  info: [tray]
+  warn: [tray, toast]
+  critical: [tray, toast, webhook]

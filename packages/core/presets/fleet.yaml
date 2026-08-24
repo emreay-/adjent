@@ -1,0 +1,46 @@
+# Fleet — four to ten agents running at once.
+#
+# With one agent, quota is a number you glance at. With eight, it is a resource
+# you allocate, and the question stops being "how full is it" and becomes
+# "which of these is eating it". So this preset leans on per-agent detection
+# and keeps the whole-limit thresholds sparse.
+#
+# The `anomaly` rule belongs here too and does not exist yet; add it when it
+# lands rather than leaving a rule Adjent will drop.
+
+alarms:
+  - id: runaway-agent
+    type: agent_burn
+    window: 5m            # short: a looping subagent should be caught fast
+    trigger:
+      rel_to_median: 2.5  # tighter than default — with many agents the median
+                          # is meaningful, so a smaller multiple is real signal
+      share_pct: 40
+      abs_pct_per_hour: 5.0
+    cooldown: 5m
+    severity: warn
+
+  - id: pace-any
+    type: pace
+    scope:
+      backend: any
+      limit: any
+    tolerance_pp: 10
+    project_exhaustion_lead: 90m   # more lead: stopping a fleet takes longer
+    cooldown: 30m
+    severity: warn
+
+  - id: steps-sparse
+    type: threshold
+    scope:
+      backend: any
+      limit: any
+    levels: [75, 90]
+    severity:
+      75: warn
+      90: critical
+
+routing:
+  info: [tray]
+  warn: [tray, toast]
+  critical: [tray, toast, webhook]

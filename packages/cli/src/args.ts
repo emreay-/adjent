@@ -37,9 +37,10 @@ export const VALUE_FLAGS = new Set([
   'interval',
   'against',
   'rules',
+  'preset',
 ]);
 
-const BOOLEAN_FLAGS = new Set(['json', 'quiet', 'help', 'prime']);
+const BOOLEAN_FLAGS = new Set(['json', 'quiet', 'help', 'prime', 'force']);
 
 export function parseArgs(argv: string[]): ParseResult {
   const flags: Flags = { json: false, quiet: false, positional: [], values: {} };

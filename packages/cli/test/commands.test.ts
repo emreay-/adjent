@@ -136,6 +136,10 @@ async function drive(
     configPath: '/fake/alarms.yaml',
     historyPath: '/fake/history.jsonl',
     readFile,
+    writeFile: async () => {},
+    readPreset: (n) => Promise.resolve(`# preset ${n}
+alarms: []
+`),
     out: (l) => stdout.push(l),
     err: (l) => stderr.push(l),
   };
@@ -786,5 +790,112 @@ alarms:
   it('never collects: replay reads files, not vendors', async () => {
     const r = await runWith('rules', ['test'], state(), files(PACE_ONLY, history(13, 0, 80)));
     expect(r.ticks).toBe(0);
+  });
+});
+
+// ------------------------------------------------------------------ rules init
+/**
+ * `rules init` is the only destructive thing the CLI can do, and what it would
+ * destroy is a config someone tuned. So the refusal to overwrite is tested as
+ * carefully as the write.
+ */
+describe('rules init', () => {
+  interface InitRun extends Run {
+    written: { path: string; content: string }[];
+  }
+
+  /** Drive init with a scripted filesystem, capturing what would be written. */
+  async function init(argv: string[], existing: string | null = null): Promise<InitRun> {
+    const written: { path: string; content: string }[] = [];
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    let ticks = 0;
+    const ctx: Ctx = {
+      monitor: {
+        tick: async () => {
+          ticks += 1;
+          return state();
+        },
+      },
+      machineId: MACHINE,
+      configPath: '/fake/alarms.yaml',
+      historyPath: '/fake/history.jsonl',
+      readFile: () => (existing === null ? Promise.reject(new Error('ENOENT')) : Promise.resolve(existing)),
+      writeFile: async (path, content) => {
+        written.push({ path, content });
+      },
+      readPreset: (name) => Promise.resolve(`# preset ${name}\nalarms:\n  - id: a\n    type: pace\n`),
+      out: (l) => stdout.push(l),
+      err: (l) => stderr.push(l),
+    };
+    const { flags, error } = parseArgs(argv);
+    expect(error).toBeNull();
+    const code = await COMMANDS['rules']!(ctx, flags);
+    return { code, stdout: stdout.join('\n'), stderr: stderr.join('\n'), ticks, written };
+  }
+
+  it('writes the default preset when none is named', async () => {
+    const r = await init(['init']);
+    expect(r.code).toBe(EXIT.OK);
+    expect(r.written).toHaveLength(1);
+    expect(r.written[0]!.path).toBe('/fake/alarms.yaml');
+    expect(r.written[0]!.content).toContain('preset default');
+  });
+
+  it('writes the preset verbatim, comments and all', async () => {
+    // The file is the documentation; a re-serialised dump would teach nothing.
+    const r = await init(['init', '--preset', 'fleet']);
+    expect(r.written[0]!.content.startsWith('# preset fleet')).toBe(true);
+  });
+
+  it('refuses to overwrite an existing config, and writes nothing', async () => {
+    const r = await init(['init'], 'alarms: []\n');
+    expect(r.code).toBe(EXIT.USAGE);
+    expect(r.written).toEqual([]);
+    expect(r.stderr).toContain('--force');
+  });
+
+  it('overwrites when explicitly told to', async () => {
+    const r = await init(['init', '--force'], 'alarms: []\n');
+    expect(r.code).toBe(EXIT.OK);
+    expect(r.written).toHaveLength(1);
+  });
+
+  it('rejects an unknown preset and lists the real ones', async () => {
+    const r = await init(['init', '--preset', 'aggressive']);
+    expect(r.code).toBe(EXIT.USAGE);
+    expect(r.written).toEqual([]);
+    expect(r.stderr).toContain('unknown preset');
+    expect(r.stderr).toContain('weekly-guard');
+  });
+
+  it('writes to a path given on the command line', async () => {
+    const r = await init(['init', '/tmp/elsewhere.yaml']);
+    expect(r.written[0]!.path).toBe('/tmp/elsewhere.yaml');
+  });
+
+  it('tells you what to do next', async () => {
+    const r = await init(['init']);
+    expect(r.stdout).toContain('rules validate');
+    expect(r.stdout).toContain('rules test');
+  });
+
+  it('emits one object under --json', async () => {
+    const r = await init(['init', '--json', '--preset', 'ci-gate']);
+    const obj = JSON.parse(r.stdout) as Record<string, unknown>;
+    expect(obj['preset']).toBe('ci-gate');
+    expect(obj['ok']).toBe(true);
+  });
+
+  it('never collects: writing a config needs no vendor installed', async () => {
+    expect((await init(['init'])).ticks).toBe(0);
+  });
+
+  it('lists the presets with what each is for', async () => {
+    const r = await init(['presets']);
+    expect(r.code).toBe(EXIT.OK);
+    for (const name of ['default', 'conservative', 'weekly-guard', 'fleet', 'ci-gate']) {
+      expect(r.stdout).toContain(name);
+    }
   });
 });

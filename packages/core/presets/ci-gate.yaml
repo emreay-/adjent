@@ -1,0 +1,22 @@
+# CI gate — near-silent, for a machine rather than a person.
+#
+# Pairs with `adjent check`, which answers with an exit code and needs no
+# alarms at all. Nothing here toasts; one critical rule exists so that a run
+# that genuinely exhausted a limit leaves a record in ~/.adjent/alarms.jsonl.
+#
+#   adjent check --budget 20% --quiet || echo "not enough budget"
+
+alarms:
+  - id: exhausted
+    type: threshold
+    scope:
+      backend: any
+      limit: any
+    levels: [98]
+    severity:
+      98: critical
+
+routing:
+  info: []
+  warn: []
+  critical: [tray]        # recorded, never popped up

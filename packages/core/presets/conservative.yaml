@@ -1,0 +1,39 @@
+# Conservative — for people who would rather be told once, late, than often.
+#
+# Only two thresholds, both high, with long cooldowns. Nothing fires while you
+# are merely busy; it fires when you are genuinely close to a wall.
+
+alarms:
+  - id: pace-late
+    type: pace
+    scope:
+      backend: any
+      limit: any
+    # A wide band: 25 points above the pace line, not 10. At this setting a
+    # normal busy morning passes in silence.
+    tolerance_pp: 25
+    # Half an hour's notice rather than the default 45 minutes — the trade for
+    # being interrupted less is being told later.
+    project_exhaustion_lead: 30m
+    # Two hours between repeats. If you did not act the first time, saying it
+    # again twenty minutes later will not help.
+    cooldown: 2h
+    severity: warn
+
+  - id: steps-high
+    type: threshold
+    scope:
+      backend: any
+      limit: any
+    # No 25 or 50: crossing half a limit is not news if you meant to.
+    levels: [80, 95]
+    severity:
+      80: warn
+      95: critical
+
+# Nothing pops up below critical. The tray colour is always there to be looked
+# at, which is the point of a tray app.
+routing:
+  info: [tray]
+  warn: [tray]
+  critical: [tray, toast]

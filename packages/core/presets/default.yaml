@@ -1,0 +1,50 @@
+# Adjent alarm rules — the built-in defaults.
+#
+# This file is yours: edit it, then run `adjent rules validate` to see exactly
+# what Adjent understood, and `adjent rules test` to see what it would have
+# done to your last week. Adjent never writes here except on `rules init`.
+
+alarms:
+  # Fires when you are spending faster than the limit's window can afford —
+  # either well above the pace line, or projected to run out before it resets.
+  - id: pace-any
+    type: pace
+    scope:
+      backend: any        # any | claude | codex
+      limit: any          # any | 5h | 7d | a vendor limit key
+    tolerance_pp: 10      # how far above the pace line before it counts
+    project_exhaustion_lead: 45m   # warn if it runs out this long before reset
+    cooldown: 20m
+    severity: warn
+
+  # Announces each level once as utilization climbs past it, and rearms when
+  # the limit resets. Levels are announced in the order given, so keep them
+  # ascending.
+  - id: steps
+    type: threshold
+    scope:
+      backend: any
+      limit: any
+    levels: [25, 50, 80, 95]
+    severity:
+      25: info
+      50: info
+      80: warn
+      95: critical
+
+  # Catches one agent burning far more than its share — the runaway subagent.
+  - id: runaway-agent
+    type: agent_burn
+    window: 10m           # a time span here, not a quota limit
+    trigger:
+      rel_to_median: 4.0  # this many times the median agent
+      share_pct: 60       # or this share of all burn
+      abs_pct_per_hour: 8.0   # and at least this fast in absolute terms
+    cooldown: 15m
+    severity: warn
+
+# Where each severity goes. Sinks: tray, toast, webhook.
+routing:
+  info: [tray]
+  warn: [tray, toast]
+  critical: [tray, toast, webhook]

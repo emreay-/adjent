@@ -13,12 +13,14 @@ import {
   Monitor,
   configPath,
   loadConfig,
+  readPreset,
   storeDir,
+  type PresetName,
   machineId,
   type Alarm,
 } from '@adjent/core';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { COMMANDS, USAGE, type Ctx } from './commands.js';
 import { EXIT, type ExitCode } from './exit.js';
 import { parseArgs, parseDuration } from './args.js';
@@ -135,6 +137,12 @@ async function main(): Promise<void> {
     configPath: configPath(),
     historyPath: join(storeDir(), 'history.jsonl'),
     readFile: (p) => readFile(p, 'utf-8'),
+    // Adjent writes only under its own directory, and creates it on demand.
+    writeFile: async (p, content) => {
+      await mkdir(dirname(p), { recursive: true });
+      await writeFile(p, content, 'utf-8');
+    },
+    readPreset: (name) => readPreset(name as PresetName),
     // stdout carries the answer; stderr carries everything else.
     out: (line) => process.stdout.write(line + '\n'),
     err: (line) => process.stderr.write(line + '\n'),
