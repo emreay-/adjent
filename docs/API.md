@@ -196,6 +196,37 @@ Field names follow [GLOSSARY.md](GLOSSARY.md) exactly — `utilization`,
 `bindingLimit`, `burnPctPerHour`. No synonyms enter the API, because a synonym
 in a published payload is permanent.
 
+## Exit codes
+
+Every CLI command uses one table, so a script can branch on the code without
+parsing output. **Fixed from here on** — a new meaning takes a new number.
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success. For `check`, the predicate held. |
+| 1 | Internal error. |
+| 2 | Usage error — unknown command or flag. |
+| 3 | No data — no backend detected, or no quota reported. |
+| 4 | `check` predicate did not hold. |
+| 5 | Data staler than `--max-age`, and only when that flag was given. |
+| 6 | Config invalid (`rules validate`). |
+
+Three of these deserve a note, because the distinctions are the point:
+
+* **3 is not an error.** A machine with no agent installed reports code 3 and a
+  valid, empty snapshot. Treat it as "nothing to say", not as a failure.
+* **4 is not an error either.** `check` answering *no* is a successful
+  evaluation, which is why it is separate from 1. A CI step that treats any
+  non-zero code as breakage will misread a working budget gate.
+* **5 only ever appears when you asked for it.** Without `--max-age`, stale data
+  is returned with its `observedAt` and no complaint — deciding what counts as
+  too old is the caller's business, not Adjent's.
+
+**JSON on stdout, everything else on stderr.** A pipe never receives a progress
+line, a warning or a cleared screen, and `--json` implies non-interactive
+output. Degradation notes go to stderr *and* set the exit code, so a consumer
+reading only stdout still gets valid JSON and still knows something was wrong.
+
 ## What is never in a payload
 
 Adjent is metadata-only, and that is enforced at the parser rather than

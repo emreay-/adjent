@@ -271,3 +271,66 @@ describe('machineId', () => {
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 });
+
+// ------------------------------------------------------------ the documented example
+/**
+ * docs/API.md is the contract consumers actually read, so a payload documented
+ * there and never emitted is worse than no documentation at all. This parses
+ * the example straight out of the markdown and diffs its shape against what
+ * the code produces — the doc cannot drift without failing here.
+ */
+describe('docs/API.md matches what the code emits', () => {
+  const API_MD = path.join(__dirname, '..', '..', '..', 'docs', 'API.md');
+
+  /** First fenced ```json block in the document — the snapshot example. */
+  function documentedExample(): Record<string, unknown> {
+    const md = readFileSync(API_MD, 'utf-8');
+    const m = /```json\n([\s\S]*?)```/.exec(md);
+    expect(m, 'docs/API.md has no fenced json example').not.toBeNull();
+    return JSON.parse(m![1]!) as Record<string, unknown>;
+  }
+
+  /** Recursive key shape: sorted keys per object path, arrays folded to [0]. */
+  function shape(v: unknown, at = '$', out: Record<string, string[]> = {}): Record<string, string[]> {
+    if (Array.isArray(v)) {
+      if (v.length > 0) shape(v[0], `${at}[]`, out);
+    } else if (v !== null && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      out[at] = Object.keys(o).sort();
+      for (const k of Object.keys(o)) shape(o[k], `${at}.${k}`, out);
+    }
+    return out;
+  }
+
+  it('documents every key the snapshot emits, and no key it does not', () => {
+    const documented = shape(documentedExample());
+    const emitted = shape(toSnapshot(state(), { machineId: MACHINE }));
+
+    // Provenance maps are keyed by field name and vary per object, so compare
+    // them as a set of paths rather than demanding identical contents.
+    const strip = (o: Record<string, string[]>) =>
+      Object.fromEntries(Object.entries(o).filter(([k]) => !k.includes('provenance')));
+
+    expect(strip(documented)).toEqual(strip(emitted));
+  });
+
+  it('documents the same provenance values the code assigns', () => {
+    const doc = documentedExample() as { limits: { provenance: unknown }[]; agents: { provenance: unknown }[] };
+    const live = toSnapshot(state(), { machineId: MACHINE });
+    expect(doc.limits[0]!.provenance).toEqual(live.limits[0]!.provenance);
+    expect(doc.agents[0]!.provenance).toEqual(live.agents[0]!.provenance);
+  });
+
+  it('pins the schemaVersion in the prose as well as the code', () => {
+    expect((documentedExample() as { schemaVersion: number }).schemaVersion).toBe(SCHEMA_VERSION);
+  });
+
+  it('documents the exit-code table the CLI is required to use', () => {
+    const md = readFileSync(API_MD, 'utf-8');
+    // The table is a contract for scripts; losing a row silently would be worse
+    // than losing a field, because nothing type-checks an exit code.
+    for (const code of [0, 1, 2, 3, 4, 5, 6]) {
+      expect(md, `exit code ${code} is undocumented`).toMatch(new RegExp(`^\| ${code} \|`, 'm'));
+    }
+  });
+});
