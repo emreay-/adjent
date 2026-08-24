@@ -409,7 +409,7 @@ Hovering an agent row shows that agent rather than a generic definition:
 directory, branch, session name, backend and entrypoint, when it started, when
 it last took a turn, its derived burn, and its token split. The **directory in
 full** is the point — sibling worktrees of the same repository share a folder
-name, so `adjent` and `adjent-core` are only distinguishable by path.
+name, so `adjent` and `adjent-<area>` are only distinguishable by path.
 
 ## Progressive disclosure
 
