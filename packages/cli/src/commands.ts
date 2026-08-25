@@ -240,7 +240,19 @@ export const check: Command = async (ctx, flags) => {
   }
 
   if (result.noData) {
-    ctx.err(degradationNote(snapshot) ?? 'no limit matched the given filters');
+    // Limit keys are the vendors' own, not a scheme Adjent invents: `session`
+    // and `weekly_all` rather than `5h` and `7d`. So a filter that matches
+    // nothing is usually a guess at the name, and the useful reply is the list
+    // — not "no data", which reads as "you have no quota".
+    const note = degradationNote(snapshot);
+    if (note) {
+      ctx.err(note);
+    } else if (snapshot.limits.length > 0) {
+      const available = snapshot.limits.map((l) => `${l.backend}/${l.key}`).join(', ');
+      ctx.err(`no limit matched. Available: ${available}`);
+    } else {
+      ctx.err('no limit matched the given filters');
+    }
     return EXIT.NO_DATA;
   }
   if (result.ok) return EXIT.OK;
@@ -541,32 +553,36 @@ export const USAGE = `usage: adjent <command> [options]
   limits                quota limits, binding first then by urgency
   agents                every live and idle session, most expensive first
   statusline            one line, for Claude Code's statusLine setting
-  explain <term>        plain-language definition of any metric shown
+  watch                 continuous loop; --json streams JSONL events
   check                 budget gate for scripts; the exit code is the answer
+  explain <term>        plain-language definition of any metric shown
+
+  rules init            write ~/.adjent/alarms.yaml from a preset
   rules validate [path] check alarms.yaml and print what will actually run
   rules test            replay rules against recorded history
-  rules init            write ~/.adjent/alarms.yaml from a preset
   rules presets         list the presets and what each is for
-
-rules test options:
-  --against <file>      history JSONL to replay (default ~/.adjent/history.jsonl)
-  --rules <file>        rules to test, instead of the live alarms.yaml
-
-rules init options:
-  --preset <name>       default | conservative | weekly-guard | fleet | ci-gate
-  --force               overwrite an existing alarms.yaml
-  watch                 continuous loop with alarms
 
 options:
   --json                machine-readable output on stdout (see docs/API.md)
   --quiet               print nothing; the exit code is the answer
 
-check options:
+check:
   --budget <pct>        at least this share of the limit must remain
   --max-utilization <pct>   utilization must be at most this
   --pace <verdict,...>  acceptable verdicts (on-pace, ahead, over, idle)
   --backend <id>        narrow to one vendor
   --limit <key>         narrow to one limit, instead of the binding one
   --max-age <dur>       reject a reading older than this (90s, 15m, 2h)
+
+watch:
+  --interval <dur>      poll period (default 30s)
+
+rules init:
+  --preset <name>       default | conservative | weekly-guard | fleet | ci-gate
+  --force               overwrite an existing alarms.yaml
+
+rules test:
+  --against <file>      history JSONL to replay (default ~/.adjent/history.jsonl)
+  --rules <file>        rules to test, instead of the live alarms.yaml
 
 exit codes: 0 ok · 2 usage · 3 no data — full table in docs/API.md`;
