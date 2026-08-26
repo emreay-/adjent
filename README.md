@@ -216,7 +216,17 @@ node-gyp or a prebuild matrix. Storage is JSON and JSONL under `~/.adjent/`;
 notifications are Electron's own. If a dependency needs a native build, the
 answer is a different dependency.
 
+## Contributing
+
+Issues and pull requests are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the setup, the house rules and what a
+good PR looks like. There is **no CLA**: contributions are accepted under the
+same MIT terms as the project, and a sign-off line is all that is asked.
+
 ## Licence
 
-MIT — see [`package.json`](package.json). A `LICENSE` file and a decision on the
-final licence are tracked in the roadmap.
+[MIT](LICENSE).
+
+Permissive on purpose. Adjent is more useful to more people if anyone can take
+it, embed it, or build on it, and that matters more here than defending against
+a hypothetical competitor.
