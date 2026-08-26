@@ -1574,3 +1574,127 @@ describe('the dashboard component budget', () => {
     expect(html).not.toContain('id="alarms"');
   });
 });
+// ---------------------------------------------------------------------------
+// The header count and the list it counts.
+//
+// The count used to be written inside `render`, which only runs while the
+// dashboard is showing. Opening the agents view froze it at whatever it was on
+// the way in while the list beneath went on updating: four green dots under a
+// header reading "3 live".
+// ---------------------------------------------------------------------------
+describe('the live count', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  /** n live agents, m idle, and one ended, in a deliberately jumbled order. */
+  function mixed(n: number, m: number) {
+    const p = payload() as { state: { agents: Record<string, unknown>[]; agentBurns: unknown[] } };
+    const base = p.state.agents[0]!;
+    const mk = (id: string, state: string, tok: number) => ({
+      ...base,
+      id,
+      label: id,
+      projectPath: `/w/${id}`,
+      state,
+      totals: { input: tok, cacheWrite: 0, cacheRead: 0, output: 0, thinking: 0 },
+    });
+    const agents: Record<string, unknown>[] = [];
+    for (let i = 0; i < m; i++) agents.push(mk(`idle${i}`, 'idle', 9000 - i));
+    for (let i = 0; i < n; i++) agents.push(mk(`live${i}`, 'live', 10 + i));
+    agents.push(mk('gone', 'ended', 99_999));
+    p.state.agents = agents;
+    p.state.agentBurns = [];
+    return p;
+  }
+
+  const greens = (html: string): number => [...html.matchAll(/--good\)"><\/span>/g)].length;
+
+  it('counts what the dots show', () => {
+    h.onState(mixed(4, 3));
+    expect(h.els.get('liveCount')!.textContent).toBe('4 live');
+    expect(greens(h.els.get('agents')!.innerHTML)).toBeLessThanOrEqual(4);
+  });
+
+  it('keeps counting while the agents view is open', () => {
+    h.onState(mixed(3, 2));
+    h.fire('liveCount');
+    expect(h.els.get('agentsView')!.hidden).toBe(false);
+
+    // A tick arrives with a fourth agent now running.
+    h.onState(mixed(4, 2));
+    expect(h.els.get('liveCount')!.textContent).toBe('4 live');
+    expect(greens(h.els.get('agentList')!.innerHTML)).toBe(4);
+  });
+
+  it('keeps counting while any other view is open', () => {
+    h.onState(mixed(2, 1));
+    h.fire('bell');
+    h.onState(mixed(5, 1));
+    expect(h.els.get('liveCount')!.textContent).toBe('5 live');
+  });
+
+  it('does not count agents that have ended', () => {
+    // `mixed` always adds one ended agent, and it is the biggest spender.
+    h.onState(mixed(2, 0));
+    expect(h.els.get('liveCount')!.textContent).toBe('2 live');
+  });
+});
+
+describe('agent ordering by state', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  const names = (html: string): string[] => [...html.matchAll(/class="name">([^<]+)</g)].map((m) => m[1]!);
+
+  /** A live agent that has barely spent, under an idle one that spent a lot. */
+  function liveUnderIdle() {
+    const p = payload() as { state: { agents: Record<string, unknown>[]; agentBurns: unknown[] } };
+    const base = p.state.agents[0]!;
+    const mk = (id: string, state: string, tok: number) => ({
+      ...base,
+      id,
+      label: id,
+      projectPath: `/w/${id}`,
+      state,
+      totals: { input: tok, cacheWrite: 0, cacheRead: 0, output: 0, thinking: 0 },
+    });
+    p.state.agentBurns = [];
+    p.state.agents = [mk('rich-idle', 'idle', 3_300_000), mk('poor-live', 'live', 41_400)];
+    return p;
+  }
+
+  it('puts a running agent above an idle one that spent more', () => {
+    // The panel answers "should I change what I am doing right now?". An agent
+    // that stopped cannot be part of that answer, however much it spent.
+    h.onState(liveUnderIdle());
+    expect(names(h.els.get('agents')!.innerHTML)).toEqual(['poor-live', 'rich-idle']);
+  });
+
+  it('puts an ended agent last, whatever it cost', () => {
+    const p = liveUnderIdle() as { state: { agents: Record<string, unknown>[] } };
+    p.state.agents.unshift({
+      ...(p.state.agents[0] as object),
+      id: 'gone',
+      label: 'gone',
+      projectPath: '/w/gone',
+      state: 'ended',
+      totals: { input: 900_000_000, cacheWrite: 0, cacheRead: 0, output: 0, thinking: 0 },
+    });
+    h.onState(p);
+    h.fire('liveCount');
+    h.onState(p);
+    expect(names(h.els.get('agentList')!.innerHTML)).toEqual(['poor-live', 'rich-idle', 'gone']);
+  });
+
+  it('still ranks by burn within a state', () => {
+    const p = liveUnderIdle() as { state: { agents: { id: string }[]; agentBurns: unknown[] } };
+    p.state.agents.push({ ...(p.state.agents[1] as object), id: 'busy-live', label: 'busy-live', projectPath: '/w/busy-live' } as { id: string });
+    p.state.agentBurns = [{ agentId: 'busy-live', pctPerHour: 4.8, confidence: 'high' }];
+    h.onState(p);
+    expect(names(h.els.get('agents')!.innerHTML).slice(0, 2)).toEqual(['busy-live', 'poor-live']);
+  });
+});

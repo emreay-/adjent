@@ -191,11 +191,28 @@ function renderChart(a, now, history, svg) {
 }
 
 // --------------------------------------------------------------------------
+/**
+ * The count in the header.
+ *
+ * It belongs to the window, not to the dashboard, so it is written on every
+ * payload rather than inside `render`. It used to live in `render`, which only
+ * runs while the dashboard is showing — so opening the agents view froze the
+ * count at whatever it was on the way in, and the list beneath it went on
+ * updating. Four green dots under a header reading "3 live" is exactly what
+ * that looks like, and the list was the one telling the truth.
+ *
+ * Same predicate as the dot beside each row, from the provider's own state:
+ * nothing else is entitled to an opinion about whether an agent is running.
+ */
+function renderLiveCount(state) {
+  const n = state.agents.filter((x) => x.state === 'live').length;
+  $('liveCount').textContent = `${n} live`;
+}
+
 function render(payload) {
   const state = payload.state;
   const now = state.generatedAt;
   const live = state.agents.filter((x) => x.state !== 'ended');
-  $('liveCount').textContent = `${live.filter((x) => x.state === 'live').length} live`;
 
   const binding = state.limits.find((w) => w.binding);
   if (!binding) return;
@@ -689,13 +706,21 @@ function updateBellDot() {
  * same agents in two different orders reads as a bug even when both are
  * "right", so there is now one order and the dashboard is its first four.
  *
- * Burn first — what it is costing now is the question the panel exists to
- * answer. Then tokens in the limit, which ranks the agents the fit is silent
- * about by what they have actually spent. Then last activity, and finally the
- * id, so the order is total: no two agents can swap places on a tick where
- * nothing about either of them changed.
+ * State first. The panel exists to answer "should I change what I am doing
+ * right now?", and an agent that stopped an hour ago cannot be part of that
+ * answer however much it spent while it ran. Without this the list interleaved
+ * them by spend alone, so a live agent sat below three idle ones and the
+ * ordering read as arbitrary — which it was, for the question being asked.
+ *
+ * Then burn, which is what a running agent is costing right now. Then tokens in
+ * the limit, which ranks the agents the fit is silent about by what they have
+ * actually spent. Then last activity, and finally the id, so the order is
+ * total: no two agents can swap places on a tick where nothing about either of
+ * them changed.
  */
+const STATE_RANK = { live: 0, idle: 1, ended: 2 };
 const byCost = (burnOf) => (a, b) =>
+  (STATE_RANK[a.state] ?? 1) - (STATE_RANK[b.state] ?? 1) ||
   (burnOf.get(b.id) ?? 0) - (burnOf.get(a.id) ?? 0) ||
   sumKinds(b.totals) - sumKinds(a.totals) ||
   (b.lastActivityAt || 0) - (a.lastActivityAt || 0) ||
@@ -1276,6 +1301,12 @@ function reportRenderError(where, err) {
 
 window.adjent.onState((payload) => {
   lastPayload = payload;
+  // Before any view-specific rendering: the header is on screen in all of them.
+  try {
+    renderLiveCount(payload.state);
+  } catch (err) {
+    reportRenderError('header', err);
+  }
   if (payload.explanations) EXPL = payload.explanations;
   if (payload.provenanceNote) PROV_NOTE = payload.provenanceNote;
   current = payload.settings || current;

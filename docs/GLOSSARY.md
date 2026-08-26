@@ -37,7 +37,26 @@ The panel shows "resets in 2h 41m", not "the countdown in the primary read".
 | **Projection** | The dotted line: where your current burn rate lands you. |
 | **Exhausts at** | When the projection hits 100%. If that is before the limit resets, you run out. |
 | **Verdict** | The one-word summary: *On pace* / *Ahead of pace* / *Over*. |
-| **Agent** | One running session of one backend, in one project. Subagents are counted separately and attributed to their parent. |
+| **Agent** | One session you started, of one backend, in one project. A session's subagents are part of it, not agents beside it — see [Sessions and their subagents](#sessions-and-their-subagents). |
+
+### Sessions and their subagents
+
+A Claude session that delegates writes a transcript per subagent, under
+`projects/<slug>/<sessionId>/subagents/`. Adjent reads all of them and rolls
+their turns up into the session that spawned them: **one row, one live count,
+one burn figure, all of the spend.**
+
+The alternative — a row per subagent — was rejected because of what the count in
+the panel header is for. It answers "how many things did I set running?", and a
+session that fans out to six subagents for ninety seconds is still one thing you
+started; a header that jumped from 3 to 9 and back would be noise, and the
+per-row burn would be split across rows nobody chose to create. Nothing is lost:
+the subagents' tokens are all in the parent's totals, because they were spent on
+the parent's behalf.
+
+The tokens are counted exactly once, at the parent. Counting them at both levels
+is one of the two things a persistent gap between the vendor's number and
+Adjent's would indicate — see [The free consistency check](#the-free-consistency-check).
 
 ## Modelling words — the derived layer
 
@@ -53,7 +72,7 @@ The panel shows "resets in 2h 41m", not "the countdown in the primary read".
 | **Prior** | A starting belief about an answer, held before seeing any data, that observation is then allowed to correct. Adjent's prior is the price ratios. |
 | **Hat** ( $\hat{w}$ ) | Standard statistics notation for "our estimate of". $w$ is the true weight, unknown and unknowable directly; $\hat{w}$ is the number we fitted from data. Everything Adjent displays that involves weights is built on $\hat{w}$, never $w$ — which is why those numbers carry `≈`. |
 | **NNLS** | Non-negative least squares. Ordinary least squares, plus the constraint that every fitted value must be ≥ 0. A standard, solved problem. |
-| **λ (lambda)** | The regularisation strength — the dial between "trust the data" and "trust the prior". See [the estimator](#step-4-stop-the-fit-thrashing-regularisation) below. |
+| **λ (lambda)** | The regularisation strength — the dial between "trust the data" and "trust the prior". See [the estimator](#step-4-stop-the-fit-thrashing--regularisation) below. |
 | **EWMA** | Exponentially weighted moving average — a cheap way to smooth a jittery series. See [smoothing](#why-smoothing-is-required-not-cosmetic). |
 | **Cold start** | The state before Adjent has enough observations to fit anything. See [Cold start](#cold-start-what-adjent-knows-and-when). |
 | **Fit residual** ( $e_n$ ) | How much the model's prediction misses the measurement by, on one poll. Signed. Small *and unbiased across subgroups* means the model is right — see [the miss](#the-miss-and-why-it-is-the-most-useful-number-here). |

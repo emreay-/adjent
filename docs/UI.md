@@ -530,12 +530,36 @@ is always one visible way home rather than a per-view back button and a guess.
 | 2 | Panel, at rest | verdict · hero · chart · other windows · agent rows |
 | 3 | Click a limit | every limit listed, and for the chosen one: its own curve, numbers, and the exact token split by model and kind - see [Any limit, on demand](#any-limit-on-demand) |
 | 4 | Click an agent | its session timeline, subagent tree, per-turn tokens |
+| 4¼ | Click the live count | every agent, ordered as below |
 | 4½ | Notifications | the durable alarm log, grouped by day — toasts vanish, this does not |
 | 5 | Settings | interface size, tray glyph, widget/taskbar, poll cadence, pause alarms |
 | 5½ | Alarm rules | `~/.adjent/alarms.yaml` edited in place, with live diagnostics and the effective rule set — see [Editing the rules](#editing-the-rules) |
 
 Nothing from tier 3 or below is ever promoted to the resting surface "because it
 is interesting". Interesting is not the bar; *actionable right now* is.
+
+### Ordering the agents
+
+Both agent lists — the four on the dashboard and the full list behind the header
+count — use one comparator, and the dashboard is its first four. Two lists of the
+same agents in two different orders reads as a bug even when neither is wrong.
+
+The order is **state, then cost**:
+
+1. **Live, then idle, then ended.** The panel answers "should I change what I am
+   doing right now?", and an agent that stopped an hour ago cannot be part of
+   that answer however much it spent while it ran. Ordering on spend alone put
+   live agents below idle ones and made the list look arbitrary.
+2. **Burn rate**, descending — what a running agent is costing right now.
+3. **Tokens in the limit**, which ranks the agents the fit is silent about by
+   what they have actually spent. Without it they all tie at zero.
+4. **Last activity**, then the **id**. These make the order *total*: no two
+   agents can swap places on a tick where nothing about either of them changed.
+
+The count in the header uses the provider's own `live` state — the same
+predicate as the dot beside each row, so the two can never disagree. It is
+written on every tick rather than only while the dashboard is showing; when it
+was not, opening the agent list froze the count while the list kept updating.
 
 ### Editing the rules
 
