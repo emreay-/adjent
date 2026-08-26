@@ -85,7 +85,11 @@ to look abnormal against.
 
 ## Configuration
 
-Declarative, hot-reloaded from `~/.adjent/alarms.yaml`:
+Declarative, hot-reloaded from `~/.adjent/alarms.yaml`. Edit it in your own
+editor, or in the panel under **Settings → Alarm rules**, which is the same file
+with the diagnostics and the effective rule set shown live beside it — see
+[UI.md § Editing the rules](UI.md#editing-the-rules). Both paths are equivalent:
+the file is watched, so a save applies without a restart either way.
 
 ```yaml
 alarms:

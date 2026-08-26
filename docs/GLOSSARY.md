@@ -564,6 +564,44 @@ two, but no single noisy poll can dominate. The EWMA is reset — not merely
 smoothed through — whenever the limit rolls over, since the drop to near-zero is
 real and must not be averaged away.
 
+### A rate whose readings have stopped arriving
+
+The recursion above advances on observations, so a limit that stops producing
+them keeps whatever rate it last had — indefinitely. That is not hypothetical:
+Codex publishes its rate limits inside transcript lines, so when nothing is
+running no reading arrives and $t$ freezes. For a synthetic illustration, a 7-day limit with no active agents might
+keep reporting $+3.0$ %/h from a reading taken the previous night, projecting
+a future wall from a rate that is no longer current.
+
+The fix follows from what silence actually is. Adjent reads the same files the
+spend is written to, so a frozen reading and no spend are the *same event*: had
+anything been running, the reading would have moved. Standing still is therefore
+not an absence of evidence, it is evidence of zero — and the estimate is aged
+accordingly, on the wall clock, at the same half-life:
+
+$$\bar{r}(t_{\text{now}}) = \bar{r}_n \cdot 2^{-(t_{\text{now}} - t_n - G)/T_{1/2}}$$
+
+| Symbol | Meaning |
+| --- | --- |
+| $t_n$ | when the last reading arrived |
+| $G$ | grace period, 2 minutes — below it nothing is inferred from the silence |
+
+This is exactly what a stream of unchanged readings would have done to the EWMA,
+so it is not a display rule bolted on top: it is the same recursion, run against
+the observations that silence stands in for. The decay is written back into the
+track, so it accrues once per elapsed hour rather than once per poll, and the
+next genuine sample continues from the decayed value rather than from a rate the
+limit had hours ago.
+
+The grace exists because a late reading is normal — a long turn produces none
+for minutes at a time, and reading that as a stop would make the rate sag during
+exactly the turns that are spending most. Below $0.05$ %/h the rate is dropped
+rather than reported: a projection built on $0.03$ %/h names a date months away
+and reads as a fact.
+
+One thing this cannot see is another machine spending the same account. Neither
+could the frozen figure, which claimed to.
+
 ## Per-agent burn rate — derived, needs the weights
 
 The vendor reports nothing per-agent, so this one has to be built. It is the same

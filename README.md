@@ -37,6 +37,8 @@ work: **should I change what I am doing right now?**
   each is costing per hour.
 - **Alarms you can prove before you trust them.** `adjent rules test` replays
   your rules against your own recorded history and shows what would have fired.
+  Edit them in the panel or in your editor — either way the file is watched, so
+  a save applies without a restart.
 - **A programmatic surface.** Every command speaks `--json`, `adjent check` is a
   budget gate with meaningful exit codes, and `adjent watch --json` is a JSONL
   event stream.

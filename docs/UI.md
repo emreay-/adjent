@@ -195,7 +195,12 @@ The panel is designed to be read in one downward glance, in this order:
    is always that metric — see [The hero number, exactly](#the-hero-number-exactly).
 3. **The pace chart** — see below. If the read stops here, it has still worked.
 
-Only then: the other windows, one line each; then live agents; then alarms.
+Only then: the other windows, one line each; then live agents.
+
+Alarms are deliberately *not* on this surface. They had a "recent alarms" strip
+here and it was removed: the notifications view shows the same records with
+their day, their severity and the state they fired in, so the strip was the same
+information, worse, on the surface with the tightest budget of all.
 
 ## The hero number, exactly
 
@@ -526,10 +531,39 @@ is always one visible way home rather than a per-view back button and a guess.
 | 3 | Click a limit | every limit listed, and for the chosen one: its own curve, numbers, and the exact token split by model and kind - see [Any limit, on demand](#any-limit-on-demand) |
 | 4 | Click an agent | its session timeline, subagent tree, per-turn tokens |
 | 4½ | Notifications | the durable alarm log, grouped by day — toasts vanish, this does not |
-| 5 | Settings | interface size, tray glyph, widget/taskbar, poll cadence, pause alarms; alarm rules and sinks in `~/.adjent/alarms.yaml` |
+| 5 | Settings | interface size, tray glyph, widget/taskbar, poll cadence, pause alarms |
+| 5½ | Alarm rules | `~/.adjent/alarms.yaml` edited in place, with live diagnostics and the effective rule set — see [Editing the rules](#editing-the-rules) |
 
 Nothing from tier 3 or below is ever promoted to the resting surface "because it
 is interesting". Interesting is not the bar; *actionable right now* is.
+
+### Editing the rules
+
+The panel is where you find out that a rule fires four times an hour. Having to
+leave for a terminal to quieten it is the wrong shape, so the rules are editable
+where their consequences are visible.
+
+It is an editor over the YAML, not a form. The file is the documented interface
+([ALARMS.md](ALARMS.md)); the presets are commented prose written to be read; and
+a form could only expose the keys it happened to model, discarding the rest of
+someone's file on the first save. What the panel adds is the part a text editor
+cannot:
+
+* **Diagnostics as you type** — the same ones `adjent rules validate` prints,
+  from the same parser. The renderer has no parser of its own and must never
+  grow one that could disagree with the loader.
+* **The effective rule set** — what will actually run. Loading is deliberately
+  lenient, so a file can be half-ignored and still work: "no errors" and "the
+  rules you meant" are different questions, and only the second is useful.
+* **A refusal to save a file with an error in it.** Writing it would be legal —
+  the loader is lenient and the watcher keeps the running rules — but it would
+  leave a file on disk that does not do what it says.
+* **Presets as drafts.** Choosing one fills the editor and writes nothing.
+  Replacing someone's tuned rules the moment they touch a dropdown is data loss,
+  so it is a draft until Save, and Revert throws it away.
+
+Saving applies immediately: the file is watched, so there is no restart, and
+editing it in your own editor behaves identically.
 
 ## Hover explanations
 

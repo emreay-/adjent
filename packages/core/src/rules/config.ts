@@ -61,6 +61,24 @@ export const DEFAULT_CONFIG: AlarmConfig = {
 
 export const configPath = (): string => path.join(os.homedir(), '.adjent', 'alarms.yaml');
 
+/**
+ * Write the config file the way an editor would — atomically.
+ *
+ * The file is watched, and the watcher reacts to a write in progress as readily
+ * as to a finished one. A direct write is briefly a truncated document, which
+ * would be read, reported as broken, and complained about in a toast that
+ * describes a state that no longer exists by the time it appears. Writing a
+ * temporary file and renaming it means the watcher only ever sees whole files.
+ *
+ * This is Adjent's own directory. Nothing here goes near a vendor's.
+ */
+export async function saveConfigText(text: string, file: string = configPath()): Promise<void> {
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  await fs.writeFile(tmp, text, 'utf-8');
+  await fs.rename(tmp, file);
+}
+
 export async function loadConfig(file: string = configPath()): Promise<AlarmConfig> {
   let text: string;
   try {

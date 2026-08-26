@@ -66,8 +66,6 @@
   .row .meta { margin-left:auto; font-family:Consolas, monospace; font-size:10.5px; color:var(--muted); white-space:nowrap; }
   .row .meta b { color:var(--ink2); font-weight:600; }
 
-  .alarm { font-size:11.5px; color:var(--ink2); padding:3px 0; }
-  .alarm b { font-weight:600; }
   .empty { color:var(--muted); font-size:12px; padding:4px 0; }
   #renderError {
     background:var(--crit-bg); color:var(--crit); font-size:11px; padding:6px 14px;
@@ -118,8 +116,17 @@
     transition:opacity .12s ease; background:var(--surface); color:var(--ink2);
     border:1px solid var(--line); border-radius:5px; padding:9px 11px;
     box-shadow:0 4px 20px -6px rgba(0,0,0,.45); font-size:11.5px; line-height:1.5;
+    /* A card can be far taller than the panel — one model's spend can name two
+       dozen sessions. It takes the height positionTip gives it and scrolls the
+       rest, rather than running off the bottom edge where nothing can reach it. */
+    overflow-y:auto; overscroll-behavior:contain;
   }
-  #tip.on { opacity:1; }
+  /* Only the visible card takes the pointer. An invisible one that did would be
+     a transparent sheet over the panel, swallowing clicks on the rows beneath. */
+  #tip.on { opacity:1; pointer-events:auto; }
+  #tip::-webkit-scrollbar { width:8px; }
+  #tip::-webkit-scrollbar-thumb { background:var(--line); border-radius:4px; }
+  #tip::-webkit-scrollbar-track { background:transparent; }
   #tip .t { display:block; font-weight:700; color:var(--ink); font-size:11.5px; margin-bottom:3px; }
   #tip .p {
     display:inline-block; margin-top:6px; padding:1.5px 6px; border-radius:3px;
@@ -247,6 +254,57 @@
     display:block; margin-top:2px; margin-left:15px; font-family:Consolas, monospace;
     font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
+  /* Alarm-rules editor. The file is the interface (docs/ALARMS.md), so this is
+     an editor over the YAML, not a form: a form would silently drop every key
+     it did not model, and the presets are commented prose meant to be read. */
+  #rulesText {
+    width:100%; height:210px; resize:vertical; margin-top:6px;
+    background:var(--surface); color:var(--ink); border:1px solid var(--line);
+    border-radius:4px; padding:8px 9px; font-family:Consolas, monospace;
+    font-size:11px; line-height:1.5; tab-size:2; user-select:text;
+  }
+  #rulesText:focus { outline:1px solid var(--good); outline-offset:-1px; }
+  #rulesText.bad { border-color:var(--crit); }
+  .rulesPath {
+    font-family:Consolas, monospace; font-size:10px; color:var(--muted);
+    word-break:break-all; user-select:text;
+  }
+  .rulesBar { display:flex; align-items:center; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  .rulesBar .grow { margin-left:auto; }
+  .btn {
+    background:var(--surface); border:1px solid var(--line); color:var(--ink);
+    border-radius:3px; cursor:pointer; font:inherit; font-size:11.5px; padding:3px 10px;
+  }
+  .btn:hover:not(:disabled) { border-color:var(--muted); }
+  .btn:disabled { opacity:.45; cursor:default; }
+  .btn.primary { background:var(--good-bg); color:var(--good); border-color:var(--good); }
+  .btn.primary:disabled { background:none; color:var(--muted); border-color:var(--line); }
+  select.preset {
+    background:var(--surface); border:1px solid var(--line); color:var(--ink);
+    border-radius:3px; font:inherit; font-size:11.5px; padding:3px 6px; max-width:150px;
+  }
+  .diag { display:block; font-size:11px; padding:3px 0; line-height:1.45; }
+  .diag .where { font-family:Consolas, monospace; font-size:10.5px; }
+  .diag.error { color:var(--crit); }
+  .diag.warn { color:var(--warn); }
+  .ruleCard { padding:6px 0; border-bottom:1px solid var(--line); }
+  .ruleCard:last-child { border-bottom:none; }
+  .ruleCard .top { display:flex; align-items:baseline; gap:8px; font-size:12px; }
+  .ruleCard .id { font-weight:600; }
+  .ruleCard .kind {
+    font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+    border:1px solid var(--line); border-radius:3px; padding:0 4px;
+  }
+  .ruleCard .sev { margin-left:auto; font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
+  .ruleCard .sev.info { color:var(--muted); }
+  .ruleCard .sev.warn { color:var(--warn); }
+  .ruleCard .sev.critical { color:var(--crit); }
+  .ruleCard .terms {
+    display:block; margin-top:2px; font-family:Consolas, monospace; font-size:10px; color:var(--muted);
+  }
+  .saveNote { font-size:11px; }
+  .saveNote.ok { color:var(--good); }
+  .saveNote.bad { color:var(--crit); }
   h2 { font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:4px; }
 </style>
 </head>
@@ -266,8 +324,11 @@
     </section>
     <section><h2 data-tip="otherLimits" data-limit-all title="Show every limit">Other limits</h2><div id="limits"><div class="empty">–</div></div></section>
     <section><h2 data-tip="agentBurn">Agents</h2><div id="agents"><div class="empty">–</div></div></section>
-    <section><h2>Recent alarms</h2><div id="alarms"><div class="empty">None</div></div>
-      <div class="tokline" id="conf" data-tip="confidence" style="margin-top:8px"></div></section>
+    <!-- The recent-alarms strip lived here. It duplicated the notifications
+         view, which shows the same records with their day, their severity and
+         the state they fired in — so the strip was the same information,
+         worse, on the surface with the tightest component budget. -->
+    <section><div class="tokline" id="conf" data-tip="confidence"></div></section>
     <section id="agentsView" hidden>
       <div class="notifHead">
         <h2 style="margin:0" data-tip="agentBurn">All agents</h2>
@@ -294,6 +355,33 @@
         <h2 style="margin-top:14px" data-tip="tokens">Where it went</h2>
         <div id="limitSplit"><div class="empty">–</div></div>
       </div>
+    </section>
+    <section id="rulesView" hidden>
+      <div class="notifHead">
+        <h2 style="margin:0">Alarm rules</h2>
+        <button id="rulesBack" class="linkbtn" style="margin:0">Back</button>
+      </div>
+      <span class="rulesPath" id="rulesPath"></span>
+      <textarea id="rulesText" spellcheck="false" aria-label="alarms.yaml"></textarea>
+      <div class="rulesBar">
+        <select class="preset" id="rulesPreset" title="Replace the editor with a preset">
+          <option value="">Start from a preset…</option>
+        </select>
+        <span class="grow"></span>
+        <button class="btn" id="rulesRevert" title="Discard edits and reload the file">Revert</button>
+        <button class="btn primary" id="rulesSave">Save</button>
+      </div>
+      <span class="saveNote" id="rulesNote"></span>
+      <p class="hint" id="rulesPresetHint"></p>
+      <div id="rulesDiag"></div>
+      <h2 style="margin-top:14px">What will run</h2>
+      <div id="rulesEffective"><div class="empty">–</div></div>
+      <p class="hint">
+        Saving applies immediately &mdash; the file is watched, so there is no
+        restart. Editing it in your own editor works exactly the same way.
+        <b>Unknown keys are ignored rather than rejected</b>, so
+        &ldquo;what will run&rdquo; is the list that matters, not the file.
+      </p>
     </section>
     <section id="notificationsView" hidden>
       <div class="notifHead">
@@ -354,6 +442,10 @@
       <div class="setRow">
         <label>Pause alarms</label>
         <input type="checkbox" id="pauseAlarms">
+      </div>
+      <div class="setRow">
+        <label>Alarm rules<small>What fires, and when</small></label>
+        <button class="btn" id="openRules">Edit…</button>
       </div>
     </section>
   </main>

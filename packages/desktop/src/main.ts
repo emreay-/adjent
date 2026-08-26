@@ -11,6 +11,7 @@
 import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, screen, shell } from 'electron';
 import type { BrowserWindow as BrowserWindowType, Tray as TrayType } from 'electron';
 import * as path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import type {
   Alarm,
   AlarmConfig,
@@ -71,10 +72,22 @@ function updateTray(utilization: number, pace: number, verdict: string, tooltip:
   tray.setToolTip(tooltip);
 }
 
+/** Severity in one character, for a menu label with no room for a chip. */
+const SEV_MARK: Record<string, string> = { info: '·', warn: '▲', critical: '■' };
+const ellipsis = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
 function buildTrayMenu(): void {
   if (!tray) return;
+  const latest = recentAlarms[recentAlarms.length - 1] ?? null;
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      ...(latest
+        ? [
+            { label: `${SEV_MARK[latest.severity] ?? ''} ${ellipsis(latest.title, 48)}`, enabled: false },
+            { label: 'Show it', click: () => togglePanel('notifications') },
+            { type: 'separator' as const },
+          ]
+        : []),
       { label: 'Open panel', click: () => togglePanel() },
       {
         label: 'Pinned widget (always visible)',
@@ -83,6 +96,7 @@ function buildTrayMenu(): void {
         click: (item) => void applySettings({ widgetEnabled: item.checked }),
       },
       { label: 'Notifications…', click: () => togglePanel('notifications') },
+      { label: 'Alarm rules…', click: () => togglePanel('rules') },
       { label: 'Settings…', click: () => togglePanel('settings') },
       { type: 'separator' },
       {
@@ -161,6 +175,24 @@ function notify(alarm: Alarm): void {
   void monitor?.recordAlarm(alarm);
 }
 
+/**
+ * What Adjent makes of a piece of YAML: what it complained about, and what
+ * would actually run. Both halves matter — loading is deliberately lenient, so
+ * “no errors” and "the rules you meant" are different questions, and a warning
+ * means a key was ignored rather than that anything failed.
+ *
+ * `null` text is the no-file case, which runs on the built-in defaults.
+ */
+function inspect(text: string | null): {
+  diagnostics: Diagnostic[];
+  failed: boolean;
+  effective: AlarmConfig;
+} {
+  if (text === null) return { diagnostics: [], failed: false, effective: core.DEFAULT_CONFIG };
+  const { config, diagnostics } = core.parseConfig(text);
+  return { diagnostics, failed: core.hasErrors(diagnostics), effective: config };
+}
+
 // ---------------------------------------------------------------------------
 // Panel
 // ---------------------------------------------------------------------------
@@ -189,7 +221,7 @@ function createPanel(): BrowserWindowType {
   return win;
 }
 
-function togglePanel(view?: 'settings' | 'notifications'): void {
+function togglePanel(view?: 'settings' | 'notifications' | 'rules'): void {
   if (!panel || panel.isDestroyed()) panel = createPanel();
   if (panel.isVisible() && !view) {
     panel.hide();
@@ -266,8 +298,6 @@ function pushState(): void {
     // arriving in whatever order the vendors happened to report. Sorted on a
     // copy: nothing else should depend on the order limits are stored in.
     state: { ...s, limits: [...s.limits].sort(core.compareUrgency) },
-    // Recent few for the summary strip; the full log for the notifications tab.
-    alarms: recentAlarms.slice(-5),
     alarmHistory: monitor.alarms(),
     // Real utilization samples so the chart draws the measured curve.
     history: binding ? monitor.historyFor(`${binding.limit.backend}:${binding.limit.key}`) : [],
@@ -327,11 +357,22 @@ class ToastSink implements Sink {
   }
 }
 
+/**
+ * The sink named in `routing` as `tray` (docs/ALARMS.md). It holds the recent
+ * few and puts the latest at the top of the tray menu, which is the only place
+ * an alarm is legible without opening anything.
+ *
+ * It used to feed a "Recent alarms" strip on the panel's dashboard as well.
+ * That strip is gone: the notifications view shows the same records with their
+ * day, their severity and the state they fired in, so the strip was the same
+ * information, worse, on the surface with the tightest component budget.
+ */
 class TraySink implements Sink {
   readonly id = 'tray';
   async deliver(a: Alarm): Promise<void> {
     recentAlarms.push(a);
     if (recentAlarms.length > 20) recentAlarms.shift();
+    buildTrayMenu();
   }
 }
 
@@ -388,6 +429,54 @@ async function start(): Promise<void> {
   // shipping every limit's breakdown on every tick would be most of a
   // megabyte of JSON a second for something usually not on screen.
   ipcMain.handle('limit:detail', (_e, key: string) => monitor?.limitDetail(key) ?? null);
+
+  // ------------------------------------------------------------------------
+  // The alarm rules, editable in the panel.
+  //
+  // Authoring rules was CLI-only, which meant the one surface that shows what
+  // the rules *did* had no way to change them: seeing a rule fire four times an
+  // hour and having to leave for a terminal to quieten it is the wrong shape.
+  //
+  // The editor is over the YAML itself rather than a form. The file is the
+  // documented interface (docs/ALARMS.md), the presets are commented and are
+  // meant to be read, and a form would silently drop every key it did not
+  // model. What the panel adds is the part a text editor cannot: the
+  // diagnostics and the effective rule set, live, before the file is saved.
+  // ------------------------------------------------------------------------
+  ipcMain.handle('rules:load', async () => {
+    const file = core.configPath();
+    let text: string | null = null;
+    try {
+      text = await readFile(file, 'utf-8');
+    } catch {
+      // No file is the normal case, not an error: most installs run on the
+      // built-in defaults. Offer those as the starting point, not a blank page.
+      text = null;
+    }
+    return { path: file, exists: text !== null, text, ...inspect(text) };
+  });
+  ipcMain.handle('rules:check', (_e, text: string) => inspect(text));
+  ipcMain.handle('rules:preset', async (_e, name: string) => {
+    if (!core.isPresetName(name)) return null;
+    const text = await core.readPreset(name);
+    return { text, ...inspect(text) };
+  });
+  ipcMain.handle('rules:save', async (_e, text: string) => {
+    const checked = inspect(text);
+    // Refuse to write a file with an error in it. Saving it would be legal —
+    // the loader is lenient and the watcher keeps the running rules — but it
+    // would leave a file on disk that does not do what it says it does.
+    if (checked.failed) return { ok: false, ...checked };
+    try {
+      await core.saveConfigText(text);
+    } catch (err) {
+      return { ok: false, ...checked, error: err instanceof Error ? err.message : String(err) };
+    }
+    return { ok: true, ...checked };
+  });
+  ipcMain.handle('rules:presets', () =>
+    core.PRESET_NAMES.map((name) => ({ name, summary: core.PRESET_SUMMARY[name] })),
+  );
   ipcMain.on('alarms:clear', () => {
     void monitor.clearAlarmHistory().then(pushState);
   });

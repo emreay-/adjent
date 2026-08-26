@@ -12,6 +12,21 @@ const HALF_LIFE_MS = 5 * 60_000;
 const LOOKBACK_MS = 15 * 60_000;
 /** Pace tolerance for the verdict (matches default pace rule). */
 const PACE_TOLERANCE_PP = 10;
+/**
+ * How long a reading may stand still before the rate it implied stops being
+ * evidence about the present.
+ *
+ * A vendor reading arriving late is normal — Codex publishes its rate limits
+ * inside transcript lines, so a long turn produces no reading for minutes at a
+ * time. Below the grace, nothing is inferred from the silence.
+ */
+const BURN_GRACE_MS = 2 * 60_000;
+/**
+ * Below this the rate is not worth reporting, and reporting it costs more than
+ * it says: a projection built on 0.03 %/h names a date months out and reads as
+ * a fact. Matches the floor the panel and the CLI already display at.
+ */
+const BURN_FLOOR_PCT_PER_HOUR = 0.05;
 /** A challenger window must win this many consecutive polls to take the hero slot. */
 const HYSTERESIS_POLLS = 3;
 
@@ -60,7 +75,7 @@ export class LimitAssessor {
   assess(limits: QuotaLimit[], now: number): LimitAssessment[] {
     const out: LimitAssessment[] = [];
     for (const w of limits) {
-      const burn = this.updateBurn(w);
+      const burn = this.updateBurn(w, now);
       const paceLinePct = paceLine(w, now);
       const verdict = verdictFor(w, burn, paceLinePct);
       const exhaustsAt = exhaustion(w, burn, now);
@@ -70,7 +85,26 @@ export class LimitAssessor {
     return out;
   }
 
-  private updateBurn(w: QuotaLimit): BurnRate | null {
+  /**
+   * The measured rate for one limit, aged.
+   *
+   * A rate is a measurement, and a measurement has a moment. The EWMA is
+   * advanced by observations, so a limit whose readings stop arriving used to
+   * keep whatever rate it last had — for ever. That is how a Codex 7-day limit
+   * with nothing running went on claiming +2.8 %/h and projecting a wall four
+   * days out, from a reading taken the previous night.
+   *
+   * Standing still is not an absence of evidence; it is evidence. Adjent reads
+   * the same files the spend is written to, so a frozen reading and no spend
+   * are the same event: had anything been running, the reading would have
+   * moved. The estimate is therefore decayed toward zero on the wall clock at
+   * the smoothing half-life — exactly what a stream of unchanged readings
+   * would have done to it — and dropped once it falls below the floor.
+   *
+   * The one thing this cannot see is another machine spending the same account.
+   * Neither could the frozen figure, which claimed to.
+   */
+  private updateBurn(w: QuotaLimit, now: number): BurnRate | null {
     const key = `${w.backend}:${w.key}`;
     const t = this.tracks.get(key) ?? { samples: [], ewma: null, ewmaAt: null, lastResetsAt: null };
     this.tracks.set(key, t);
@@ -85,9 +119,7 @@ export class LimitAssessor {
     t.lastResetsAt = w.resetsAt ?? t.lastResetsAt;
 
     const last = t.samples[t.samples.length - 1];
-    if (last && w.observedAt <= last.at) {
-      return t.ewma !== null && t.ewmaAt !== null ? { pctPerHour: t.ewma, updatedAt: t.ewmaAt } : null;
-    }
+    if (last && w.observedAt <= last.at) return this.aged(t, now);
     t.samples.push({ at: w.observedAt, utilization: w.utilization });
     const horizon = w.observedAt - 2 * LOOKBACK_MS;
     while (t.samples.length > 2 && (t.samples[0] as { at: number }).at < horizon) t.samples.shift();
@@ -95,13 +127,32 @@ export class LimitAssessor {
     // Raw rate over ~the lookback: r = (u(t) − u(t−h)) / h.
     const ref = t.samples[0] as { at: number; utilization: number };
     const dtMs = w.observedAt - ref.at;
-    if (dtMs <= 0) return t.ewma !== null && t.ewmaAt !== null ? { pctPerHour: t.ewma, updatedAt: t.ewmaAt } : null;
+    if (dtMs <= 0) return this.aged(t, now);
     const raw = ((w.utilization - ref.utilization) / dtMs) * 3600_000;
 
     const alpha = t.ewmaAt === null ? 1 : 1 - Math.pow(2, -(w.observedAt - t.ewmaAt) / HALF_LIFE_MS);
     t.ewma = t.ewma === null ? raw : alpha * raw + (1 - alpha) * t.ewma;
     t.ewmaAt = w.observedAt;
-    return { pctPerHour: t.ewma, updatedAt: w.observedAt };
+    return this.aged(t, now);
+  }
+
+  /**
+   * The stored estimate, decayed for however long the reading has stood still,
+   * and null once it no longer says anything.
+   *
+   * The decay is written back: it is a real update to the estimate, not a
+   * presentation trick, and the next genuine sample must continue from it
+   * rather than from a rate the limit had hours ago.
+   */
+  private aged(t: LimitTrack, now: number): BurnRate | null {
+    if (t.ewma === null || t.ewmaAt === null) return null;
+    const stillMs = now - t.ewmaAt - BURN_GRACE_MS;
+    if (stillMs > 0) {
+      t.ewma *= Math.pow(2, -stillMs / HALF_LIFE_MS);
+      t.ewmaAt = now - BURN_GRACE_MS;
+    }
+    if (Math.abs(t.ewma) < BURN_FLOOR_PCT_PER_HOUR) return null;
+    return { pctPerHour: t.ewma, updatedAt: t.ewmaAt };
   }
 
   /**

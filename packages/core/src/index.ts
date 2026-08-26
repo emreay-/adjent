@@ -16,6 +16,7 @@ export { evaluate, fmtDur, fmtTime, fmtWhen, calendarDaysBetween } from './rules
 export {
   loadConfig,
   parseConfig,
+  saveConfigText,
   hasErrors,
   configPath,
   DEFAULT_CONFIG,

@@ -262,10 +262,11 @@ function render(payload) {
       })
       .join('') || '<div class="empty">None</div>';
 
-  // agent rows (≤4), sorted by burn — derived rates carry ≈
+  // agent rows (≤4), in the same order the agents view uses — derived rates
+  // carry ≈. The dashboard is the head of that list, never a different one.
   const burnOf = new Map(state.agentBurns.map((b) => [b.agentId, b.pctPerHour]));
   const rows = [...live]
-    .sort((a, b) => (burnOf.get(b.id) ?? 0) - (burnOf.get(a.id) ?? 0))
+    .sort(byCost(burnOf))
     .slice(0, 4)
     .map((a) => {
       const burn = burnOf.get(a.id);
@@ -284,10 +285,6 @@ function render(payload) {
         : `fit confidence <b>${esc(state.fitConfidence)}</b> · learning`;
   }
 
-  const alarms = (payload.alarms || []).slice(-4).reverse();
-  $('alarms').innerHTML =
-    alarms.map((a) => `<div class="alarm"><b>${esc(a.title)}</b> — ${esc(a.body)}</div>`).join('') ||
-    '<div class="empty">None</div>';
 }
 
 
@@ -299,12 +296,29 @@ function render(payload) {
 let EXPL = {};
 let PROV_NOTE = {};
 let tipTimer = null;
+/** Pending dismissal, cancelled when the pointer lands on the tooltip itself. */
+let tipHideTimer = null;
 /** Last payload, so per-agent tooltips can resolve an id at hover time. */
 let lastPayload = null;
 
 function hideTip() {
   clearTimeout(tipTimer);
+  clearTimeout(tipHideTimer);
+  tipHideTimer = null;
   $('tip').classList.remove('on');
+}
+
+/**
+ * Leave, but not yet.
+ *
+ * A tooltip that can be scrolled has to be reachable, and the gap between the
+ * row and the tooltip is a mouseout. Without the delay the pointer dismisses
+ * the thing it is travelling towards.
+ */
+function hideTipSoon() {
+  clearTimeout(tipTimer);
+  clearTimeout(tipHideTimer);
+  tipHideTimer = setTimeout(() => $('tip').classList.remove('on'), 160);
 }
 
 /** A row of the little key/value table used by both detail cards. */
@@ -521,32 +535,81 @@ function showTip(target) {
   positionTip(target, tip);
 }
 
-/** Above when there is room, else below; always clamped inside the panel. */
+/** Breathing room between the tooltip and the row, and the panel edge. */
+const TIP_GAP = 8;
+const TIP_EDGE = 6;
+
+/**
+ * Above when there is room, else below; always inside the panel, and never
+ * taller than the space it was given.
+ *
+ * The panel is 560px and a tooltip can be much taller than that — a model that
+ * 24 sessions contributed to lists 24 of them. The old routine placed a card of
+ * whatever height it happened to be and clamped only the top, so everything
+ * past the bottom edge was simply unreachable: the user could see there were 24
+ * agents and read about nine of them.
+ *
+ * So the height is decided here, from the space actually available on the side
+ * with more of it, and the card scrolls within it. Measuring has to happen with
+ * the cap lifted — a card still capped from the previous hover would report the
+ * old height and be placed for a size it no longer is.
+ */
 function positionTip(target, tip) {
+  tip.style.maxHeight = '';
   tip.classList.add('on');
   const r = target.getBoundingClientRect();
-  const tr = tip.getBoundingClientRect();
-  let top = r.top - tr.height - 8;
-  if (top < 6) top = Math.min(r.bottom + 8, window.innerHeight - tr.height - 6);
-  if (top < 6) top = 6;
-  let left = r.left + r.width / 2 - tr.width / 2;
-  left = Math.max(6, Math.min(left, window.innerWidth - tr.width - 6));
-  tip.style.top = `${Math.round(top)}px`;
+  const natural = tip.getBoundingClientRect().height;
+
+  const above = r.top - TIP_GAP - TIP_EDGE;
+  const below = window.innerHeight - r.bottom - TIP_GAP - TIP_EDGE;
+  // Above by preference: it keeps the row that explains the card visible.
+  const putAbove = natural <= above || above >= below;
+  const room = putAbove ? above : below;
+  const height = Math.min(natural, room);
+  if (height < natural) tip.style.maxHeight = `${Math.floor(room)}px`;
+
+  const top = putAbove ? Math.max(TIP_EDGE, r.top - TIP_GAP - height) : Math.min(r.bottom + TIP_GAP, window.innerHeight - height - TIP_EDGE);
+  const tw = tip.getBoundingClientRect().width;
+  let left = r.left + r.width / 2 - tw / 2;
+  left = Math.max(TIP_EDGE, Math.min(left, window.innerWidth - tw - TIP_EDGE));
+  tip.style.top = `${Math.round(Math.max(TIP_EDGE, top))}px`;
   tip.style.left = `${Math.round(left)}px`;
 }
 
 const TIP_SEL = '[data-tip],[data-alarm],[data-agent],[data-split]';
+/** True while the pointer is over the tooltip card itself. */
+const overTip = (el) => !!(el && el.closest && el.closest('#tip'));
+
 document.addEventListener('mouseover', (ev) => {
+  if (overTip(ev.target)) {
+    // Arrived on the card: it stays until the pointer leaves it.
+    clearTimeout(tipHideTimer);
+    tipHideTimer = null;
+    return;
+  }
   const t = ev.target.closest ? ev.target.closest(TIP_SEL) : null;
   if (!t) return;
   clearTimeout(tipTimer);
   tipTimer = setTimeout(() => showTip(t), 320);
 });
 document.addEventListener('mouseout', (ev) => {
+  if (overTip(ev.target)) {
+    hideTipSoon();
+    return;
+  }
   const t = ev.target.closest ? ev.target.closest(TIP_SEL) : null;
-  if (t) hideTip();
+  if (t) hideTipSoon();
 });
-document.addEventListener('scroll', hideTip, true);
+// Scrolling the page moves the row out from under its explanation, so the
+// explanation goes. Scrolling *inside* the card is the opposite: it is someone
+// reading the rest of it.
+document.addEventListener(
+  'scroll',
+  (ev) => {
+    if (!overTip(ev.target)) hideTip();
+  },
+  true,
+);
 
 
 // --------------------------------------------------------------------------
@@ -616,6 +679,28 @@ function updateBellDot() {
  * agent stopped working. Liveness comes from the provider's own state, and
  * nothing else is entitled to an opinion about it.
  */
+/**
+ * How the two agent lists are ordered — both of them, from one comparator.
+ *
+ * The dashboard shows four agents and the agents view shows all of them, and
+ * they used to disagree: the dashboard sorted on burn alone, so every agent the
+ * fit had nothing to say about tied at zero and fell into whatever order the
+ * inventory happened to be in, which shifts between ticks. Two lists of the
+ * same agents in two different orders reads as a bug even when both are
+ * "right", so there is now one order and the dashboard is its first four.
+ *
+ * Burn first — what it is costing now is the question the panel exists to
+ * answer. Then tokens in the limit, which ranks the agents the fit is silent
+ * about by what they have actually spent. Then last activity, and finally the
+ * id, so the order is total: no two agents can swap places on a tick where
+ * nothing about either of them changed.
+ */
+const byCost = (burnOf) => (a, b) =>
+  (burnOf.get(b.id) ?? 0) - (burnOf.get(a.id) ?? 0) ||
+  sumKinds(b.totals) - sumKinds(a.totals) ||
+  (b.lastActivityAt || 0) - (a.lastActivityAt || 0) ||
+  (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
 function agentStatus(a, burn, now) {
   const rate = burn !== undefined ? `<b>≈${burn.toFixed(1)} %/h</b>` : null;
   const join = (...parts) => parts.filter(Boolean).join(' · ');
@@ -648,12 +733,7 @@ function renderAgents() {
   const now = state.generatedAt;
   const burnOf = new Map(state.agentBurns.map((b) => [b.agentId, b.pctPerHour]));
   const rows = [...state.agents]
-    .sort(
-      (a, b) =>
-        (burnOf.get(b.id) ?? 0) - (burnOf.get(a.id) ?? 0) ||
-        sumKinds(b.totals) - sumKinds(a.totals) ||
-        b.lastActivityAt - a.lastActivityAt,
-    )
+    .sort(byCost(burnOf))
     .map((a) => {
       const burn = burnOf.get(a.id);
       const proj = a.projectPath ? a.projectPath.split(/[\\/]/).pop() : a.label;
@@ -875,10 +955,175 @@ function renderLimitSplit(b) {
 }
 
 // --------------------------------------------------------------------------
+// Alarm rules, editable here rather than only from a terminal.
+//
+// The panel is where you find out a rule fires four times an hour. Having to
+// leave for a shell to quieten it is the wrong shape, so the file is editable
+// where its consequences are visible.
+//
+// It edits the YAML rather than offering a form. The file is the documented
+// interface (docs/ALARMS.md); the presets are commented prose written to be
+// read; and a form could only expose the keys it happened to model, quietly
+// discarding the rest of someone's file on the first save. What the panel adds
+// instead is the part an editor cannot: the diagnostics and the effective rule
+// set, live, before the text is written anywhere.
+//
+// Nothing is validated in here. The renderer has no parser and must never grow
+// a second one that disagrees with the loader — every verdict below comes back
+// from core, through the main process.
+// --------------------------------------------------------------------------
+const rulesApi = () => (typeof window.adjent.rulesLoad === 'function' ? window.adjent : null);
+/** The text as it is on disk, so "changed" is a fact rather than a guess. */
+let rulesSaved = '';
+let rulesFailed = false;
+let rulesCheckTimer = null;
+let presetSummaries = {};
+
+async function openRules() {
+  const api = rulesApi();
+  if (!api) return;
+  let d = null;
+  try {
+    d = await api.rulesLoad();
+  } catch (err) {
+    reportRenderError('alarm rules', err);
+    return;
+  }
+  if (!d) return;
+  $('rulesPath').textContent = d.path;
+  // A missing file is how most installs run. Seeding the editor with the
+  // built-in defaults is the honest starting point: it is what is in force.
+  rulesSaved = d.text ?? '';
+  $('rulesText').value = rulesSaved;
+  setRulesNote(d.exists ? '' : 'No file yet — the built-in defaults are in force.', null);
+  applyRulesCheck(d);
+  void loadPresetList(api);
+}
+
+async function loadPresetList(api) {
+  const sel = $('rulesPreset');
+  if (!sel || sel.dataset.loaded === 'yes' || typeof api.rulesPresets !== 'function') return;
+  let list = [];
+  try {
+    list = (await api.rulesPresets()) ?? [];
+  } catch {
+    return;
+  }
+  presetSummaries = Object.fromEntries(list.map((p) => [p.name, p.summary]));
+  sel.innerHTML =
+    '<option value="">Start from a preset…</option>' +
+    list.map((p) => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+  sel.dataset.loaded = 'yes';
+}
+
+/** Render one verdict from core: diagnostics, then what would actually run. */
+function applyRulesCheck(d) {
+  rulesFailed = !!d.failed;
+  $('rulesText').classList.toggle('bad', rulesFailed);
+  $('rulesSave').disabled = rulesFailed;
+
+  const diags = d.diagnostics ?? [];
+  $('rulesDiag').innerHTML = diags
+    .map(
+      (x) =>
+        `<span class="diag ${esc(x.level)}"><span class="where">${esc(x.path)}</span> — ${esc(x.message)}</span>`,
+    )
+    .join('');
+  renderEffective(d.effective);
+}
+
+/**
+ * What will actually run — the same list `adjent rules validate` prints, in the
+ * file's own vocabulary. This is the useful answer, not "valid": loading is
+ * lenient, so a file can be half-ignored and still work.
+ */
+function renderEffective(config) {
+  const el = $('rulesEffective');
+  if (!config || !Array.isArray(config.rules) || config.rules.length === 0) {
+    el.innerHTML = '<div class="empty">No rules — nothing will fire.</div>';
+    return;
+  }
+  const terms = (r) => {
+    if (r.type === 'pace') {
+      return [
+        `scope ${r.backend}/${r.limit}`,
+        `tolerance ${r.tolerancePp}pp`,
+        `lead ${r.exhaustionLeadMin}m`,
+        `cooldown ${r.cooldownMin}m`,
+      ];
+    }
+    if (r.type === 'threshold') return [`scope ${r.backend}/${r.limit}`, `levels ${r.levels.join(', ')}`];
+    return [`window ${r.windowMin}m`, `≥${r.absPctPerHour} %/h`, `share ${r.sharePct}%`, `cooldown ${r.cooldownMin}m`];
+  };
+  // A threshold rule carries a severity per level, so it has no single one.
+  const sevOf = (r) => (typeof r.severity === 'string' ? r.severity : null);
+  const cards = config.rules
+    .map((r) => {
+      const sev = sevOf(r);
+      return (
+        `<div class="ruleCard"><div class="top">` +
+        `<span class="id">${esc(r.id)}</span><span class="kind">${esc(r.type)}</span>` +
+        (sev ? `<span class="sev ${esc(sev)}">${esc(sev)}</span>` : '') +
+        `</div><span class="terms">${esc(terms(r).join(' · '))}</span></div>`
+      );
+    })
+    .join('');
+  const routing = config.routing ?? {};
+  const routed = ['info', 'warn', 'critical']
+    .map((lvl) => `${lvl} → ${(routing[lvl] ?? []).join(', ') || 'nowhere'}`)
+    .join('  ·  ');
+  el.innerHTML = cards + `<div class="tokline" style="margin-top:8px"><span>${esc(routed)}</span></div>`;
+}
+
+function setRulesNote(text, kind) {
+  const el = $('rulesNote');
+  el.textContent = text;
+  el.className = `saveNote${kind ? ` ${kind}` : ''}`;
+}
+
+/** Re-check on a pause in typing: every keystroke would be a round trip. */
+function scheduleRulesCheck() {
+  const api = rulesApi();
+  if (!api) return;
+  clearTimeout(rulesCheckTimer);
+  rulesCheckTimer = setTimeout(async () => {
+    const text = $('rulesText').value;
+    try {
+      applyRulesCheck(await api.rulesCheck(text));
+    } catch (err) {
+      reportRenderError('alarm rules', err);
+      return;
+    }
+    setRulesNote(text === rulesSaved ? '' : 'Unsaved changes.', null);
+  }, 300);
+}
+
+async function saveRules() {
+  const api = rulesApi();
+  if (!api) return;
+  const text = $('rulesText').value;
+  let r = null;
+  try {
+    r = await api.rulesSave(text);
+  } catch (err) {
+    reportRenderError('alarm rules', err);
+    return;
+  }
+  if (!r) return;
+  applyRulesCheck(r);
+  if (r.ok) {
+    rulesSaved = text;
+    setRulesNote('Saved. The running rules are now these.', 'ok');
+  } else {
+    setRulesNote(r.error ?? 'Not saved — fix the errors below first.', 'bad');
+  }
+}
+
+// --------------------------------------------------------------------------
 // Settings view. Every control writes through to the main process, which
 // persists to ~/.adjent/settings.json and applies live.
 // --------------------------------------------------------------------------
-const OVERLAYS = ['settingsView', 'notificationsView', 'limitView', 'agentsView'];
+const OVERLAYS = ['settingsView', 'notificationsView', 'limitView', 'agentsView', 'rulesView'];
 const DATA_SECTIONS = () =>
   [...document.querySelectorAll('main > section')].filter((el) => !OVERLAYS.includes(el.id));
 let activeView = null; // null = the dashboard
@@ -891,10 +1136,12 @@ function showView(view) {
   $('notificationsView').hidden = view !== 'notifications';
   $('limitView').hidden = view !== 'limits';
   $('agentsView').hidden = view !== 'agents';
+  $('rulesView').hidden = view !== 'rules';
   $('liveCount').classList.toggle('on', view === 'agents');
   $('gear').classList.toggle('on', view === 'settings');
   $('bell').classList.toggle('on', view === 'notifications');
   if (view === 'agents') renderAgents();
+  if (view === 'rules') void openRules();
   if (view === 'limits') {
     if (selectedLimit === null) selectedLimit = defaultLimitKey();
     renderLimitPicker();
@@ -948,6 +1195,30 @@ document.addEventListener('click', (ev) => {
   } else {
     openLimits(key);
   }
+});
+$('rulesBack').addEventListener('click', () => showView(null));
+$('openRules').addEventListener('click', () => showView('rules'));
+$('rulesText').addEventListener('input', scheduleRulesCheck);
+$('rulesSave').addEventListener('click', () => void saveRules());
+$('rulesRevert').addEventListener('click', () => {
+  setRulesNote('', null);
+  void openRules();
+});
+$('rulesPreset').addEventListener('change', async (e) => {
+  const name = e.target.value;
+  if (!name) return;
+  // Load into the editor, do not write. Swapping someone's tuned rules for a
+  // preset the moment they touch a dropdown would be a data-loss bug; this way
+  // the preset is a draft they can read, edit and reject with Revert.
+  const api = rulesApi();
+  if (!api) return;
+  const d = await api.rulesPreset(name);
+  e.target.value = '';
+  if (!d) return;
+  $('rulesText').value = d.text;
+  applyRulesCheck(d);
+  $('rulesPresetHint').textContent = presetSummaries[name] ?? '';
+  setRulesNote(`Loaded the “${name}” preset. Not saved yet.`, null);
 });
 $('limitBack').addEventListener('click', () => showView(null));
 $('agentsBack').addEventListener('click', () => showView(null));

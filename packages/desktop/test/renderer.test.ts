@@ -35,6 +35,16 @@ class El {
   innerHTML = '';
   title = '';
 
+  // `el.className = 'a b'` replaces the class list in a browser. The renderer
+  // writes chips and the save note that way and the tests read them back
+  // through classList, so the shim has to keep the two in step.
+  get className(): string {
+    return [...this.classList._s].join(' ');
+  }
+  set className(v: string) {
+    this.classList._s = new Set(String(v).split(/\s+/).filter(Boolean));
+  }
+
   // The renderer's esc() helper does `div.textContent = x; return div.innerHTML`,
   // so the shim has to mirror the browser's escaping for that to work.
   #text = '';
@@ -63,8 +73,17 @@ class El {
   addEventListener(type: string, cb: (ev: unknown) => void) {
     (this.handlers[type] ??= []).push(cb);
   }
+  /** Overridable per element: positionTip's whole job is reacting to sizes. */
+  rect: { top: number; bottom: number; left: number; right: number; width: number; height: number } = {
+    top: 10,
+    bottom: 30,
+    left: 10,
+    right: 100,
+    width: 90,
+    height: 20,
+  };
   getBoundingClientRect() {
-    return { top: 10, bottom: 30, left: 10, right: 100, width: 90, height: 20 };
+    return this.rect;
   }
   querySelector() {
     return new El();
@@ -74,9 +93,15 @@ class El {
   }
   closest(sel: string) {
     // Enough for these tests: an element matches when it carries one of the
-    // attributes named in the selector list.
-    for (const part of sel.split(',')) {
-      const m = /\[([a-z-]+)\]/.exec(part.trim());
+    // attributes named in the selector list, or when it is the element the
+    // selector names by id.
+    for (const raw of sel.split(',')) {
+      const part = raw.trim();
+      if (part.startsWith('#')) {
+        if (this.id === part.slice(1)) return this;
+        continue;
+      }
+      const m = /\[([a-z-]+)\]/.exec(part);
       if (m && this.attrs[m[1]!] !== undefined) return this;
     }
     return null;
@@ -103,6 +128,14 @@ interface Harness {
   setDetail: (fn: (key: string) => unknown) => void;
   /** Fire an element's own listener, as a real click on it would. */
   fire: (id: string, type?: string, ev?: unknown) => void;
+  /** What the main process answers the rules editor with. Mutable per test. */
+  rules: {
+    load: Record<string, unknown>;
+    check: (t: string) => Record<string, unknown>;
+    save: (t: string) => Record<string, unknown>;
+    preset: (n: string) => Record<string, unknown>;
+    list: unknown[];
+  };
 }
 
 /** Load panel.js with a fake document/window and return a handle to drive it. */
@@ -116,12 +149,34 @@ function loadPanel(): Harness {
   const errors: unknown[] = [];
   let onState: (p: unknown) => void = () => {};
 
+  // What the main process answers the rules editor with. Defaults are a valid,
+  // saved file; individual tests replace the pieces they are about.
+  const okCheck = (rulesText: string) => ({
+    diagnostics: [],
+    failed: false,
+    effective: {
+      rules: [{ id: 'steps', type: 'threshold', backend: 'any', limit: 'any', levels: [80, 95] }],
+      routing: { info: ['tray'], warn: ['tray', 'toast'], critical: ['tray', 'toast', 'webhook'] },
+    },
+    text: rulesText,
+  });
+  const rules = {
+    load: { path: '~/.adjent/alarms.yaml', exists: true, text: 'alarms: []\n', ...okCheck('alarms: []\n') },
+    check: (t: string) => okCheck(t) as Record<string, unknown>,
+    save: (t: string) => ({ ok: true, ...okCheck(t) }) as Record<string, unknown>,
+    preset: (n: string) => ({ text: `# ${n}\n`, ...okCheck(`# ${n}\n`) }) as Record<string, unknown>,
+    list: [{ name: 'fleet', summary: 'Per-agent detection.' }] as unknown[],
+  };
+
   const listeners: Record<string, ((ev: unknown) => void)[]> = {};
   let detailFor: (key: string) => unknown = () => null;
+  // Every `<section id=…>` in the real markup, in document order — enough for
+  // `main > section`, which is how an overlay hides the dashboard beneath it.
+  const sections = [...html.matchAll(/<section id="([A-Za-z0-9_-]+)"/g)].map((m) => els.get(m[1]!)!);
   const documentShim = {
     getElementById: (id: string) => els.get(id) ?? null,
     createElement: () => new El(),
-    querySelectorAll: () => [] as El[],
+    querySelectorAll: (sel: string) => (sel === 'main > section' ? sections : ([] as El[])),
     querySelector: () => new El(),
     addEventListener: (t: string, cb: (ev: unknown) => void) => {
       (listeners[t] ??= []).push(cb);
@@ -143,6 +198,11 @@ function loadPanel(): Harness {
       openTaskbarSettings: () => {},
       clearAlarms: () => {},
       limitDetail: (key: string) => Promise.resolve(detailFor(key)),
+      rulesLoad: () => Promise.resolve(rules.load),
+      rulesCheck: (text: string) => Promise.resolve(rules.check(text)),
+      rulesSave: (text: string) => Promise.resolve(rules.save(text)),
+      rulesPreset: (name: string) => Promise.resolve(rules.preset(name)),
+      rulesPresets: () => Promise.resolve(rules.list),
     },
   };
 
@@ -182,7 +242,7 @@ function loadPanel(): Harness {
     if (!el) throw new Error(`no element #${id}`);
     for (const cb of el.handlers[type] ?? []) cb(ev);
   };
-  return { els, onState, errors, hover, click, flush, setDetail, fire };
+  return { els, onState, errors, hover, click, flush, setDetail, fire, rules };
 }
 
 // -------------------------------------------------------------------- state
@@ -229,7 +289,6 @@ function payload(overrides: Record<string, unknown> = {}) {
       epsilon: 0.5,
       fitConfidence: 'high',
     },
-    alarms: [],
     alarmHistory: [],
     history: [
       { t: T0 - 2 * H, w: 'claude:5h', u: 10 },
@@ -1214,5 +1273,304 @@ describe('staleness leaves the row, not the app', () => {
     expect(meta).toContain('resets in');
     expect(meta).not.toContain('as of');
     expect(h.els.get('heroMeta')!.getAttribute('data-tip')).toBe('stale');
+  });
+});
+// ---------------------------------------------------------------------------
+// One order for both agent lists.
+//
+// The dashboard shows four agents and the agents view shows all of them. They
+// used to be sorted by two different comparators: the dashboard on burn alone,
+// which ties every agent the fit is silent about at zero and leaves them in
+// whatever order the inventory happened to be in. Two lists of the same agents
+// disagreeing reads as a bug even when neither is wrong.
+// ---------------------------------------------------------------------------
+describe('agent ordering', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  /** Agents the fit has nothing to say about, differing only in spend. */
+  function noBurn() {
+    const p = payload() as { state: { agents: Record<string, unknown>[]; agentBurns: unknown[] } };
+    const base = p.state.agents[0]!;
+    const mk = (id: string, tok: number, last: number) => ({
+      ...base,
+      id,
+      label: id,
+      projectPath: `/w/${id}`,
+      totals: { input: tok, cacheWrite: 0, cacheRead: 0, output: 0, thinking: 0 },
+      lastActivityAt: last,
+    });
+    // Deliberately not in cost order, so an unsorted list would show through.
+    p.state.agents = [mk('c', 10, T0 - 3), mk('a', 900, T0 - 1), mk('b', 400, T0 - 2)];
+    p.state.agentBurns = [];
+    return p;
+  }
+
+  const names = (html: string): string[] => [...html.matchAll(/class="name">([^<]+)</g)].map((m) => m[1]!);
+
+  it('ranks agents the fit is silent about by what they have spent', () => {
+    h.onState(noBurn());
+    expect(names(h.els.get('agents')!.innerHTML)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('gives the dashboard and the agents view the same order', () => {
+    const p = noBurn();
+    h.onState(p);
+    const dash = names(h.els.get('agents')!.innerHTML);
+
+    h.fire('liveCount');
+    h.onState(p);
+    const all = names(h.els.get('agentList')!.innerHTML);
+
+    // The dashboard is the head of the full list, never a different list.
+    expect(all.slice(0, dash.length)).toEqual(dash);
+  });
+
+  it('puts burn ahead of spend, so the expensive agent stays on top', () => {
+    const p = noBurn() as { state: { agents: { id: string }[]; agentBurns: unknown[] } };
+    p.state.agentBurns = [{ agentId: 'c', pctPerHour: 6.5, confidence: 'high' }];
+    h.onState(p);
+    // `c` has spent the least and is costing the most. Cost wins.
+    expect(names(h.els.get('agents')!.innerHTML)[0]).toBe('c');
+  });
+
+  it('is total, so nothing reshuffles on a tick where nothing changed', () => {
+    // Two agents alike in every ranked term. Without the id tiebreak their
+    // order is whatever the inventory's is, which moves between ticks.
+    const p = payload() as { state: { agents: Record<string, unknown>[]; agentBurns: unknown[] } };
+    const base = p.state.agents[0]!;
+    const twin = (id: string) => ({ ...base, id, label: id, projectPath: `/w/${id}` });
+    p.state.agentBurns = [];
+    p.state.agents = [twin('zeta'), twin('alpha')];
+    h.onState(p);
+    const first = names(h.els.get('agents')!.innerHTML);
+
+    p.state.agents = [twin('alpha'), twin('zeta')];
+    h.onState(p);
+    expect(names(h.els.get('agents')!.innerHTML)).toEqual(first);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A tooltip that can be read to the end.
+//
+// A model's spend can name two dozen sessions, and the panel is 560px. The old
+// routine placed a card of whatever height it happened to be and clamped only
+// its top, so everything past the bottom edge was unreachable: you could see
+// that 24 agents contributed and read about nine of them.
+// ---------------------------------------------------------------------------
+describe('tooltip sizing', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  /** A row near the middle of the panel, and a card too tall for either side. */
+  function tall(): { tip: El; row: El } {
+    const tip = h.els.get('tip')!;
+    tip.rect = { top: 0, bottom: 900, left: 0, right: 280, width: 280, height: 900 };
+    const row = new El();
+    row.setAttribute('data-tip', 'hero');
+    row.rect = { top: 300, bottom: 320, left: 10, right: 100, width: 90, height: 20 };
+    return { tip, row };
+  }
+
+  it('caps the card at the room it was given', () => {
+    const { tip, row } = tall();
+    h.onState(payload());
+    h.hover(row);
+
+    // 300 above the row, less the gap and the panel edge.
+    expect(tip.style['maxHeight']).toBe('286px');
+  });
+
+  it('never places it off the top of the panel', () => {
+    const { tip, row } = tall();
+    h.onState(payload());
+    h.hover(row);
+    expect(Number.parseInt(tip.style['top']!, 10)).toBeGreaterThanOrEqual(6);
+  });
+
+  it('takes the roomier side when neither can hold it', () => {
+    const { tip, row } = tall();
+    // A row near the top: below it is where the space is.
+    row.rect = { top: 40, bottom: 60, left: 10, right: 100, width: 90, height: 20 };
+    h.onState(payload());
+    h.hover(row);
+    expect(Number.parseInt(tip.style['top']!, 10)).toBe(68);
+    expect(tip.style['maxHeight']).toBe('486px');
+  });
+
+  it('leaves a card that already fits uncapped', () => {
+    // The cap is set per hover, so a tall card must not leave one behind for
+    // the next short one — it would be silently cropped.
+    const { tip, row } = tall();
+    h.onState(payload());
+    h.hover(row);
+    expect(tip.style['maxHeight']).not.toBe('');
+
+    tip.rect = { top: 0, bottom: 40, left: 0, right: 280, width: 280, height: 40 };
+    h.hover(row);
+    expect(tip.style['maxHeight']).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Alarm rules, editable in the panel (docs/ALARMS.md).
+//
+// Every verdict here comes back from core through the main process: the
+// renderer has no parser and must never grow a second one that disagrees with
+// the loader.
+// ---------------------------------------------------------------------------
+describe('the alarm rules editor', () => {
+  let h: Harness;
+  beforeEach(async () => {
+    h = loadPanel();
+    h.onState(payload());
+    h.fire('openRules');
+    await h.flush();
+  });
+
+  it('opens on the file that is actually in force', () => {
+    expect(h.els.get('rulesView')!.hidden).toBe(false);
+    expect(h.els.get('rulesPath')!.textContent).toContain('alarms.yaml');
+    expect(h.els.get('rulesText')!.value).toBe('alarms: []\n');
+  });
+
+  it('shows what will run, not merely that the file parsed', () => {
+    // Loading is lenient: a file can be half-ignored and still work, so the
+    // effective rule set is the answer, and "no errors" is not.
+    const eff = h.els.get('rulesEffective')!.innerHTML;
+    expect(eff).toContain('steps');
+    expect(eff).toContain('threshold');
+    expect(eff).toContain('levels 80, 95');
+    expect(eff).toContain('info → tray');
+  });
+
+  it('says so when the file does not exist yet', async () => {
+    const g = loadPanel();
+    g.rules.load = { ...g.rules.load, exists: false, text: null };
+    g.onState(payload());
+    g.fire('openRules');
+    await g.flush();
+    expect(g.els.get('rulesNote')!.textContent).toContain('defaults are in force');
+  });
+
+  it('refuses to save a file with an error in it', async () => {
+    h.rules.check = () => ({
+      diagnostics: [{ level: 'error', path: 'alarms[0].type', message: 'unknown rule type "teleport"' }],
+      failed: true,
+      effective: { rules: [], routing: {} },
+    });
+    h.els.get('rulesText')!.value = 'alarms:\n  - id: a\n    type: teleport\n';
+    h.fire('rulesText', 'input');
+    await h.flush();
+
+    expect(h.els.get('rulesSave')!.disabled).toBe(true);
+    expect(h.els.get('rulesDiag')!.innerHTML).toContain('unknown rule type');
+    expect(h.els.get('rulesDiag')!.innerHTML).toContain('alarms[0].type');
+  });
+
+  it('re-enables saving once the error is gone', async () => {
+    h.rules.check = () => ({ diagnostics: [], failed: true, effective: { rules: [], routing: {} } });
+    h.fire('rulesText', 'input');
+    await h.flush();
+    expect(h.els.get('rulesSave')!.disabled).toBe(true);
+
+    h.rules.check = (t: string) => ({ diagnostics: [], failed: false, effective: { rules: [], routing: {} }, text: t });
+    h.fire('rulesText', 'input');
+    await h.flush();
+    expect(h.els.get('rulesSave')!.disabled).toBe(false);
+  });
+
+  it('reports a warning without blocking the save', async () => {
+    // A warning means a key was ignored — worth saying, not worth refusing.
+    h.rules.check = () => ({
+      diagnostics: [{ level: 'warn', path: 'alarms[0].tolerence_pp', message: 'unknown key; did you mean tolerance_pp?' }],
+      failed: false,
+      effective: { rules: [], routing: {} },
+    });
+    h.fire('rulesText', 'input');
+    await h.flush();
+
+    expect(h.els.get('rulesDiag')!.innerHTML).toContain('did you mean');
+    expect(h.els.get('rulesSave')!.disabled).toBe(false);
+  });
+
+  it('marks unsaved edits, and stops marking them once saved', async () => {
+    h.els.get('rulesText')!.value = 'alarms: [] # edited\n';
+    h.fire('rulesText', 'input');
+    await h.flush();
+    expect(h.els.get('rulesNote')!.textContent).toContain('Unsaved');
+
+    h.fire('rulesSave');
+    await h.flush();
+    expect(h.els.get('rulesNote')!.textContent).toContain('Saved');
+
+    h.fire('rulesText', 'input');
+    await h.flush();
+    expect(h.els.get('rulesNote')!.textContent).toBe('');
+  });
+
+  it('reports a save the main process rejected', async () => {
+    h.rules.save = () => ({ ok: false, diagnostics: [], failed: false, effective: { rules: [], routing: {} }, error: 'EACCES' });
+    h.fire('rulesSave');
+    await h.flush();
+    expect(h.els.get('rulesNote')!.textContent).toContain('EACCES');
+    expect(h.els.get('rulesNote')!.classList.contains('bad')).toBe(true);
+  });
+
+  it('loads a preset into the editor without writing it', async () => {
+    // Swapping someone's tuned rules for a preset the moment they touch a
+    // dropdown would be a data-loss bug. It is a draft until Save.
+    let saved = false;
+    h.rules.save = () => {
+      saved = true;
+      return { ok: true, diagnostics: [], failed: false, effective: { rules: [], routing: {} } };
+    };
+    const sel = h.els.get('rulesPreset')!;
+    sel.value = 'fleet';
+    h.fire('rulesPreset', 'change', { target: sel });
+    await h.flush();
+
+    expect(h.els.get('rulesText')!.value).toBe('# fleet\n');
+    expect(saved).toBe(false);
+    expect(h.els.get('rulesNote')!.textContent).toContain('Not saved');
+  });
+
+  it('throws the edits away on Revert', async () => {
+    h.els.get('rulesText')!.value = 'nonsense';
+    h.fire('rulesRevert');
+    await h.flush();
+    expect(h.els.get('rulesText')!.value).toBe('alarms: []\n');
+  });
+
+  it('says plainly when a config would fire nothing', async () => {
+    h.rules.check = () => ({ diagnostics: [], failed: false, effective: { rules: [], routing: {} } });
+    h.fire('rulesText', 'input');
+    await h.flush();
+    expect(h.els.get('rulesEffective')!.innerHTML).toContain('nothing will fire');
+  });
+
+  it('leaves the dashboard alone while it is open', () => {
+    // Overlays hide the data sections; the rules view is one of them, so a
+    // tick arriving underneath must not paint through it.
+    expect(h.els.get('primary')!.hidden).toBe(true);
+    h.onState(payload());
+    expect(h.els.get('rulesView')!.hidden).toBe(false);
+    expect(h.errors).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('the dashboard component budget', () => {
+  it('no longer carries a recent-alarms strip', () => {
+    // It duplicated the notifications view, which shows the same records with
+    // their day, their severity and the state they fired in.
+    const html = readFileSync(PANEL_HTML, 'utf-8');
+    expect(html).not.toContain('Recent alarms');
+    expect(html).not.toContain('id="alarms"');
   });
 });
