@@ -1698,3 +1698,123 @@ describe('agent ordering by state', () => {
     expect(names(h.els.get('agents')!.innerHTML).slice(0, 2)).toEqual(['busy-live', 'poor-live']);
   });
 });
+// ---------------------------------------------------------------------------
+// One payload, every surface.
+//
+// Each view used to render only while it was the active one, so the panel was a
+// set of independently-aged screens: the dashboard was painted last whenever
+// you left it, and coming back from the agent list showed numbers from
+// whenever that was. Which view was right depended on the order you had opened
+// them in.
+// ---------------------------------------------------------------------------
+describe('view consistency', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = loadPanel();
+  });
+
+  /** A payload with the binding limit at a given utilization and agent count. */
+  function at(util: number, liveAgents: number) {
+    const p = payload() as {
+      state: { limits: Record<string, unknown>[]; agents: Record<string, unknown>[]; agentBurns: unknown[] };
+    };
+    const binding = p.state.limits[0]!;
+    binding.limit = { ...(binding.limit as object), utilization: util };
+    const base = p.state.agents[0]!;
+    p.state.agents = Array.from({ length: liveAgents }, (_, i) => ({
+      ...base,
+      id: `a${i}`,
+      label: `a${i}`,
+      projectPath: `/w/a${i}`,
+      state: 'live',
+    }));
+    p.state.agentBurns = [];
+    return p;
+  }
+
+  const rows = (html: string): number => [...html.matchAll(/class="name">/g)].length;
+
+  it('keeps the dashboard current while an overlay is open', () => {
+    h.onState(at(32, 1));
+    h.fire('liveCount'); // into the agents view
+    h.onState(at(77, 3));
+
+    // The dashboard is not on screen, but it must not be allowed to fall behind.
+    expect(h.els.get('hero')!.textContent).toBe('77%');
+  });
+
+  it('shows the new numbers the instant you come back, not on the next tick', () => {
+    // This is the reported symptom: Back used to reveal whatever was left on
+    // the dashboard the last time it happened to be the active view.
+    h.onState(at(32, 1));
+    h.fire('liveCount');
+    h.onState(at(91, 4));
+    h.fire('agentsBack');
+
+    expect(h.els.get('primary')!.hidden).toBe(false);
+    expect(h.els.get('hero')!.textContent).toBe('91%');
+    expect(h.els.get('liveCount')!.textContent).toBe('4 live');
+  });
+
+  it('agrees between the dashboard and the agents view', () => {
+    h.onState(at(50, 3));
+    const dash = rows(h.els.get('agents')!.innerHTML);
+    const all = rows(h.els.get('agentList')!.innerHTML);
+    expect(dash).toBe(3);
+    expect(all).toBe(3);
+    expect(h.els.get('liveCount')!.textContent).toBe('3 live');
+  });
+
+  it('agrees between the collapsed limits and the full limit list', () => {
+    h.onState(at(64, 1));
+    // Same limits, same labels, whichever surface is asked.
+    expect(h.els.get('limits')!.innerHTML).toContain('Claude · 7d');
+    expect(h.els.get('limitPicker')!.innerHTML).toContain('Claude · 7d');
+    expect(h.els.get('limitPicker')!.innerHTML).toContain('Claude · 5h');
+  });
+
+  it('paints the limit list without having to be opened first', () => {
+    // It used to be built on entry only, so its first frame was always one
+    // tick behind whatever had just been shown on the dashboard.
+    h.onState(at(64, 1));
+    expect(h.els.get('limitPicker')!.innerHTML).not.toBe('');
+  });
+
+  it('keeps the notification log current while the dashboard is showing', () => {
+    const p = at(32, 1) as Record<string, unknown>;
+    p['alarmHistory'] = [
+      { id: 'x', ruleId: 'r', severity: 'warn', title: 'Ahead of pace', body: 'b', firedAt: T0, backend: null, limitKey: null, agentId: null },
+    ];
+    h.onState(p);
+    expect(h.els.get('notifList')!.innerHTML).toContain('Ahead of pace');
+  });
+
+  it('still pulls the limit detail only while that view is open', () => {
+    // The one surface that is a request rather than a projection: pulling every
+    // limit's breakdown every tick would be a lot of JSON for nothing on screen.
+    let pulls = 0;
+    h.setDetail((key: string) => {
+      pulls++;
+      return { assessment: null, generatedAt: T0, history: [], breakdown: null, key };
+    });
+    h.onState(at(32, 1));
+    h.onState(at(33, 1));
+    expect(pulls).toBe(0);
+
+    h.click(Object.assign(new El(), { attrs: { 'data-limit-all': '' } }));
+    h.onState(at(34, 1));
+    expect(pulls).toBeGreaterThan(0);
+  });
+
+  it('reports a failure in one surface without taking the others down', () => {
+    // Every surface renders on every tick now, so one throwing must not stop
+    // the rest — that failure mode is why the error bar exists at all.
+    const p = at(32, 1) as { state: { agents: unknown } };
+    p.state.agents = null as unknown as [];
+    h.onState(p);
+
+    expect(h.els.get('renderError')!.hidden).toBe(false);
+    // The limits do not depend on the agents, and still drew.
+    expect(h.els.get('limitPicker')!.innerHTML).toContain('Claude');
+  });
+});

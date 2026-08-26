@@ -538,6 +538,37 @@ is always one visible way home rather than a per-view back button and a guess.
 Nothing from tier 3 or below is ever promoted to the resting surface "because it
 is interesting". Interesting is not the bar; *actionable right now* is.
 
+### One payload, every surface
+
+No two surfaces of the panel may disagree. A number that differs between the
+dashboard and the view you opened from it makes both untrustworthy, and the
+reader has no way to tell which one to believe.
+
+That is a rendering rule, not an aspiration. Every view is drawn from the same
+payload on every tick and on every view change, **whether or not it is
+visible** — one function, no per-view gates. Each used to render only while it
+was the active one, which made the panel a set of independently-aged screens:
+the dashboard was painted last whenever you left it, so returning from the agent
+list showed numbers from whenever that was, and which view was right depended on
+the order you had opened them in.
+
+Drawing hidden views costs a handful of string builds against a list of agents
+and limits — far below a frame, and far below what an inconsistent panel costs
+the person reading it. One surface failing must not take the rest with it, so
+each is rendered inside its own guard and its failure goes to the error bar.
+
+The single exception is the limit detail, which is a *request* to the main
+process rather than a projection of the payload — see
+[Any limit, on demand](#any-limit-on-demand). Pulling every limit's token
+breakdown on every tick would be most of a megabyte of JSON for something
+usually not on screen, so that one stays gated on its view being open.
+
+The panel also collects on open. You open a tray panel to find out where you are
+*now*, and at the default cadence the last reading could be half a minute old
+before it is drawn; a tick is a few file reads and at most one quota request, so
+paying for one when someone is actually looking is the right trade. A five-second
+floor keeps opening and closing the panel from becoming a request per click.
+
 ### Ordering the agents
 
 Both agent lists — the four on the dashboard and the full list behind the header

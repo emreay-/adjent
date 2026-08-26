@@ -237,7 +237,11 @@ function togglePanel(view?: 'settings' | 'notifications' | 'rules'): void {
   panel.setPosition(Math.round(x), Math.round(y));
   panel.show();
   if (view) panel.webContents.send('view', view);
+  // Draw what is known immediately, then correct it if the reading is old
+  // enough to be worth a collection. Waiting for the tick would show an empty
+  // panel; not asking for one would show a stale panel and never say so.
   pushState();
+  refreshIfStale();
 }
 
 // ---------------------------------------------------------------------------
@@ -377,14 +381,43 @@ class TraySink implements Sink {
 }
 
 // ---------------------------------------------------------------------------
+/**
+ * When the numbers were last collected. Not the same as when they were last
+ * *pushed*: the panel is hidden most of the time and receives nothing while it
+ * is, so on reopen it gets whatever the last tick produced.
+ */
+let lastTickAt = 0;
+
+async function tickNow(): Promise<void> {
+  lastTickAt = Date.now();
+  try {
+    await monitor.tick();
+  } catch {
+    /* a bad tick never kills the shell */
+  }
+}
+
+/**
+ * Collect on open, unless something just did.
+ *
+ * You open a tray panel to find out where you are *now*, and at the default
+ * cadence the answer could be half a minute old before it is drawn. A tick is
+ * a few file reads and at most one quota request, so paying for one at the
+ * moment someone is actually looking is the right trade.
+ *
+ * The floor is what keeps that honest: opening and closing the panel
+ * repeatedly must not turn into a request per click.
+ */
+const OPEN_REFRESH_FLOOR_MS = 5_000;
+function refreshIfStale(): void {
+  if (Date.now() - lastTickAt < OPEN_REFRESH_FLOOR_MS) return;
+  void tickNow();
+}
+
 function restartLoop(): void {
   if (tickTimer) clearTimeout(tickTimer);
   const loop = async (): Promise<void> => {
-    try {
-      await monitor.tick();
-    } catch {
-      /* a bad tick never kills the shell */
-    }
+    await tickNow();
     tickTimer = setTimeout(() => void loop(), settings.tickIntervalSec * 1000);
   };
   void loop();
@@ -421,7 +454,7 @@ async function start(): Promise<void> {
   });
 
   ipcMain.on('panel:close', () => panel?.hide());
-  ipcMain.on('panel:refresh', () => void monitor.tick());
+  ipcMain.on('panel:refresh', () => void tickNow());
   ipcMain.on('widget:open-panel', () => togglePanel());
   ipcMain.on('settings:set', (_e, patch: Partial<Settings>) => void applySettings(patch));
   // Tier 3 (docs/UI.md § Any limit, on demand): the panel pulls one limit's

@@ -1165,20 +1165,15 @@ function showView(view) {
   $('liveCount').classList.toggle('on', view === 'agents');
   $('gear').classList.toggle('on', view === 'settings');
   $('bell').classList.toggle('on', view === 'notifications');
-  if (view === 'agents') renderAgents();
   if (view === 'rules') void openRules();
-  if (view === 'limits') {
-    if (selectedLimit === null) selectedLimit = defaultLimitKey();
-    renderLimitPicker();
-    renderLimitDetail();
-    void loadLimitDetail();
-  }
+  if (view === 'limits' && selectedLimit === null) selectedLimit = defaultLimitKey();
   if (view === 'notifications') {
     lastSeenAlarmAt = Date.now();
     localStorage.setItem('adjent.lastSeenAlarm', String(lastSeenAlarmAt));
-    renderNotifications();
-    updateBellDot();
   }
+  // Switching views paints them all, from the payload in hand. Painting only
+  // the one being entered is what left the dashboard stale behind an overlay.
+  paint();
 }
 const showSettings = (on) => showView(on ? 'settings' : null);
 
@@ -1299,45 +1294,58 @@ function reportRenderError(where, err) {
   }
 }
 
+/** Run one surface's render, and put its failure on screen instead of the log. */
+function guard(where, fn) {
+  try {
+    fn();
+  } catch (err) {
+    reportRenderError(where, err);
+  }
+}
+
+/**
+ * Every surface, from one payload.
+ *
+ * Each view used to render only while it was the active one, which made the
+ * panel a set of independently-aged screens: the dashboard was painted last
+ * whenever you left it, so coming back from the agent list showed numbers from
+ * whenever that was — up to a whole poll interval stale, and longer if you had
+ * been reading. The views could disagree with each other and with the header,
+ * and which one was right depended on the order you had opened them in.
+ *
+ * So there is one function, it runs on every tick and on every view change, and
+ * it renders all of them whether or not they are visible. Nothing on screen can
+ * then be older than the last payload, and returning to the dashboard needs no
+ * repaint because it was never allowed to fall behind. The cost is a handful of
+ * string builds against a list of agents and limits — far below a frame, and
+ * far below what an inconsistent panel costs the person reading it.
+ *
+ * The one exception is the limit detail, which is a request to the main
+ * process rather than a projection of the payload (docs/UI.md § Any limit, on
+ * demand). Pulling every limit's token breakdown on every tick would be most of
+ * a megabyte of JSON for something usually not on screen, so that one stays
+ * gated on the view being open.
+ */
+function paint() {
+  if (!lastPayload) return;
+  $('renderError').hidden = true;
+  guard('header', () => renderLiveCount(lastPayload.state));
+  guard('panel', () => render(lastPayload));
+  guard('agents', () => renderAgents());
+  guard('limits', () => renderLimitPicker());
+  guard('notifications', () => renderNotifications());
+  guard('bell', () => updateBellDot());
+  if (activeView === 'limits') guard('limit detail', () => void loadLimitDetail());
+}
+
 window.adjent.onState((payload) => {
   lastPayload = payload;
-  // Before any view-specific rendering: the header is on screen in all of them.
-  try {
-    renderLiveCount(payload.state);
-  } catch (err) {
-    reportRenderError('header', err);
-  }
   if (payload.explanations) EXPL = payload.explanations;
   if (payload.provenanceNote) PROV_NOTE = payload.provenanceNote;
   current = payload.settings || current;
   syncSettingsUI(current);
-  if (payload.alarmHistory) {
-    alarmHistory = payload.alarmHistory;
-    updateBellDot();
-    if (activeView === 'notifications') renderNotifications();
-  }
-  if (activeView === null) {
-    try {
-      $('renderError').hidden = true;
-      render(payload);
-    } catch (err) {
-      reportRenderError('panel', err);
-    }
-  } else if (activeView === 'agents') {
-    try {
-      renderAgents();
-    } catch (err) {
-      reportRenderError('agents', err);
-    }
-  } else if (activeView === 'limits') {
-    // The detail view is as live as the dashboard: same tick, same numbers.
-    try {
-      renderLimitPicker();
-      void loadLimitDetail();
-    } catch (err) {
-      reportRenderError('limits', err);
-    }
-  }
+  if (payload.alarmHistory) alarmHistory = payload.alarmHistory;
+  paint();
 });
 window.adjent.onView((view) => showView(view));
 
