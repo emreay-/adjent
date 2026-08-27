@@ -435,6 +435,18 @@ async function start(): Promise<void> {
   monitor = new core.Monitor({ providers: [new core.ClaudeProvider(), new core.CodexProvider()], config });
   monitor.router.register(new ToastSink());
   monitor.router.register(new TraySink());
+  if (settings.alarmWebhookUrl) monitor.router.register(new core.WebhookSink(settings.alarmWebhookUrl));
+  // The tray shell has no stderr a user will ever read, so an unroutable sink
+  // becomes a visible notification: it is a misconfiguration that silently
+  // costs them the alarm they believe is armed.
+  monitor.router.setUnroutableReporter((id: string, severity: string) => {
+    if (Notification.isSupported()) {
+      new Notification({
+        title: 'Adjent — alarm not delivered',
+        body: `${severity} alarms route to "${id}", which is not configured. Set it up in Settings, or remove it from alarms.yaml.`,
+      }).show();
+    }
+  });
   startConfigReload();
 
   tray = new Tray(nativeImage.createEmpty());

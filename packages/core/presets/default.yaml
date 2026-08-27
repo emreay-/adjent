@@ -47,4 +47,7 @@ alarms:
 routing:
   info: [tray]
   warn: [tray, toast]
-  critical: [tray, toast, webhook]
+  # `webhook` needs settings.alarmWebhookUrl set; without it the sink does not
+  # exist and alarms routed here are dropped. Add it once the URL is configured:
+  #   critical: [tray, toast, webhook]
+  critical: [tray, toast]

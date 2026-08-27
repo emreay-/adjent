@@ -31,6 +31,12 @@ export interface Settings {
   /** Monitor tick cadence. Clamped to [10, 300]. */
   tickIntervalSec: number;
   alarmsPaused: boolean;
+  /**
+   * POST alarms routed to the `webhook` sink here. Null (the default) means the
+   * sink is not built at all, and a routing table naming it reports itself as
+   * unroutable rather than dropping alarms in silence.
+   */
+  alarmWebhookUrl: string | null;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -43,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   widgetPosition: null,
   tickIntervalSec: 30,
   alarmsPaused: false,
+  alarmWebhookUrl: null,
 };
 
 export const settingsPath = (): string => path.join(os.homedir(), '.adjent', 'settings.json');
@@ -68,6 +75,9 @@ export function coerceSettings(raw: unknown): Settings {
         : null,
     tickIntervalSec: clamp(r['tickIntervalSec'], 10, 300, DEFAULT_SETTINGS.tickIntervalSec),
     alarmsPaused: r['alarmsPaused'] === true,
+    alarmWebhookUrl: typeof r['alarmWebhookUrl'] === 'string' && r['alarmWebhookUrl'].trim() !== ''
+      ? (r['alarmWebhookUrl'] as string).trim()
+      : null,
   };
 }
 

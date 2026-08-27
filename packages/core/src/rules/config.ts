@@ -9,6 +9,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { BackendId, Rule, Severity } from '../model/types.js';
+// Value import, but no runtime cycle: sinks/sink.ts imports only `type Routing`
+// from here, and type-only imports are erased.
+import { KNOWN_SINK_IDS } from '../sinks/sink.js';
 
 export interface Routing {
   info: string[];
@@ -55,7 +58,11 @@ export const DEFAULT_CONFIG: AlarmConfig = {
   routing: {
     info: ['tray'],
     warn: ['tray', 'toast'],
-    critical: ['tray', 'toast', 'webhook'],
+    // `webhook` is deliberately absent: it cannot be built without
+    // settings.alarmWebhookUrl, so shipping it here routed every user's
+    // critical alarms into a sink nothing had registered. Opt in by setting the
+    // URL and adding `webhook` to this list.
+    critical: ['tray', 'toast'],
   },
 };
 
@@ -400,6 +407,21 @@ export function parseConfig(text: string): ParsedConfig {
       for (const [k, v] of Object.entries(d.routing as Record<string, unknown>)) {
         if (v !== undefined && !Array.isArray(v)) {
           diagnostics.push(err(`$.routing.${k}`, 'expected a list of sink names'));
+        } else if (Array.isArray(v)) {
+          // A sink name nobody can build routes alarms into silence. Warn rather
+          // than error: unknown names stay tolerated (additive-tolerant parsing),
+          // but the user is told, which is the whole difference from a typo that
+          // costs them the alarm they thought they had configured.
+          for (const name of v) {
+            if (typeof name === 'string' && !(KNOWN_SINK_IDS as readonly string[]).includes(name)) {
+              diagnostics.push(
+                warn(
+                  `$.routing.${k}`,
+                  `unknown sink \`${name}\` — alarms routed here are dropped. Known sinks: ${KNOWN_SINK_IDS.join(', ')}`,
+                ),
+              );
+            }
+          }
         }
       }
     }

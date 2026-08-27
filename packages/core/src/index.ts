@@ -25,7 +25,7 @@ export {
   type Diagnostic,
   type ParsedConfig,
 } from './rules/config.js';
-export { ConsoleSink, WebhookSink, SinkRouter, type Sink } from './sinks/sink.js';
+export { ConsoleSink, WebhookSink, SinkRouter, KNOWN_SINK_IDS, type Sink, type KnownSinkId } from './sinks/sink.js';
 export { Monitor, type MonitorOptions, type LimitDetail } from './monitor.js';
 export {
   limitBreakdown,

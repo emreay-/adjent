@@ -120,11 +120,26 @@ alarms:
 routing:
   info:     [tray]
   warn:     [tray, toast]
-  critical: [tray, toast, webhook]
+  critical: [tray, toast]
 ```
 
 `scope`, `severity` and `routing` are separate axes on purpose: adding a Slack or
 ntfy destination later is a routing-table edit, not a rule change.
+
+**A routing table can only name a sink this installation can build.** `webhook`
+needs `alarmWebhookUrl` in `~/.adjent/settings.json`; until it is set, the sink
+does not exist, so it is deliberately absent from the shipped presets rather
+than routed into nothing. Add it once the URL is configured:
+
+```yaml
+  critical: [tray, toast, webhook]
+```
+
+If a routing table names a sink that is not registered, Adjent says so — once,
+on stderr in the CLI and as a notification in the tray app — instead of dropping
+the alarm silently. An unknown name (a typo) is additionally reported by
+`adjent rules validate`. This matters more than it sounds: an alarm you believe
+is armed and which goes nowhere is worse than one you never configured.
 
 ## What an alarm carries
 
@@ -148,8 +163,11 @@ limit alarms it lists the top few contributors. The snapshot is written into
 
 ## Delivery
 
-Alarms are emitted onto the bus; **sinks** consume them. The tray/toast sink
-ships first; `webhook`, `prometheus`, `mqtt` and `slack` are the same interface.
+Alarms are emitted onto the bus; **sinks** consume them. **Shipped today:**
+`tray` and `toast` (desktop shell), `console` (CLI), and `webhook` (core, once
+`alarmWebhookUrl` is set). `prometheus`, `mqtt` and `slack` are *intended*, not
+built — they are the same interface, which is the point of the abstraction, but
+naming one in a routing table today reports it as unroutable.
 
 ```ts
 interface Sink { id: string; deliver(alarm: Alarm): Promise<void> }

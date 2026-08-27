@@ -11,8 +11,10 @@ import {
   CodexProvider,
   ConsoleSink,
   Monitor,
+  WebhookSink,
   configPath,
   loadConfig,
+  loadSettings,
   readPreset,
   storeDir,
   type PresetName,
@@ -37,6 +39,16 @@ async function makeMonitor(withConsoleSink: boolean): Promise<Monitor> {
   // The console sink prints alarms as prose. In JSONL mode that would put
   // unparseable text on the same stream as the events, so it is left off.
   if (withConsoleSink) monitor.router.register(new ConsoleSink());
+  const settings = await loadSettings();
+  if (settings.alarmWebhookUrl) monitor.router.register(new WebhookSink(settings.alarmWebhookUrl));
+  // stderr, never stdout: --json consumers parse stdout, and a warning that
+  // corrupted their payload would be a worse bug than the one it reports.
+  monitor.router.setUnroutableReporter((id, severity) => {
+    process.stderr.write(
+      `adjent: ${severity} alarms route to sink \`${id}\`, which is not configured here — they are being dropped.
+`,
+    );
+  });
   return monitor;
 }
 
