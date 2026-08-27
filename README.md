@@ -95,6 +95,7 @@ adjent statusline                one line, for Claude Code's statusLine
 adjent rules init                write ~/.adjent/alarms.yaml from a preset
 adjent rules validate            check it, and print what will actually run
 adjent rules test                replay your rules against your own history
+adjent rules presets             list the presets and what each is for
 ```
 
 Every command takes `--json`. Run `adjent --help` for the full flag list, or

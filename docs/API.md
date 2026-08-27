@@ -5,8 +5,9 @@ document is the contract for the second one.
 
 The unit is the **snapshot** — one JSON object describing everything Adjent
 knows at an instant. Every surface serves the same shape: the CLI's `--json`
-output, the event stream, and the local HTTP API all carry a snapshot, so a
-consumer learns it once.
+output and the event stream both carry a snapshot, so a consumer learns it once.
+(A local HTTP API is a possible third surface; it is not built, and nothing in
+this document depends on it.)
 
 ## Snapshot
 
@@ -79,9 +80,16 @@ model stays free to change; this shape does not.
 }
 ```
 
-*Synthetic values throughout. The same payload is asserted key-by-key by
-`packages/core/test/snapshot.contract.test.ts`, so this example cannot drift
-from the code without a test failing.*
+*Synthetic values throughout. The **key shape** of this example, its two
+`provenance` maps and its `schemaVersion` are asserted against the code by
+`packages/core/test/snapshot.contract.test.ts`, so a renamed, added or removed
+key fails a test.*
+
+*What that test does **not** cover, so read the rest of this page as prose
+rather than as verified fact: the example's values, their types and their
+nullability; the command and event tables below; and the meanings in the
+exit-code table (it checks only that a row exists for each code). Those are
+maintained by hand.*
 
 ### Top level
 
@@ -210,6 +218,10 @@ one object on stdout and nothing else.
 | `adjent explain <term>` | what a number means | `{ term, title, body, provenance }` |
 | `adjent check` | may I start more work? | `{ ok, predicate, evaluated[] }` |
 | `adjent watch` | a live loop | *(JSONL — see the event stream)* |
+| `adjent rules init [--preset <name>] [path]` | write a starting `alarms.yaml` | `{ ok, preset, path, bytes }` |
+| `adjent rules validate` | is my config well-formed? | `{ ok, path, exists, diagnostics[], effective }` |
+| `adjent rules test` | would my rules have fired against my own history? | `{ alarms[], byRule, notEvaluable[], samples, from, to, longestSilenceMs }` |
+| `adjent rules presets` | what starting points exist | `{ presets[] }` — each `{ name, summary }` |
 
 `limits` and `agents` are the sections of `status`, lifted out so a script can
 ask for one without parsing past the others. They carry the same objects the

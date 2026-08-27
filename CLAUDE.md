@@ -28,9 +28,12 @@ and rule-driven alarms. Design-first repo: read the docs before writing code.
 3. **Provenance is typed.** Every displayed number is `reported`, `exact`, or
    `derived`. Derived values render with `≈`; measured values never do. The
    hero number is always vendor-reported utilization of the binding limit.
-4. **No native Node modules.** Use `node:sqlite`, Electron's built-in
-   `Notification`, in-memory + JSONL storage. If a dependency needs
-   node-gyp/prebuilds, find another way.
+4. **No native Node modules.** Storage is in-memory plus JSON/JSONL under
+   `~/.adjent/` (`packages/core/src/persist.ts`); notifications use Electron's
+   built-in `Notification`. If a dependency needs node-gyp or a prebuild
+   matrix, find another way. (This rule once named `node:sqlite` as the
+   intended store; nothing has ever used it, and the JSONL design is what
+   shipped.)
 5. **Core stays UI-agnostic.** `packages/core` imports no Electron and no DOM.
    CLI and desktop are thin shells over it.
 6. **Degrade per provider.** A format change or endpoint failure disables one
