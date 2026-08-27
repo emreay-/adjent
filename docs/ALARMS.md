@@ -163,6 +163,14 @@ limit alarms it lists the top few contributors. The snapshot is written into
 
 ## Delivery
 
+**An alarm tells you something; it never does anything to your agents.** The
+only actions a rule can name today are `notify` and `highlight` — both of which
+change what you see, not what your machine runs. Adjent does not start, stop,
+pause or signal a process, and no planned rule action will: the one capability
+on the roadmap is an advisory gate that a wrapper script of yours may choose to
+honour. See [What Adjent will not do](../README.md#what-adjent-will-not-do).
+Anything that acts on a rule will sit behind a switch that is off by default.
+
 Alarms are emitted onto the bus; **sinks** consume them. **Shipped today:**
 `tray` and `toast` (desktop shell), `console` (CLI), and `webhook` (core, once
 `alarmWebhookUrl` is set). `prometheus`, `mqtt` and `slack` are *intended*, not

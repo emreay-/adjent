@@ -151,20 +151,53 @@ These are constraints, not aspirations. They are enforced in code and in CI.
    `~/.codex`, never touches credentials, and never runs an OAuth refresh —
    rotating a token could break the very tool it is monitoring. It writes only
    under `~/.adjent/`.
-2. **Metadata only.** Parsers extract token counts, model ids, paths and
+2. **Read-only toward your agents, too.** Adjent never starts, stops, pauses or
+   signals a process. See [What Adjent will not do](#what-adjent-will-not-do).
+3. **Metadata only.** Parsers extract token counts, model ids, paths and
    timestamps, and discard the rest at read time. Message content never enters
    application state, so no surface can leak it.
-3. **Honest numbers.** Every figure carries its provenance as data, not
+4. **Honest numbers.** Every figure carries its provenance as data, not
    decoration. A consumer decides how to render from that; it never has to guess
    whether a number was measured or modelled.
-4. **Degrade per provider, never the app.** A format change or a failed endpoint
+5. **Degrade per provider, never the app.** A format change or a failed endpoint
    disables one backend's data. Parsers ignore unknown fields and never throw on
    shape drift.
-5. **Cut ruthlessly.** Everything on the resting surface must help answer
+6. **Cut ruthlessly.** Everything on the resting surface must help answer
    "should I change what I am doing right now?". Everything else is one click
    away.
-6. **The core is UI-agnostic.** `packages/core` imports no Electron and no DOM.
+7. **The core is UI-agnostic.** `packages/core` imports no Electron and no DOM.
    The CLI and the desktop app are thin shells over it.
+
+## What Adjent will not do
+
+The first question a monitor has to answer is what it is allowed to do to the
+things it watches. Adjent's answer is deliberately narrow, and it is a design
+decision rather than a gap waiting to be filled.
+
+**Adjent never touches a running process.** It does not start agents, stop
+them, pause them, or send them a signal of any kind. It does not know their
+process IDs for any purpose beyond telling whether a session is still alive. If
+every agent on your machine is looping and burning a week's quota, Adjent will
+tell you loudly and do nothing about it, because that is your decision to make
+and the wrong automated intervention costs more than the quota does.
+
+**Adjent never writes into a vendor's files.** Not `~/.claude`, not `~/.codex`,
+not credentials, not caches. It writes to `~/.adjent/` and nowhere else. A `401`
+from a quota endpoint is a normal state to be waited out, not a token to be
+refreshed.
+
+**What is planned, and what it is not.** The one capability on the roadmap in
+this area is an *advisory gate*: Adjent writes a small file saying "hold" or
+"open", and a wrapper script or orchestrator you control decides whether to
+honour it before launching more work. That is cooperative — the decision and the
+enforcement stay in your code. It is not process control wearing a different
+name, and there is no version of Adjent planned that pauses or stops an agent
+itself. Anything that acts on a rule will sit behind a switch that is off by
+default; a human running a command is never gated by it.
+
+**None of the gate exists yet.** Today Adjent observes and tells you. When the
+gate ships it will be documented here and in [docs/API.md](docs/API.md) with its
+exit codes, and it will still not signal anything.
 
 ## Privacy
 
