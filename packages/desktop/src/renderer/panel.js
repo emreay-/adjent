@@ -292,12 +292,15 @@ function render(payload) {
   // agent rows (≤4), in the same order the agents view uses — derived rates
   // carry ≈. The dashboard is the head of that list, never a different one.
   const burnOf = new Map(state.agentBurns.map((b) => [b.agentId, b.pctPerHour]));
+  // Labelled against every agent, not just the four shown: two sessions in one
+  // project must read differently even when only one of them fits here.
+  const labelOf = agentLabeller(state.agents);
   const rows = [...live]
     .sort(byCost(burnOf))
     .slice(0, 4)
     .map((a) => {
       const burn = burnOf.get(a.id);
-      const proj = a.projectPath ? a.projectPath.split(/[\\/]/).pop() : a.label;
+      const proj = labelOf(a);
       const model = [modelName(a.model) || NO_MODEL, a.effort].filter(Boolean).join(' · ');
       const status = agentStatus(a, burn, now);
       return `<div class="row" data-agent="${esc(a.id)}"><span class="dot" style="background:${status.color}"></span><span class="name">${esc(proj)}</span><span class="meta"${noModelAttr(a.model)}>${esc(model)} · ${status.label}</span></div>`;
@@ -757,6 +760,41 @@ function agentStatus(a, burn, now) {
 // in full, ordered by what they are costing — burn first, then tokens in the
 // window, so the expensive ones are always at the top whether or not the fit
 // has anything to say yet. The resting panel still shows only four.
+/** Directory name of an agent's project, or null when it has no path. */
+function projectName(a) {
+  if (!a.projectPath) return null;
+  return a.projectPath.split(/[\\/]/).pop();
+}
+
+/**
+ * What to call an agent in a list.
+ *
+ * The project basename is the right label almost always — it is what you
+ * recognise a session by. But two sessions in one repo then render as two rows
+ * reading the same word, which is what a user reported on 2026-08-27: they look
+ * like duplicates, or like subagents leaking into a list that should not have
+ * them.
+ *
+ * So disambiguate only when it is actually ambiguous (UI.md: cut ruthlessly).
+ * When two rows would read alike, the vendor-supplied session name separates
+ * them; failing that, a short id. A single agent in a project is unaffected.
+ */
+function agentLabeller(agents) {
+  const counts = new Map();
+  for (const a of agents) {
+    const b = projectName(a) ?? a.label;
+    counts.set(b, (counts.get(b) ?? 0) + 1);
+  }
+  return (a) => {
+    const b = projectName(a);
+    if (b === null) return a.label;
+    if ((counts.get(b) ?? 0) < 2) return b;
+    // a.label is the session name when the vendor gave one, else a short id.
+    const distinct = a.label && a.label !== b ? a.label : String(a.id).split(':').pop().slice(0, 8);
+    return `${b} · ${distinct}`;
+  };
+}
+
 // --------------------------------------------------------------------------
 function renderAgents() {
   const state = lastPayload?.state;
@@ -767,11 +805,12 @@ function renderAgents() {
   }
   const now = state.generatedAt;
   const burnOf = new Map(state.agentBurns.map((b) => [b.agentId, b.pctPerHour]));
+  const labelOf = agentLabeller(state.agents);
   const rows = [...state.agents]
     .sort(byCost(burnOf))
     .map((a) => {
       const burn = burnOf.get(a.id);
-      const proj = a.projectPath ? a.projectPath.split(/[\\/]/).pop() : a.label;
+      const proj = labelOf(a);
       const tok = sumKinds(a.totals);
       const status = agentStatus(a, burn, now);
       const sub = [

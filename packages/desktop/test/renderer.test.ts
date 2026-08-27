@@ -948,6 +948,52 @@ describe('all agents view', () => {
     return p;
   }
 
+  /**
+   * Reported 2026-08-27: "on the agents tab I often see agents with the same
+   * session id/project". They were two genuine sessions in one repo — the row
+   * label was the project basename, so both read the same word.
+   */
+  it('separates two sessions in one project, and leaves a lone session alone', () => {
+    const p = payload() as { state: { agents: Record<string, unknown>[]; agentBurns: unknown[] } };
+    const base = p.state.agents[0]!;
+    p.state.agents = [
+      { ...base, id: 'claude:s1', label: 'refactor-pass', projectPath: '/w/adjent' },
+      { ...base, id: 'claude:s2', label: 'docs-sweep', projectPath: '/w/adjent' },
+      { ...base, id: 'claude:s3', label: 'solo', projectPath: '/w/other' },
+    ];
+    p.state.agentBurns = [];
+    h.onState(p);
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+
+    // The two that share a project are told apart by their session names...
+    expect(list).toContain('refactor-pass');
+    expect(list).toContain('docs-sweep');
+    // ...and the one that does not is still just its project.
+    expect(list).toContain('other');
+    expect(list).not.toContain('other · solo');
+  });
+
+  it('falls back to a short id when a shared project has no session name', () => {
+    const p = payload() as { state: { agents: Record<string, unknown>[]; agentBurns: unknown[] } };
+    const base = p.state.agents[0]!;
+    p.state.agents = [
+      { ...base, id: 'claude:abcdef1234', label: 'adjent', projectPath: '/w/adjent' },
+      { ...base, id: 'claude:9876543210', label: 'adjent', projectPath: '/w/adjent' },
+    ];
+    p.state.agentBurns = [];
+    h.onState(p);
+    h.fire('liveCount');
+    // Match the rendered NAME only: the raw id lives in the data-agent
+    // attribute, so asserting on innerHTML would pass without any label change.
+    const names = [...h.els.get('agentList')!.innerHTML.matchAll(/<span class="name">([^<]*)<\/span>/g)].map(
+      (m) => m[1],
+    );
+
+    expect(names.some((n) => n!.includes('abcdef12'))).toBe(true);
+    expect(names.some((n) => n!.includes('98765432'))).toBe(true);
+  });
+
   it('lists every agent, not just the four the dashboard shows', () => {
     h.onState(manyAgents());
     h.fire('liveCount');
