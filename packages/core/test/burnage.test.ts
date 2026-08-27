@@ -15,11 +15,11 @@ const T0 = 1_700_000_000_000;
 const MIN = 60_000;
 const HOUR = 3600_000;
 
-const limit = (utilization: number, observedAt: number): QuotaLimit => ({
+const limit = (utilization: number, observedAt: number, windowMinutes = 10_080): QuotaLimit => ({
   backend: 'codex',
-  key: '7d',
-  label: 'Codex · 7d',
-  windowMinutes: 10_080,
+  key: windowMinutes === 10_080 ? '7d' : '5h',
+  label: windowMinutes === 10_080 ? 'Codex · 7d' : 'Codex · 5h',
+  windowMinutes,
   utilization,
   resetsAt: T0 + 6 * 24 * HOUR,
   severity: null,
@@ -114,20 +114,108 @@ describe('a limit whose reading has stopped moving', () => {
 });
 
 describe('a limit that starts moving again', () => {
+  /**
+   * On a 5-hour limit, whose 15-minute lookback does not span the idle hour.
+   * The subject here is EWMA continuity after decay, which is independent of
+   * the window; the lookback scaling that W10.1 added is exercised below.
+   */
   it('picks the new rate up from the decayed one, not the old one', () => {
-    const { a, rate } = burning();
+    const a = new LimitAssessor();
+    const W = 300;
+    let rate = 0;
+    for (let i = 0; i <= 10; i++) {
+      const at = T0 + i * MIN;
+      rate = a.assess([limit(i * 0.1, at, W)], at)[0]!.burn?.pctPerHour ?? 0;
+    }
+    expect(rate).toBeGreaterThan(3);
+
     const frozen = T0 + 10 * MIN;
     // An hour idle: the old rate is gone.
-    expect(a.assess([limit(1.0, frozen)], frozen + HOUR)[0]!.burn).toBeNull();
+    expect(a.assess([limit(1.0, frozen, W)], frozen + HOUR)[0]!.burn).toBeNull();
 
     // Then spend again, at roughly the same pace as before.
     let seen: number | null = null;
     for (let i = 1; i <= 10; i++) {
       const at = frozen + HOUR + i * MIN;
-      const r = a.assess([limit(1.0 + i * 0.1, at)], at)[0]!;
+      const r = a.assess([limit(1.0 + i * 0.1, at, W)], at)[0]!;
       seen = r.burn?.pctPerHour ?? null;
     }
     expect(seen).not.toBeNull();
     expect(seen as number).toBeGreaterThan(rate / 2);
+  });
+});
+
+/**
+ * W10.1, reported 2026-08-27: "the current burn rate was not shown on the
+ * binding limit (showing a dash), while the 5h limit was showing it".
+ *
+ * The lookback is now proportional to the limit's own window, because a fixed
+ * 15-minute baseline cannot measure a limit that takes a week to fill.
+ */
+describe('a slow limit still has a measurable rate', () => {
+  /**
+   * Vendors report utilization in whole points — `{"seven_day": {"utilization":
+   * 46.0}}` (docs/DATA-SOURCES.md) — and that quantisation is the whole bug.
+   * A 7-day limit filling at ~0.6 %/h holds the same integer for over an hour,
+   * so a 15-minute lookback sees no change at all in most windows and one
+   * meaningless spike in the window where the integer ticks over. Feeding
+   * continuous floats here would measure the rate perfectly and prove nothing.
+   */
+  function steady(windowMinutes: number, pctPerHour: number, forMinutes: number) {
+    const a = new LimitAssessor();
+    let last: number | null = null;
+    for (let i = 0; i <= forMinutes; i++) {
+      const at = T0 + i * MIN;
+      const util = Math.floor((pctPerHour * i) / 60);
+      last = a.assess([limit(util, at, windowMinutes)], at)[0]!.burn?.pctPerHour ?? null;
+    }
+    return last;
+  }
+
+  it('reports a rate for a 7-day limit that a 15-minute lookback would miss', () => {
+    // Twelve hours of steady 0.6 %/h: the reported integer ticks over roughly
+    // every 100 minutes, so a 15-minute lookback is blind between ticks.
+    const seen = steady(10_080, 0.6, 720);
+    expect(seen).not.toBeNull();
+    expect(seen as number).toBeGreaterThan(0.3);
+    expect(seen as number).toBeLessThan(1.2);
+  });
+
+  it('keeps reporting while the integer sits still — the reported dash', () => {
+    // The exact symptom: between ticks of the reported integer, a 15-minute
+    // lookback sees zero change, the EWMA decays below the floor, and the
+    // binding limit renders a dash while a faster limit beside it shows a
+    // number. A lookback that spans several ticks does not have this problem.
+    const a = new LimitAssessor();
+    let at = T0;
+    let util = 0;
+    // Twelve hours at ~0.6 %/h, reported as whole points.
+    for (let i = 0; i <= 720; i++) {
+      at = T0 + i * MIN;
+      util = Math.floor((0.6 * i) / 60);
+      a.assess([limit(util, at, 10_080)], at);
+    }
+    // Now sit on a plateau. At ~0.6 %/h the reported integer stands still for
+    // about a hundred minutes, and the estimate decays ~13% per minute of
+    // apparent stillness — so well before the next tick there is nothing left.
+    let seen: number | null = null;
+    for (let i = 1; i <= 100; i++) {
+      const t = at + i * MIN;
+      seen = a.assess([limit(util, t, 10_080)], t)[0]!.burn?.pctPerHour ?? null;
+    }
+    expect(seen).not.toBeNull();
+    expect(seen as number).toBeGreaterThan(0.2);
+  });
+
+  it('leaves the 5-hour case exactly as it was', () => {
+    // 300 minutes / 20 = the old 15-minute constant, so this path is unchanged.
+    const seen = steady(300, 6, 60);
+    expect(seen).not.toBeNull();
+    expect(seen as number).toBeGreaterThan(3);
+  });
+
+  it('still says nothing about a genuinely flat limit', () => {
+    const seen = steady(10_080, 0, 720);
+    expect(seen).toBeNull();
   });
 });

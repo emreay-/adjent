@@ -10,6 +10,49 @@ import type { BurnRate, QuotaLimit, Verdict, LimitAssessment } from '../model/ty
 const HALF_LIFE_MS = 5 * 60_000;
 /** Lookback h for the raw rate. */
 const LOOKBACK_MS = 15 * 60_000;
+
+/**
+ * Burn timescales are proportional to the limit's own window.
+ *
+ * A single 15-minute lookback suits a 5-hour limit and quietly breaks a weekly
+ * one: across fifteen minutes a 7-day limit's reported utilization frequently
+ * does not move at all, so the raw rate is zero, the EWMA decays past the
+ * floor, and the limit reports no burn. The longer the window, the more
+ * certainly it reads as idle — which is backwards, because the weekly limit is
+ * usually the binding one, so the hero's rate went blank exactly where it
+ * mattered most while a 5-hour limit beside it showed a number. Reported by a
+ * user on 2026-08-27.
+ *
+ * The ratio is the old constant expressed relative to a 5-hour window —
+ * 300/20 = 15 minutes — so a 5-hour limit behaves exactly as it did, and
+ * everything longer gets a baseline it can actually measure against.
+ *
+ * **Only the lookback scales.** The smoothing half-life stays fixed, and the
+ * distinction matters: the lookback is how long a baseline the *measurement*
+ * needs, while the half-life is how fast stale evidence stops counting once
+ * readings stop arriving. That second one is a property of Adjent's polling
+ * cadence, not of the vendor's window — Adjent reads the same files the spend
+ * is written to, so silence means no spend whether the limit is five hours or
+ * seven days. Scaling it would have given a 7-day limit a ~3-hour half-life
+ * and let it go on claiming a rate all night from a reading taken at bedtime,
+ * which is precisely the bug `bed1c11` fixed. The burn-age tests caught this.
+ *
+ * The cap exists because "proportional" stops being useful past a point: a
+ * lookback longer than half a day would keep answering with yesterday's rate
+ * after the work had stopped.
+ */
+const LOOKBACK_FRACTION = 1 / 20;
+const MAX_LOOKBACK_MS = 12 * 3600_000;
+/** Readings kept per limit. Bounds what `toJSON` writes into state.json. */
+const MAX_SAMPLES = 64;
+
+function lookbackFor(w: QuotaLimit): number {
+  // An unknown or nonsensical window falls back to the 5-hour behaviour rather
+  // than to zero, which would make every reading its own rate.
+  if (!Number.isFinite(w.windowMinutes) || w.windowMinutes <= 0) return LOOKBACK_MS;
+  const windowMs = w.windowMinutes * 60_000;
+  return Math.min(MAX_LOOKBACK_MS, Math.max(LOOKBACK_MS, windowMs * LOOKBACK_FRACTION));
+}
 /** Pace tolerance for the verdict (matches default pace rule). */
 const PACE_TOLERANCE_PP = 10;
 /**
@@ -105,6 +148,7 @@ export class LimitAssessor {
    * Neither could the frozen figure, which claimed to.
    */
   private updateBurn(w: QuotaLimit, now: number): BurnRate | null {
+    const lookbackMs = lookbackFor(w);
     const key = `${w.backend}:${w.key}`;
     const t = this.tracks.get(key) ?? { samples: [], ewma: null, ewmaAt: null, lastResetsAt: null };
     this.tracks.set(key, t);
@@ -121,8 +165,15 @@ export class LimitAssessor {
     const last = t.samples[t.samples.length - 1];
     if (last && w.observedAt <= last.at) return this.aged(t, now);
     t.samples.push({ at: w.observedAt, utilization: w.utilization });
-    const horizon = w.observedAt - 2 * LOOKBACK_MS;
+    const horizon = w.observedAt - 2 * lookbackMs;
     while (t.samples.length > 2 && (t.samples[0] as { at: number }).at < horizon) t.samples.shift();
+    // Thin the middle once the window holds more readings than it needs. A
+    // 7-day limit's lookback spans hours, and at one reading per tick that is
+    // thousands of samples — which `toJSON` writes into state.json every save.
+    // The oldest is the rate's reference and the newest is the current reading;
+    // the ones between only matter as future references, so a bounded spread of
+    // them is as good as all of them.
+    while (t.samples.length > MAX_SAMPLES) t.samples.splice(1, 1);
 
     // Raw rate over ~the lookback: r = (u(t) − u(t−h)) / h.
     const ref = t.samples[0] as { at: number; utilization: number };
