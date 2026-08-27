@@ -207,7 +207,19 @@ export class LimitAssessor {
  *
  * A limit can only stop you if it runs out before it resets, so those come
  * first, soonest-exhausting at the top. Nothing else is at risk, so the rest
- * fall back to how full they are (docs/UI.md § Choosing the binding limit).
+ * fall back to how full they are (docs/UI.md § Choosing the binding limit),
+ * and finally to which resets soonest. Without that last step the order of two
+ * limits equally full and equally safe was whatever the input happened to be —
+ * stable only by accident, and liable to swap between ticks with nothing about
+ * either limit having changed.
+ *
+ * The nearest reset ranks first because it is the next thing that will change
+ * the picture. Note this is the one step where "urgent" is arguable: a limit
+ * resetting within the hour will clear itself, while an equally full one that
+ * resets tomorrow has all day to become a wall. Both readings are defensible
+ * and the spec (improvement plan W3.2) asks for nearest-first, so that is what
+ * this does; it only ever decides ties between limits already equal on risk
+ * and fullness.
  */
 export function compareUrgency(a: LimitAssessment, b: LimitAssessment): number {
   const risky = (x: LimitAssessment): boolean =>
@@ -216,7 +228,14 @@ export function compareUrgency(a: LimitAssessment, b: LimitAssessment): number {
   const rb = risky(b);
   if (ra !== rb) return ra ? -1 : 1;
   if (ra && rb) return (a.exhaustsAt as number) - (b.exhaustsAt as number);
-  return b.limit.utilization - a.limit.utilization;
+  if (a.limit.utilization !== b.limit.utilization) return b.limit.utilization - a.limit.utilization;
+  // A null reset is unknown, not imminent: it sorts last rather than first.
+  const resetA = a.limit.resetsAt;
+  const resetB = b.limit.resetsAt;
+  if (resetA === resetB) return 0;
+  if (resetA === null) return 1;
+  if (resetB === null) return -1;
+  return resetA - resetB;
 }
 
 /** Elapsed fraction of the window × 100 — where the pace line sits (GLOSSARY). */

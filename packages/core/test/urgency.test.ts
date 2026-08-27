@@ -45,6 +45,16 @@ const assessment = (over: Partial<LimitAssessment> & { util?: number } = {}): Li
   } as LimitAssessment;
 };
 
+/**
+ * `assessment` spreads its overrides last, so passing `limit:` replaces the
+ * whole limit rather than merging into it. For reset-time cases, build then
+ * override explicitly.
+ */
+const withReset = (util: number, resetsAt: number | null): LimitAssessment => {
+  const x = assessment({ util });
+  return { ...x, limit: { ...x.limit, resetsAt } };
+};
+
 describe('compareUrgency', () => {
   it('puts a limit that runs out before it resets ahead of a fuller one that does not', () => {
     // 84% of a weekly limit with days left is less urgent than 60% of a 5-hour
@@ -71,6 +81,28 @@ describe('compareUrgency', () => {
     const afterReset = assessment({ util: 10, exhaustsAt: T0 + 9 * H });
     const fuller = assessment({ util: 55 });
     expect([afterReset, fuller].sort(compareUrgency)[0]).toBe(fuller);
+  });
+
+  /**
+   * The third tiebreak. Equal on risk and equal on fullness, the pair used to
+   * come back in input order — stable only by accident, so two limits could
+   * swap places between ticks with nothing about them having changed.
+   */
+  it('breaks a tie on fullness by which resets soonest', () => {
+    const soon = withReset(60, T0 + 1 * H);
+    const later = withReset(60, T0 + 20 * H);
+    // Nearest reset first (W3.2). The pair is equal on risk and on fullness,
+    // so without this step the order was input order.
+    expect([soon, later].sort(compareUrgency)[0]).toBe(soon);
+    // and it does not depend on how they arrived
+    expect([later, soon].sort(compareUrgency)[0]).toBe(soon);
+  });
+
+  it('sorts an unknown reset last — unknown is not imminent', () => {
+    const known = withReset(60, T0 + 2 * H);
+    const unknown = withReset(60, null);
+    expect([unknown, known].sort(compareUrgency)[0]).toBe(known);
+    expect([known, unknown].sort(compareUrgency)[0]).toBe(known);
   });
 });
 
