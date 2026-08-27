@@ -334,6 +334,22 @@ describe('panel renderer', () => {
     expect(h.els.get('agents')!.innerHTML).toContain('≈4.2 %/h');
   });
 
+  it('shows — and not a placeholder when no turn has named a model', () => {
+    // The dashboard rows were the last display path still rendering '?'. A
+    // session whose only turns are unnamed is the case W3.1 named.
+    const p = payload();
+    const st = p.state as Record<string, unknown>;
+    const agents = st['agents'] as Record<string, unknown>[];
+    st['agents'] = [{ ...agents[0]!, model: 'gpt-unknown' }];
+    h.onState(p);
+
+    const dash = h.els.get('agents')!.innerHTML;
+    expect(dash).not.toContain('gpt-unknown');
+    expect(dash).not.toContain('?');
+    expect(dash).toContain('—');
+    expect(dash).toContain('model not yet observed on this session');
+  });
+
   it('draws the measured curve through the history samples', () => {
     h.onState(payload());
     const svg = h.els.get('chart')!.innerHTML;
@@ -954,7 +970,9 @@ describe('all agents view', () => {
     h.fire('liveCount');
     const list = h.els.get('agentList')!.innerHTML;
     expect(list).not.toContain('gpt-unknown');
-    expect(list).toContain('model unknown');
+    // One glyph everywhere, not prose that differs per surface.
+    expect(list).toContain('—');
+    expect(list).not.toContain('model unknown');
   });
 
   it('stays live as ticks arrive', () => {
@@ -1019,15 +1037,17 @@ describe('placeholder models never reach the split', () => {
 
     const split = h.els.get('limitSplit')!.innerHTML;
     // The attribute stays the raw key — it is how the hover finds the row.
-    // What a reader sees must not be the placeholder.
-    const shown = /<span class="name">([^<]*)<\/span>/.exec(split)?.[1];
-    expect(shown).toBe('unknown model');
+    // What a reader sees must not be the placeholder. The name span now also
+    // carries the explanatory title, so match attributes before the close.
+    const shown = /<span class="name"[^>]*>([^<]*)<\/span>/.exec(split)?.[1];
+    expect(shown).toBe('—');
+    expect(split).toContain('model not yet observed on this session');
 
     const el = new El();
     el.setAttribute('data-split', 'gpt-unknown');
     const tip = h.hover(el);
-    expect(tip).toContain('unknown model');
-    expect(/<span class="t">([^<]*)<\/span>/.exec(tip)?.[1]).toBe('unknown model');
+    expect(tip).toContain('—');
+    expect(/<span class="t"[^>]*>([^<]*)<\/span>/.exec(tip)?.[1]).toBe('—');
   });
 });
 

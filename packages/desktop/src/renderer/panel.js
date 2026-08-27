@@ -76,6 +76,16 @@ const fmtTok = (n) =>
  */
 const UNKNOWN_MODELS = new Set(['unknown', 'gpt-unknown']);
 const modelName = (m) => (m && !UNKNOWN_MODELS.has(m) ? m : null);
+/**
+ * One glyph and one sentence for "no model observed yet", everywhere. Four
+ * different fallbacks had grown up ('?', 'unknown model', 'model unknown', and
+ * the placeholder itself) — which reads to a user as four different states
+ * rather than one. The em dash is the same "nothing here" the CLI renders.
+ */
+const NO_MODEL = '—';
+const NO_MODEL_TIP = 'model not yet observed on this session';
+/** `title` attribute, so the explanation is one hover away wherever it shows. */
+const noModelAttr = (m) => (modelName(m) ? '' : ` title="${NO_MODEL_TIP}"`);
 
 function esc(s) {
   const div = document.createElement('div');
@@ -288,9 +298,9 @@ function render(payload) {
     .map((a) => {
       const burn = burnOf.get(a.id);
       const proj = a.projectPath ? a.projectPath.split(/[\\/]/).pop() : a.label;
-      const model = [modelName(a.model) || '?', a.effort].filter(Boolean).join(' · ');
+      const model = [modelName(a.model) || NO_MODEL, a.effort].filter(Boolean).join(' · ');
       const status = agentStatus(a, burn, now);
-      return `<div class="row" data-agent="${esc(a.id)}"><span class="dot" style="background:${status.color}"></span><span class="name">${esc(proj)}</span><span class="meta">${esc(model)} · ${status.label}</span></div>`;
+      return `<div class="row" data-agent="${esc(a.id)}"><span class="dot" style="background:${status.color}"></span><span class="name">${esc(proj)}</span><span class="meta"${noModelAttr(a.model)}>${esc(model)} · ${status.label}</span></div>`;
     });
   $('agents').innerHTML = rows.join('') || '<div class="empty">None</div>';
 
@@ -412,7 +422,7 @@ function splitDetailHtml(model) {
   const agents = lastPayload?.state?.agents ?? [];
   const share = b.total > 0 ? (row.total / b.total) * 100 : 0;
 
-  let html = `<span class="t">${esc(modelName(row.model) || 'unknown model')}</span>`;
+  let html = `<span class="t"${noModelAttr(row.model)}>${esc(modelName(row.model) || NO_MODEL)}</span>`;
   html += esc(`${fmtTok(row.total)} tokens · ${share.toFixed(0)}% of this limit · ${row.requests} requests`);
   html += ctxRows([
     ['Input', esc(fmtTok(row.tokens.input))],
@@ -765,7 +775,7 @@ function renderAgents() {
       const tok = sumKinds(a.totals);
       const status = agentStatus(a, burn, now);
       const sub = [
-        modelName(a.model) || 'model unknown',
+        modelName(a.model) || NO_MODEL,
         a.effort,
         a.gitBranch,
         tok > 0 ? `${fmtTok(tok)} tok` : null,
@@ -965,7 +975,7 @@ function renderLimitSplit(b) {
         .join(' · ');
       return (
         `<div class="splitRow" data-split="${esc(r.model)}"><div class="splitTop">` +
-        `<span class="name">${esc(modelName(r.model) || 'unknown model')}</span>` +
+        `<span class="name"${noModelAttr(r.model)}>${esc(modelName(r.model) || NO_MODEL)}</span>` +
         `<span class="meta"><b>${esc(fmtTok(r.total))}</b> · ${share.toFixed(0)}%</span></div>` +
         `<div class="bar"><i style="width:${width.toFixed(1)}%"></i></div>` +
         `<span class="kinds">${esc(kinds)} · ${esc(String(r.requests))} req</span></div>`

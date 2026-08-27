@@ -679,8 +679,11 @@ the panel header.
   window reads zero, which is the honest answer.
 * **A placeholder is never displayed as a value.** When no turn names a model
   the ledger still needs a bucket key, so providers write `unknown` /
-  `gpt-unknown`. Those are internal: the UI shows `?`, which says "we do not
-  know" instead of inventing a model that does not exist.
+  `gpt-unknown`. Those are internal: every surface shows `—`, with the hover
+  reading *model not yet observed on this session* — one glyph and one sentence
+  everywhere, rather than inventing a model that does not exist. (The panel
+  briefly showed `?` here and three different prose fallbacks elsewhere, which
+  reads as four states instead of one.)
 * **A time outside today names its day.** A bare `05:29` is only unambiguous
   within today; on a 7-day limit it reads as five hours away when it is five
   days away. So: `05:29` today, `tomorrow 05:29`, `Fri 05:29` inside the coming

@@ -289,6 +289,9 @@ describe('json payloads', () => {
 
     const human = await run('agents', [], withPlaceholder);
     expect(human.stdout).not.toContain('gpt-unknown');
+    // The absence of the placeholder is only half of it: assert what IS shown,
+    // or a renderer that dropped the column entirely would pass this test.
+    expect(human.stdout).toContain('—');
   });
 });
 
