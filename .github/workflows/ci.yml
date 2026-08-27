@@ -49,6 +49,14 @@ jobs:
       - name: Test
         run: pnpm -r test
 
+      # The steps above prove the modules compile and the units behave. This
+      # runs the thing we actually ship: the built CLI, as a process, against a
+      # generated fixture home containing synthetic vendor files. A broken entry
+      # point, a bad import specifier or a payload that stopped matching
+      # docs/API.md passes every step above and fails here.
+      - name: Smoke — run the built CLI against a fixture HOME
+        run: node packages/cli/test/smoke.mjs
+
   hygiene:
     name: no personal data
     runs-on: ubuntu-latest

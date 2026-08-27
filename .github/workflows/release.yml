@@ -44,8 +44,13 @@ jobs:
       - run: pnpm -r build
 
       # Never ship something that has not passed. A release is the one build
-      # where "it probably still works" is not good enough.
+      # where "it probably still works" is not good enough — which is also why
+      # the binary smoke test runs here and not only in CI: this is the build
+      # whose artifacts reach users.
       - run: pnpm -r test
+
+      - name: Smoke — run the built CLI against a fixture HOME
+        run: node packages/cli/test/smoke.mjs
 
       # `--publish never`: electron-builder will happily upload on its own when
       # it sees a token and a tag, which would bypass the draft step below and
