@@ -5,8 +5,8 @@
 # "which of these is eating it". So this preset leans on per-agent detection
 # and keeps the whole-limit thresholds sparse.
 #
-# The `anomaly` rule belongs here too and does not exist yet; add it when it
-# lands rather than leaving a rule Adjent will drop.
+# The `anomaly` rule is the one that earns its keep here: with eight agents you
+# will not notice one of them quietly repeating itself.
 
 alarms:
   - id: runaway-agent
@@ -18,6 +18,17 @@ alarms:
       share_pct: 40
       abs_pct_per_hour: 5.0
     cooldown: 5m
+    severity: warn
+
+  - id: looping-subagent
+    type: anomaly
+    window: 15m           # long enough for a pattern, short enough to matter
+    trigger:
+      min_turns: 12       # fewer is a big task, not a loop
+      shape_cv: 0.15      # every turn near-identical in size
+      growth_floor: 0.2   # and the context has stopped growing
+      abs_pct_per_hour: 2.0
+    cooldown: 30m
     severity: warn
 
   - id: pace-any

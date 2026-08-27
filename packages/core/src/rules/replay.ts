@@ -114,6 +114,10 @@ function stateAt(sample: HistorySample, windowMinutes: number, assessor: LimitAs
     agents: [],
     limits: [assessment],
     agentBurns: [],
+    // Replay works from recorded utilization history, which carries no turn
+    // events — so `anomaly` cannot be replayed. It is already listed in
+    // NEEDS_AGENTS and reported as not evaluable rather than silently silent.
+    agentShapes: [],
     epsilon: null,
     fitConfidence: 'low',
   };

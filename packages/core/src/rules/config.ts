@@ -190,6 +190,20 @@ function coerceRule(raw: unknown): Rule | null {
         severity: sev(r['severity'], 'warn'),
       };
     }
+    case 'anomaly': {
+      const trig = (r['trigger'] ?? {}) as Record<string, unknown>;
+      return {
+        id,
+        type: 'anomaly',
+        windowMin: minutes(r['window'], 15),
+        minTurns: num(trig['min_turns'], 12),
+        shapeCv: num(trig['shape_cv'], 0.15),
+        growthFloor: num(trig['growth_floor'], 0.2),
+        absPctPerHour: num(trig['abs_pct_per_hour'], 2.0),
+        cooldownMin: minutes(r['cooldown'], 30),
+        severity: sev(r['severity'], 'warn'),
+      };
+    }
     default:
       return null;
   }
@@ -239,9 +253,19 @@ const KNOWN_KEYS: Record<string, string[]> = {
   threshold: [...COMMON_KEYS, 'levels', 'window'],
   // `window` here is a *time span*, not the deprecated scope key (GLOSSARY).
   agent_burn: ['id', 'type', 'severity', 'cooldown', 'window', 'trigger'],
+  anomaly: ['id', 'type', 'severity', 'cooldown', 'window', 'trigger'],
 };
 const SCOPE_KEYS = ['backend', 'limit', 'window'];
-const TRIGGER_KEYS = ['rel_to_median', 'share_pct', 'abs_pct_per_hour'];
+/**
+ * Per rule type, not one shared list: a flat list would make `anomaly`'s
+ * trigger keys legal on `agent_burn` and vice versa, so a key in the wrong
+ * rule would be accepted and then ignored — the exact failure diagnostics
+ * exist to prevent.
+ */
+const TRIGGER_KEYS: Record<string, string[]> = {
+  agent_burn: ['rel_to_median', 'share_pct', 'abs_pct_per_hour'],
+  anomaly: ['min_turns', 'shape_cv', 'growth_floor', 'abs_pct_per_hour'],
+};
 const RULE_TYPES = Object.keys(KNOWN_KEYS);
 
 const err = (path: string, message: string): Diagnostic => ({ level: 'error', path, message });
@@ -313,7 +337,10 @@ function validateRule(raw: unknown, at: string, seen: Set<string>, out: Diagnost
       }
     }
   }
-  if (type !== 'agent_burn' && 'window' in r) {
+  // `window` is a *time span* for the per-worker rules and the deprecated
+  // spelling of `limit:` for the limit-scoped ones (GLOSSARY: a window is a UI
+  // element; `limit` is the vendors' own word).
+  if (type !== 'agent_burn' && type !== 'anomaly' && 'window' in r) {
     out.push(warn(`${at}.window`, 'deprecated — use `limit:`'));
   }
 
@@ -347,16 +374,17 @@ function validateRule(raw: unknown, at: string, seen: Set<string>, out: Diagnost
     }
   }
 
-  if (type === 'agent_burn') {
+  if (type === 'agent_burn' || type === 'anomaly') {
     checkDuration(r, 'window', at, out);
+    const keys = TRIGGER_KEYS[type] as string[];
     const trig = r['trigger'];
     if (trig !== undefined) {
       if (typeof trig !== 'object' || trig === null || Array.isArray(trig)) {
         out.push(err(`${at}.trigger`, 'expected a mapping'));
       } else {
         const t = trig as Record<string, unknown>;
-        checkUnknownKeys(t, TRIGGER_KEYS, `${at}.trigger`, out);
-        for (const k of TRIGGER_KEYS) checkNumber(t, k, `${at}.trigger`, out);
+        checkUnknownKeys(t, keys, `${at}.trigger`, out);
+        for (const k of keys) checkNumber(t, k, `${at}.trigger`, out);
       }
     }
   }

@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 import type {
   Agent,
   AgentBurn,
+  AgentShape,
   Alarm,
   AppState,
   Backend,
@@ -23,6 +24,7 @@ import type { ProviderAdapter } from './providers/provider.js';
 import { UsageLedger } from './quota/ledger.js';
 import { ExchangeRateFit, type FitResult } from './quota/fit.js';
 import { LimitAssessor } from './quota/assess.js';
+import { agentShapes } from './quota/shape.js';
 import { limitBreakdown, limitWindow, type LimitBreakdown } from './quota/breakdown.js';
 import { evaluate } from './rules/evaluate.js';
 import { DEFAULT_CONFIG, type AlarmConfig } from './rules/config.js';
@@ -273,6 +275,17 @@ export class Monitor extends EventEmitter {
       if (pctPerHour > 0.01) agentBurns.push({ agentId: a.id, pctPerHour, confidence: held.result.confidence });
     }
 
+    // Turn shape per worker, for the `anomaly` rule. Computed here rather than
+    // in the engine for the same reason agentBurns is: `evaluate` is pure over
+    // AppState and never sees the ledger. The lookback is the widest any
+    // anomaly rule asked for, so one pass serves them all.
+    const shapeLookbackMin = Math.max(
+      0,
+      ...this.config.rules.filter((r) => r.type === 'anomaly').map((r) => r.windowMin),
+    );
+    const agentShapesNow: AgentShape[] =
+      shapeLookbackMin > 0 ? agentShapes(this.ledger.slice(now - shapeLookbackMin * 60_000, now)) : [];
+
     // Consistency residual ε: gross burn per the vendor vs gross summed over
     // agents (GLOSSARY § the free consistency check). Uses the binding short
     // window's measured rate as the vendor side.
@@ -290,6 +303,7 @@ export class Monitor extends EventEmitter {
       agents: agents.sort((a, b) => b.lastActivityAt - a.lastActivityAt),
       limits: assessments,
       agentBurns: agentBurns.sort((a, b) => b.pctPerHour - a.pctPerHour),
+      agentShapes: agentShapesNow,
       epsilon: this.epsilonEwma,
       fitConfidence,
     };

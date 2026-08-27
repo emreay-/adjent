@@ -10,7 +10,7 @@ No I/O, no timers, no side effects. That makes the whole feature testable agains
 synthetic timelines, which matters because alarm bugs are silent — a rule that
 never fires looks identical to a quiet day.
 
-Three rule types cover everything requested.
+Four rule types cover everything requested.
 
 ## 1. `pace` — linear burn model
 
@@ -83,6 +83,57 @@ Fire when any of:
 The absolute floor exists specifically because a lone looping agent has no peers
 to look abnormal against.
 
+## 4. `anomaly` — turn-shape model
+
+The other three ask *how much*. This one asks *what does the work look like* —
+which is how it catches a worker that is cheap per turn and ruinous over an
+hour, and it is the only rule here that no comparable tool ships.
+
+Over a lookback window $	au$ (default 15 m), per worker, from usage events
+alone:
+
+* $n$ — turns in the window;
+* $cv$ — the coefficient of variation of per-turn total tokens: standard
+  deviation over mean, so it means the same thing for a worker averaging 2k
+  tokens and one averaging 200k;
+* $growth$ — the fraction of consecutive turns whose cache reads increased.
+
+It fires when **all four** hold:
+
+$$n \ge 	ext{min\_turns} \;\wedge\; cv < 	ext{shape\_cv} \;\wedge\; growth < 	ext{growth\_floor} \;\wedge\; b \ge 	ext{abs\_pct\_per\_hour}$$
+
+Each condition alone has an innocent reading — a long run of turns is a big
+task, uniform sizes happen in batch work, flat context happens right after a
+compaction, and a high burn rate is just a busy agent. Together they are the
+signature of a worker re-sending nearly the same request. A healthy session
+accumulates context, so `growth` trends high; a fixed-point loop plateaus or
+sawtooths.
+
+**A worker is an agent, or one subagent of it.** This is the one place Adjent
+distinguishes them, and it is why: a looping subagent's uniform turns
+interleaved with its parent's varied ones look like neither. The distinction is
+for detection only — the subagent never becomes a row, a count or a total, and
+the alarm names the *session*, describing the offender as "a subagent of" it.
+See [GLOSSARY § Sessions and their subagents](GLOSSARY.md#sessions-and-their-subagents).
+
+**What it cannot see.** Adjent reads metadata, never message content. So a
+*semantic* loop — one that keeps rephrasing, retrying different approaches, or
+otherwise varies its token counts while making no progress — is invisible to
+this rule, and no amount of tuning will surface it. The rule detects
+repetition of *shape*, and the copy it produces is a hypothesis rather than a
+verdict: **"Looks like a loop"**, with the numbers that prompted it, for you to
+judge.
+
+Two consequences worth knowing before you tune it:
+
+* A ledger row is one API call, not one conversational turn. A turn with tool
+  round-trips writes several, so `min_turns` is reached sooner than the phrase
+  suggests.
+* The burn floor reads the *agent's* rate, because a subagent's spend is not
+  priced separately. Until the exchange-rate fit has bootstrapped for that
+  vendor there is no rate at all, and the rule stays silent — the same
+  cold-start behaviour as `agent_burn`.
+
 ## Configuration
 
 Declarative, hot-reloaded from `~/.adjent/alarms.yaml`. Edit it in your own
@@ -116,6 +167,17 @@ alarms:
       abs_pct_per_hour: 8.0
     cooldown: 15m
     actions: [notify, highlight]
+
+  - id: looping-subagent
+    type: anomaly
+    window: 15m
+    trigger:
+      min_turns: 12
+      shape_cv: 0.15
+      growth_floor: 0.2
+      abs_pct_per_hour: 2.0
+    cooldown: 30m
+    severity: warn
 
 routing:
   info:     [tray]
@@ -157,8 +219,8 @@ itself:
 | `agents[]` | **what you were actually doing**: project directory (full path, not just the folder name — two checkouts of one repo are indistinguishable otherwise), git branch, model, effort, derived %/h and token total, most expensive first |
 | `fitConfidence` | how much to trust the derived figures in the snapshot |
 
-For an `agent_burn` alarm the snapshot narrows to the offending agent; for
-limit alarms it lists the top few contributors. The snapshot is written into
+For an `agent_burn` or `anomaly` alarm the snapshot narrows to the offending
+agent; for limit alarms it lists the top few contributors. The snapshot is written into
 `~/.adjent/alarms.jsonl` with the alarm, so it survives restarts.
 
 ## Delivery

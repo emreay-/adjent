@@ -7,6 +7,7 @@
  */
 import type {
   AgentBurnRule,
+  AnomalyRule,
   Alarm,
   AlarmAgentSnapshot,
   AlarmContext,
@@ -32,6 +33,9 @@ export function evaluate(state: AppState, rules: Rule[], memory: FireLog, now: n
         break;
       case 'agent_burn':
         out.push(...evalAgentBurn(rule, state, memory, now));
+        break;
+      case 'anomaly':
+        out.push(...evalAnomaly(rule, state, memory, now));
         break;
     }
   }
@@ -259,6 +263,76 @@ function evalAgentBurn(rule: AgentBurnRule, state: AppState, memory: FireLog, no
               plan: null,
               fitConfidence: state.fitConfidence,
               agents: agentSnapshots(state, b.agentId),
+            }),
+      },
+    });
+  }
+  return out;
+}
+
+/**
+ * "Looks like a loop." Fires on the *shape* of a worker's turns rather than on
+ * how much it spent, which is what makes it catch a subagent that is cheap per
+ * turn and ruinous over an hour.
+ *
+ * All four conditions must hold. Each alone is ordinary: a long run of turns is
+ * a big task; uniform turn sizes happen in batch work; flat context happens
+ * right after a compaction; a high burn rate is just a busy agent. Together
+ * they are the signature of a worker re-sending nearly the same request.
+ *
+ * The copy is a hypothesis, not a verdict — Adjent cannot read the messages
+ * (hard rule 2), so it reports what it can see and lets the user judge.
+ */
+function evalAnomaly(rule: AnomalyRule, state: AppState, memory: FireLog, now: number): Alarm[] {
+  const out: Alarm[] = [];
+  for (const shape of state.agentShapes) {
+    if (shape.turns < rule.minTurns) continue;
+    if (shape.cv >= rule.shapeCv) continue;
+    if (shape.growth >= rule.growthFloor) continue;
+
+    // The burn floor keeps a slow, harmless loop off the screen. Note it is
+    // per *agent*: a subagent's own burn is not separately priced, so a
+    // looping subagent is judged by what its session is costing.
+    const burn = state.agentBurns.find((b) => b.agentId === shape.agentId)?.pctPerHour ?? 0;
+    if (burn < rule.absPctPerHour) continue;
+
+    // One cooldown per worker, so two looping subagents of one session are two
+    // alarms rather than one silencing the other.
+    const disc = `${rule.id}:${shape.agentId}:${shape.subId ?? ''}`;
+    if (!cooldownOk(memory, disc, rule.cooldownMin, now)) continue;
+    memory.lastFired[disc] = now;
+
+    const agent = state.agents.find((a) => a.id === shape.agentId);
+    const label = agent?.label ?? shape.agentId;
+    // A subagent is described as part of its session, never as a thing of its
+    // own (GLOSSARY: an Agent is the session including its subagents).
+    const who = shape.subId === null ? label : `a subagent of ${label}`;
+    const binding = state.limits.find((w) => w.binding);
+    out.push({
+      id: disc,
+      ruleId: rule.id,
+      severity: rule.severity,
+      title: `Looks like a loop — ${label}`,
+      body:
+        `${who} has run ${shape.turns} near-identical turns in ${Math.round(rule.windowMin)} minutes` +
+        `${agent?.model ? ` on ${agent.model}` : ''}, ≈${burn.toFixed(1)} %/h, with no growing context.`,
+      firedAt: now,
+      backend: agent?.backend ?? null,
+      limitKey: null,
+      agentId: shape.agentId,
+      context: {
+        ...(binding
+          ? windowContext(state, binding, shape.agentId)
+          : {
+              limitLabel: null,
+              utilization: null,
+              burnPctPerHour: null,
+              paceLinePct: null,
+              resetsAt: null,
+              exhaustsAt: null,
+              plan: null,
+              fitConfidence: state.fitConfidence,
+              agents: agentSnapshots(state, shape.agentId),
             }),
       },
     });

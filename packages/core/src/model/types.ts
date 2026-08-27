@@ -177,12 +177,46 @@ export interface LimitAssessment {
   tokens?: Record<TokenKind, number> | null;
 }
 
+/**
+ * The shape of one worker's recent turns — what a loop looks like from the
+ * outside, computed from metadata alone (hard rule 2: no message bodies).
+ *
+ * A "worker" is an agent, or one subagent of it (`UsageEvent.subId`). It is a
+ * detection partition, never an identity: see GLOSSARY § Sessions and their
+ * subagents.
+ *
+ * The three numbers together separate a loop from healthy work:
+ *  - `turns`   how many turns landed in the lookback window;
+ *  - `cv`      coefficient of variation of per-turn total tokens. Near zero
+ *              means every turn is the same size, which real work rarely is;
+ *  - `growth`  the fraction of consecutive turns whose `cacheRead` rose. A
+ *              healthy session accumulates context, so this trends high; a
+ *              fixed-point loop plateaus or sawtooths.
+ *
+ * Any one of them alone has a common innocent explanation. Together they do
+ * not — which is why the rule requires all three.
+ */
+export interface AgentShape {
+  agentId: string;
+  /** Null when these are the session's own turns rather than a subagent's. */
+  subId: string | null;
+  turns: number;
+  cv: number;
+  growth: number;
+}
+
 export interface AppState {
   generatedAt: number;
   backends: Backend[];
   agents: Agent[];
   limits: LimitAssessment[];
   agentBurns: AgentBurn[];
+  /**
+   * Per-worker turn shape over the anomaly lookback. Computed by the monitor
+   * from the ledger, because `evaluate` is pure over this state and never sees
+   * events — the same reason `agentBurns` is precomputed.
+   */
+  agentShapes: AgentShape[];
   /** Consistency residual EWMA (GLOSSARY: ε). */
   epsilon: number | null;
   fitConfidence: Confidence;
@@ -275,7 +309,27 @@ export interface AgentBurnRule {
   severity: Severity;
 }
 
-export type Rule = PaceRule | ThresholdRule | AgentBurnRule;
+/**
+ * "This worker looks stuck." Fires on turn *shape*, not on spend, which is what
+ * makes it catch a loop that is individually cheap and collectively ruinous.
+ *
+ * All four conditions must hold — each alone has an innocent reading. Enough
+ * turns to be a pattern, uniform sizes, no growing context, and enough burn to
+ * be worth interrupting someone over.
+ */
+export interface AnomalyRule {
+  id: string;
+  type: 'anomaly';
+  windowMin: number;
+  minTurns: number;
+  shapeCv: number;
+  growthFloor: number;
+  absPctPerHour: number;
+  cooldownMin: number;
+  severity: Severity;
+}
+
+export type Rule = PaceRule | ThresholdRule | AgentBurnRule | AnomalyRule;
 
 /** Persistent memory the alarm engine needs between evaluations. */
 export interface FireLog {
