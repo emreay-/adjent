@@ -47,6 +47,22 @@ interface SessionRecord {
   version: string | null;
 }
 
+/**
+ * A subagent transcript's identity: its path relative to the session's
+ * `subagents/` directory, without the extension, with separators normalised so
+ * the same subagent reads the same on Windows and Linux.
+ *
+ * Relative deliberately — an absolute path would carry the user's home
+ * directory into the ledger, and the ledger is written to disk.
+ */
+function subIdOf(subRoot: string, file: string): string {
+  return path
+    .relative(subRoot, file)
+    .split(path.sep)
+    .join('/')
+    .replace(/\.jsonl$/, '');
+}
+
 export class ClaudeProvider implements ProviderAdapter {
   readonly id = 'claude' as const;
   readonly supportedVersions = '>=2.0.0 <3.0.0';
@@ -196,14 +212,19 @@ export class ClaudeProvider implements ProviderAdapter {
         // Cheap pre-filter: metadata-only rule — we only parse lines that can
         // carry usage, and we never retain message content.
         if (!line.includes('"usage"')) continue;
-        const ev = this.parseUsageLine(line, f.sessionId, f.parentSessionId);
+        const ev = this.parseUsageLine(line, f.sessionId, f.parentSessionId, f.subId);
         if (ev) events.push(ev);
       }
     }
     return events;
   }
 
-  private parseUsageLine(line: string, sessionId: string, parentSessionId: string | null): UsageEvent | null {
+  private parseUsageLine(
+    line: string,
+    sessionId: string,
+    parentSessionId: string | null,
+    subId: string | null,
+  ): UsageEvent | null {
     const d = parseLine(line);
     if (!d || d['type'] !== 'assistant') return null;
     const msg = asObj(d['message']);
@@ -250,6 +271,8 @@ export class ClaudeProvider implements ProviderAdapter {
       ts,
       backend: 'claude',
       agentId: `claude:${agentSession}`,
+      // Null on a parent's own turns. Never an agent id, never displayed.
+      subId,
       model,
       effort,
       tokens,
@@ -306,10 +329,23 @@ export class ClaudeProvider implements ProviderAdapter {
     }
   }
 
+  /**
+   * `subId` is the subagent's own identity, kept as a *detection* label only.
+   *
+   * GLOSSARY defines an Agent as the session including its subagents, and that
+   * does not change: one row, one live count, one burn figure, tokens counted
+   * exactly once at the parent. But "which subagent produced this turn" is a
+   * real distinction the detector needs — a looping subagent's uniform turns
+   * interleaved with the parent's varied ones look like neither when merged.
+   * So the identity rides on the event and is never surfaced as an agent.
+   *
+   * It is the transcript path *relative to* the subagents directory, so nothing
+   * about the user's home directory travels with it.
+   */
   private async findTranscripts(
     projectsDir: string,
-  ): Promise<Array<{ path: string; sessionId: string; parentSessionId: string | null }>> {
-    const out: Array<{ path: string; sessionId: string; parentSessionId: string | null }> = [];
+  ): Promise<Array<{ path: string; sessionId: string; parentSessionId: string | null; subId: string | null }>> {
+    const out: Array<{ path: string; sessionId: string; parentSessionId: string | null; subId: string | null }> = [];
     let slugs: string[];
     try {
       slugs = await fs.readdir(projectsDir);
@@ -326,13 +362,23 @@ export class ClaudeProvider implements ProviderAdapter {
       }
       for (const e of entries) {
         if (e.isFile() && e.name.endsWith('.jsonl')) {
-          out.push({ path: path.join(slugDir, e.name), sessionId: e.name.replace(/\.jsonl$/, ''), parentSessionId: null });
+          out.push({
+            path: path.join(slugDir, e.name),
+            sessionId: e.name.replace(/\.jsonl$/, ''),
+            parentSessionId: null,
+            subId: null,
+          });
         } else if (e.isDirectory()) {
           // projects/<slug>/<sessionId>/subagents/**/agent-*.jsonl
           const parent = e.name;
           const subRoot = path.join(slugDir, parent, 'subagents');
           for (const sub of await this.walkJsonl(subRoot)) {
-            out.push({ path: sub, sessionId: parent, parentSessionId: parent });
+            out.push({
+              path: sub,
+              sessionId: parent,
+              parentSessionId: parent,
+              subId: subIdOf(subRoot, sub),
+            });
           }
         }
       }

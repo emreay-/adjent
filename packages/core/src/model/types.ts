@@ -98,6 +98,18 @@ export interface UsageEvent {
   ts: number; // epoch ms
   backend: BackendId;
   agentId: string;
+  /**
+   * Which subagent of `agentId` produced this turn, or null for the session's
+   * own turns. A **detection label, not an identity**: an Agent is the session
+   * including its subagents (GLOSSARY), tokens are counted exactly once at the
+   * parent, and nothing derived from this field may reach the UI as a row, a
+   * count or a total. It exists because a looping subagent and its parent are
+   * indistinguishable once their turns are merged.
+   *
+   * Optional: events written before this field existed simply lack it, and
+   * `loadLedger` is duck-typed, so no store migration is needed.
+   */
+  subId?: string | null;
   model: string;
   effort: string | null;
   tokens: TokenTotals;

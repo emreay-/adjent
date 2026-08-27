@@ -58,6 +58,25 @@ The tokens are counted exactly once, at the parent. Counting them at both levels
 is one of the two things a persistent gap between the vendor's number and
 Adjent's would indicate — see [The free consistency check](#the-free-consistency-check).
 
+**One exception, and it is narrow: detection.** A usage event carries `subId`,
+the identity of the subagent whose transcript it came from, because a *looping*
+subagent is invisible without it — its near-identical turns interleave with the
+parent's varied ones, and merged they look like neither. The `anomaly` rule
+partitions on it.
+
+`subId` is a **label, not an identity**, and the distinction is the whole of why
+the decision above still holds:
+
+* Nothing derived from it becomes an agent row, a live count, or a burn figure.
+* Tokens are still summed exactly once, at the parent. The consistency check is
+  unaffected.
+* It never appears in the UI as a subject. An alarm may *say* which subagent is
+  looping, as prose about the session; the session remains the thing on screen.
+
+If a future change wants a row per subagent, that is the design this section
+rejected, and it should be re-argued here rather than reached incrementally by
+widening what `subId` is allowed to do.
+
 ## Modelling words — the derived layer
 
 | Term | Plain meaning |
