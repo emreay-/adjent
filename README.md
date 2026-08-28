@@ -35,6 +35,11 @@ work: **should I change what I am doing right now?**
   days left is less urgent than 60% of a five-hour limit with forty minutes left.
 - **Per-agent attribution.** Which session, which project, which model, and what
   each is costing per hour.
+- **It notices a worker that is stuck.** The `anomaly` rule watches the *shape*
+  of an agent's turns — how many, how alike, whether its context is still
+  growing — and flags a session or subagent that has started repeating itself.
+  That is the failure a burn threshold cannot catch, because each individual
+  turn looks ordinary. See the [demo](#see-it-catch-a-loop) below.
 - **Alarms you can prove before you trust them.** `adjent rules test` replays
   your rules against your own recorded history and shows what would have fired.
   Edit them in the panel or in your editor — either way the file is watched, so
@@ -44,6 +49,36 @@ work: **should I change what I am doing right now?**
   event stream.
 - **Honest numbers.** Every figure is typed `reported`, `exact` or `derived`.
   Derived values render with `≈`; measured ones never do.
+
+## See it catch a loop
+
+From a clean checkout, about fifteen seconds:
+
+```sh
+pnpm install
+pnpm -r build
+node scripts/demo-loop.mjs
+```
+
+It builds a throwaway home directory holding one session working normally and
+one subagent of it repeating itself, runs the real `adjent status` against it,
+and prints what the rule engine decided:
+
+```
+▲ [warn] Looks like a loop — demo-session
+  a subagent of demo-session has run 14 near-identical turns in 15 minutes
+  on model-x, with no growing context.
+```
+
+Nothing is mocked: the alarm comes from the shipped rule engine reading files
+off disk. The fixture is synthetic — invented ids and numbers, no credentials —
+and the temporary directory is removed afterwards.
+
+Two things the demo is careful about, both explained in its own header comment:
+the rule reads **turn metadata only**, never message content, so a semantic loop
+that varies its token counts is invisible to it; and the demo config disables
+the "is this worth interrupting you over" burn threshold, because that figure is
+learned over hours and a five-second-old fixture has not learned it.
 
 ## Status
 

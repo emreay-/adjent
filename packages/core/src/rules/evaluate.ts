@@ -313,9 +313,13 @@ function evalAnomaly(rule: AnomalyRule, state: AppState, memory: FireLog, now: n
       ruleId: rule.id,
       severity: rule.severity,
       title: `Looks like a loop — ${label}`,
+      // The rate is omitted rather than printed as 0.0 when there is none: an
+      // unpriced agent has no burn figure, and "≈0.0 %/h" states a number
+      // Adjent does not have (README: honest numbers).
       body:
         `${who} has run ${shape.turns} near-identical turns in ${Math.round(rule.windowMin)} minutes` +
-        `${agent?.model ? ` on ${agent.model}` : ''}, ≈${burn.toFixed(1)} %/h, with no growing context.`,
+        `${agent?.model ? ` on ${agent.model}` : ''}` +
+        `${burn > 0 ? `, ≈${burn.toFixed(1)} %/h` : ''}, with no growing context.`,
       firedAt: now,
       backend: agent?.backend ?? null,
       limitKey: null,

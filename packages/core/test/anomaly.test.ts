@@ -131,6 +131,17 @@ describe('each condition is load-bearing', () => {
     expect(fire(loop.slice(0, 11))).toHaveLength(0);
   });
 
+  it('omits the rate rather than claiming 0.0 %/h when the agent is unpriced', () => {
+    // A fresh install has no exchange-rate fit, so agentBurns is empty and the
+    // rule (with the floor disabled, as the demo config does) still fires. It
+    // must not print a rate it does not have.
+    const noFloor = { ...RULE, absPctPerHour: 0 };
+    const alarms = evaluate(stateOf(loop, 0), [noFloor], emptyFireLog(), T0 + 15 * MIN);
+    expect(alarms).toHaveLength(1);
+    expect(alarms[0]!.body).not.toContain('0.0 %/h');
+    expect(alarms[0]!.body).toContain('near-identical turns');
+  });
+
   it('a cheap loop stays off the screen', () => {
     // Same shape, but below the burn floor: not worth interrupting anyone.
     expect(fire(loop, { burn: 0.5 })).toHaveLength(0);

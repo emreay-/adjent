@@ -116,6 +116,11 @@ for detection only — the subagent never becomes a row, a count or a total, and
 the alarm names the *session*, describing the offender as "a subagent of" it.
 See [GLOSSARY § Sessions and their subagents](GLOSSARY.md#sessions-and-their-subagents).
 
+**Reproducing it.** `node scripts/demo-loop.mjs` builds a synthetic home
+directory holding a healthy session and a looping subagent of it, and runs the
+real `adjent status` against it — see [the README](../README.md#see-it-catch-a-loop).
+The script's header explains the one threshold its config disables and why.
+
 **What it cannot see.** Adjent reads metadata, never message content. So a
 *semantic* loop — one that keeps rephrasing, retrying different approaches, or
 otherwise varies its token counts while making no progress — is invisible to
