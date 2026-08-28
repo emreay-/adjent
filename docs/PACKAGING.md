@@ -212,6 +212,14 @@ Whoever cuts the release then:
    than none, since the missing platform looks like an unsupported one.
 2. Downloads one installer per platform and *runs* it. The smoke test proves
    the CLI works; nothing yet proves the packaged desktop app launches.
+
+   **Clear `ELECTRON_RUN_AS_NODE` from the shell first.** Some tool and agent
+   environments set it. With it set, `Adjent.exe` runs as plain Node rather than
+   as Electron: `app` is undefined, the process exits immediately with status 0
+   and prints nothing, and a perfectly good build looks broken. This produced a
+   false "packaging is broken" diagnosis on 2026-08-28. Check it before judging
+   a build, and confirm the app is really working by watching `~/.adjent/`
+   for a fresh write rather than by the process merely being alive.
 3. Writes the release notes. What a user gained, what breaks, and — while
    builds are unsigned — the SmartScreen warning and how to get past it.
 4. Publishes the draft.
