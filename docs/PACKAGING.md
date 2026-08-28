@@ -117,6 +117,127 @@ signed, a *new* identity carries no SmartScreen reputation for its first weeks.
 This is a commercial decision, not a technical blocker. The sequencing below
 assumes it happens after there is something worth installing.
 
+## Cutting a release
+
+Executable from a clone by anyone with push access to the repository. No
+special tooling, no secrets beyond what GitHub Actions already has, nothing
+built by hand.
+
+### 1. Choose the version
+
+One version number spans the whole workspace. The root manifest and all three
+package manifests carry it, and they must agree — CI does not check this, so it
+is the one step worth reading twice.
+
+Adjent is pre-1.0, which under semver means the minor version carries breaking
+changes:
+
+* **patch** (`0.1.0` → `0.1.1`) — fixes and internal work only.
+* **minor** (`0.1.0` → `0.2.0`) — new user-visible capability, *or* anything
+  that breaks a documented contract: the snapshot `schemaVersion`, an exit
+  code's meaning, a CLI flag, the `alarms.yaml` schema. A `schemaVersion` bump
+  is always at least a minor.
+* **major** — after 1.0, not before.
+
+The manifests currently read `0.1.0` and no `v0.1.0` tag exists, so **the first
+release tags what the manifests already say**. Every release after it bumps
+first.
+
+### 2. Bump, if this is not the first release
+
+Set the same version in all four manifests:
+
+```sh
+pnpm -r exec npm version <new-version> --no-git-tag-version
+npm version <new-version> --no-git-tag-version   # the root manifest
+```
+
+`--no-git-tag-version` matters: npm would otherwise create its own tag, with a
+different name from the one the workflow expects.
+
+Then verify all four agree, because a mismatch produces installers whose
+filenames disagree with the release:
+
+```sh
+git diff --stat        # expect exactly four package.json files
+grep '"version"' package.json packages/*/package.json
+```
+
+Commit the bump on its own: `Release v<version>`.
+
+### 3. Verify before tagging
+
+A tag is public and a release is what people install. Run what CI runs, plus
+the binary smoke test:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm -r build && pnpm -r typecheck && pnpm -r test
+node packages/cli/test/smoke.mjs
+```
+
+All four must pass locally. CI runs them again on the tag, but finding a
+failure after the tag is public means either deleting a tag people may have
+fetched or burning a version number.
+
+### 4. Tag and push
+
+The tag name is `v` followed by the exact manifest version — `v0.1.0`, not
+`0.1.0` and not `V0.1.0`. `release.yml` triggers on `v*`, so a misspelled tag
+either does nothing or builds the wrong thing.
+
+```sh
+git tag -a v0.1.0 -m 'Adjent v0.1.0'
+git push origin main
+git push origin v0.1.0
+```
+
+Push the branch first. A tag pointing at a commit the remote does not have is
+the one failure here that is awkward to unwind.
+
+**To rehearse without publishing anything**, run the Release workflow manually
+from the Actions tab (`workflow_dispatch`) instead of tagging. It builds and
+uploads artefacts, and leaves the draft alone.
+
+### 5. Promote the draft
+
+The workflow leaves a **draft** release carrying the installers for both
+platforms and a `SHA256SUMS` file. It is deliberately not published, because an
+unsigned Windows build trips SmartScreen and a person should decide when that is
+ready to be seen.
+
+Whoever cuts the release then:
+
+1. Waits for both `package` jobs to go green — a half-built release is worse
+   than none, since the missing platform looks like an unsupported one.
+2. Downloads one installer per platform and *runs* it. The smoke test proves
+   the CLI works; nothing yet proves the packaged desktop app launches.
+3. Writes the release notes. What a user gained, what breaks, and — while
+   builds are unsigned — the SmartScreen warning and how to get past it.
+4. Publishes the draft.
+
+Anyone with write access to the repository can do all of this; nothing here is
+personal to one maintainer.
+
+### 6. After publishing
+
+* Verify the `SHA256SUMS` entries match the published assets. Package manifests
+  pin against these, so a mismatch breaks every downstream channel at once.
+* Update any Scoop / WinGet manifests to the new version and hashes.
+* Move the README's **Status** section on if the release changes what a
+  stranger should do — the first release turns "run it from source" into an
+  install instruction.
+
+### If something goes wrong
+
+**Before the draft is published**, a release is fully reversible: delete the
+draft, delete the tag locally and on the remote (`git push origin :v0.1.0`),
+fix, and tag again with the same number.
+
+**After publishing, a version number is spent.** People have the artefacts and
+package managers may have pinned the hashes. Do not retag; fix forward with a
+patch release, and delete the broken release only if it is actively harmful.
+
 ## Order of work
 
 1. ~~**CI that releases.**~~ **Done** — two workflows:
