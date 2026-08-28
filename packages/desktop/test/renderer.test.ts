@@ -994,6 +994,63 @@ describe('all agents view', () => {
     expect(names.some((n) => n!.includes('98765432'))).toBe(true);
   });
 
+  /**
+   * W4.2: an agent with a live alarm against it is marked where the agent is,
+   * not only in the notifications list. Not specific to `anomaly` — any alarm
+   * carrying an agentId marks its agent (ALARMS.md § Delivery).
+   */
+  function withAgentAlarm(firedAtOffsetMs: number) {
+    const p = payload() as Record<string, unknown>;
+    const st = p['state'] as { agents: Record<string, unknown>[]; generatedAt: number };
+    p['alarmHistory'] = [
+      {
+        id: 'looping-subagent:claude:a1:',
+        ruleId: 'looping-subagent',
+        severity: 'warn',
+        title: 'Looks like a loop — demo',
+        body: 'a subagent of demo has run 14 near-identical turns in 15 minutes.',
+        firedAt: st.generatedAt + firedAtOffsetMs,
+        backend: 'claude',
+        limitKey: null,
+        agentId: st.agents[0]!['id'],
+      },
+    ];
+    return p;
+  }
+
+  it('marks the agent a live alarm is about, on both surfaces', () => {
+    h.onState(withAgentAlarm(-2 * 60_000));
+
+    // The dashboard, which is what you see without opening anything...
+    expect(h.els.get('agents')!.innerHTML).toContain('alarmed');
+
+    // ...and the agents view, which also says what the alarm was.
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+    expect(list).toContain('alarmed');
+    expect(list).toContain('Looks like a loop');
+  });
+
+  it('stops marking it once the alarm no longer speaks for the present', () => {
+    // Older than the anomaly lookback the alarm was a statement about.
+    h.onState(withAgentAlarm(-40 * 60_000));
+    expect(h.els.get('agents')!.innerHTML).not.toContain('alarmed');
+    h.fire('liveCount');
+    expect(h.els.get('agentList')!.innerHTML).not.toContain('alarmed');
+  });
+
+  it('puts the reason in the agent hover, not just a colour', () => {
+    const p = withAgentAlarm(-2 * 60_000);
+    h.onState(p);
+    const st = p['state'] as { agents: Record<string, unknown>[] };
+    const el = new El();
+    el.setAttribute('data-agent', String(st.agents[0]!['id']));
+    const tip = h.hover(el);
+
+    expect(tip).toContain('Looks like a loop');
+    expect(tip).toContain('near-identical turns');
+  });
+
   it('lists every agent, not just the four the dashboard shows', () => {
     h.onState(manyAgents());
     h.fire('liveCount');

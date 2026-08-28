@@ -190,6 +190,11 @@
   /* Tier 3: any limit, on demand (docs/UI.md § Any limit, on demand). Limit
      rows are the only clickable rows at rest, so they get a pointer and a
      hover fill rather than the dotted underline that means "explanation". */
+  /* An agent with a live alarm against it. Tinted rather than loud: the row
+     still has to read as an agent row, and the dot already carries the colour. */
+  .row.alarmed, .agentRow.alarmed { background:var(--warn-bg); }
+  .alarmNote { margin-top:6px; padding:6px 8px; border-radius:4px;
+               background:var(--warn-bg); color:var(--ink2); font-size:11px; line-height:1.45; }
   .row[data-limit], h2[data-limit-all] { cursor:pointer; }
   .row[data-limit]:hover { background:var(--surface); }
   .heroMeta[data-limit] { cursor:pointer; }

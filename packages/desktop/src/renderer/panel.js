@@ -295,6 +295,7 @@ function render(payload) {
   // Labelled against every agent, not just the four shown: two sessions in one
   // project must read differently even when only one of them fits here.
   const labelOf = agentLabeller(state.agents);
+  const alarmed = liveAgentAlarms(alarmHistory, now);
   const rows = [...live]
     .sort(byCost(burnOf))
     .slice(0, 4)
@@ -303,7 +304,10 @@ function render(payload) {
       const proj = labelOf(a);
       const model = [modelName(a.model) || NO_MODEL, a.effort].filter(Boolean).join(' · ');
       const status = agentStatus(a, burn, now);
-      return `<div class="row" data-agent="${esc(a.id)}"><span class="dot" style="background:${status.color}"></span><span class="name">${esc(proj)}</span><span class="meta"${noModelAttr(a.model)}>${esc(model)} · ${status.label}</span></div>`;
+      const alarm = alarmed.get(a.id);
+      const cls = alarm ? 'row alarmed' : 'row';
+      const dot = alarm ? 'var(--warn)' : status.color;
+      return `<div class="${cls}" data-agent="${esc(a.id)}"><span class="dot" style="background:${dot}"></span><span class="name">${esc(proj)}</span><span class="meta"${noModelAttr(a.model)}>${esc(model)} · ${status.label}</span></div>`;
     });
   $('agents').innerHTML = rows.join('') || '<div class="empty">None</div>';
 
@@ -376,8 +380,14 @@ function agentDetailHtml(agent, burn) {
         ? `Idle ${durOrNull(now - agent.lastActivityAt) ?? ''}`.trim()
         : 'Ended';
 
-  let html = `<span class="t">${esc(agent.projectPath ? agent.projectPath.split(/[\\/]/).pop() : agent.label)}</span>`;
+  let html = `<span class="t">${esc(projectName(agent) ?? agent.label)}</span>`;
   html += esc([state, modelName(agent.model), agent.effort].filter(Boolean).join(' · '));
+  // A live alarm is the first thing a reader wants from this panel, so it goes
+  // above the facts rather than beneath them.
+  const alarm = liveAgentAlarms(alarmHistory, now).get(agent.id);
+  if (alarm) {
+    html += `<div class="alarmNote"><b>${esc(alarm.title)}</b><br>${esc(alarm.body)}</div>`;
+  }
   html += ctxRows([
     ['Directory', agent.projectPath ? pathCell(agent.projectPath) : null],
     ['Branch', agent.gitBranch ? esc(agent.gitBranch) : null],
@@ -760,6 +770,34 @@ function agentStatus(a, burn, now) {
 // in full, ordered by what they are costing — burn first, then tokens in the
 // window, so the expensive ones are always at the top whether or not the fit
 // has anything to say yet. The resting panel still shows only four.
+/**
+ * How long an agent-scoped alarm keeps marking its agent.
+ *
+ * Matches the default `anomaly` lookback: the alarm was a statement about the
+ * last fifteen minutes, so it stops being one fifteen minutes later. Shorter
+ * and a loop caught on a slow tick would clear before you looked; longer and
+ * the mark outlives the evidence.
+ */
+const ALARM_LIVE_MS = 15 * 60_000;
+
+/**
+ * Agent id → the most recent alarm still speaking for it.
+ *
+ * Deliberately not specific to `anomaly` (ALARMS.md § 4: "an ordinary alarm
+ * event carrying ruleId and agentId — no special case"), so `agent_burn` marks
+ * its agent by the same path and a fifth rule type will too.
+ */
+function liveAgentAlarms(history, now) {
+  const out = new Map();
+  for (const a of history) {
+    if (!a || !a.agentId || typeof a.firedAt !== 'number') continue;
+    if (now - a.firedAt > ALARM_LIVE_MS) continue;
+    const seen = out.get(a.agentId);
+    if (!seen || a.firedAt > seen.firedAt) out.set(a.agentId, a);
+  }
+  return out;
+}
+
 /** Directory name of an agent's project, or null when it has no path. */
 function projectName(a) {
   if (!a.projectPath) return null;
@@ -806,6 +844,7 @@ function renderAgents() {
   const now = state.generatedAt;
   const burnOf = new Map(state.agentBurns.map((b) => [b.agentId, b.pctPerHour]));
   const labelOf = agentLabeller(state.agents);
+  const alarmed = liveAgentAlarms(alarmHistory, now);
   const rows = [...state.agents]
     .sort(byCost(burnOf))
     .map((a) => {
@@ -821,11 +860,12 @@ function renderAgents() {
       ]
         .filter(Boolean)
         .join(' · ');
+      const alarm = alarmed.get(a.id);
       return (
-        `<div class="agentRow" data-agent="${esc(a.id)}"><div class="top">` +
-        `<span class="dot" style="background:${status.color}"></span>` +
+        `<div class="agentRow${alarm ? ' alarmed' : ''}" data-agent="${esc(a.id)}"><div class="top">` +
+        `<span class="dot" style="background:${alarm ? 'var(--warn)' : status.color}"></span>` +
         `<span class="name">${esc(proj)}</span>` +
-        `<span class="meta">${status.label}</span></div>` +
+        `<span class="meta">${alarm ? esc(alarm.title) : status.label}</span></div>` +
         `<span class="sub">${esc(sub)}</span></div>`
       );
     });
