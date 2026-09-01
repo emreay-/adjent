@@ -36,11 +36,17 @@ const HEARTBEAT_MULTIPLE = 10;
 
 async function makeMonitor(withConsoleSink: boolean): Promise<Monitor> {
   const config = await loadConfig();
-  const monitor = new Monitor({ providers: [new ClaudeProvider(), new CodexProvider()], config });
+  const settings = await loadSettings();
+  const monitor = new Monitor({
+    providers: [new ClaudeProvider(), new CodexProvider()],
+    config,
+    // A rule may only touch the gate when the user turned automation on.
+    actionsEnabled: settings.actions.enabled,
+    gatePath: gatePath(),
+  });
   // The console sink prints alarms as prose. In JSONL mode that would put
   // unparseable text on the same stream as the events, so it is left off.
   if (withConsoleSink) monitor.router.register(new ConsoleSink());
-  const settings = await loadSettings();
   if (settings.alarmWebhookUrl) monitor.router.register(new WebhookSink(settings.alarmWebhookUrl));
   // stderr, never stdout: --json consumers parse stdout, and a warning that
   // corrupted their payload would be a worse bug than the one it reports.

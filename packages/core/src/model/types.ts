@@ -275,7 +275,27 @@ export interface Alarm {
   context?: AlarmContext;
 }
 
-export interface PaceRule {
+/**
+ * What a rule may do besides telling you.
+ *
+ * `hold` sets the advisory gate (api/gate.ts) — it writes a file an
+ * orchestrator of yours may choose to honour. It signals no process and stops
+ * nothing; that boundary is settled in README § What Adjent will not do, and
+ * nothing may be added here that crosses it.
+ *
+ * Governed by `settings.actions.enabled`, default false: **automation is
+ * gated, human intent is not.** A person running `adjent gate hold` is never
+ * subject to the switch; a rule always is.
+ */
+export type RuleAction = 'hold';
+
+/** Fields every rule type accepts, whatever else it needs. */
+export interface RuleCommon {
+  /** Actions to take when this rule fires. Empty or absent means "just tell me". */
+  actions?: RuleAction[];
+}
+
+export interface PaceRule extends RuleCommon {
   id: string;
   type: 'pace';
   backend: BackendId | 'any';
@@ -288,7 +308,7 @@ export interface PaceRule {
   severity: Severity;
 }
 
-export interface ThresholdRule {
+export interface ThresholdRule extends RuleCommon {
   id: string;
   type: 'threshold';
   backend: BackendId | 'any';
@@ -298,7 +318,7 @@ export interface ThresholdRule {
   severity: Partial<Record<number, Severity>>;
 }
 
-export interface AgentBurnRule {
+export interface AgentBurnRule extends RuleCommon {
   id: string;
   type: 'agent_burn';
   windowMin: number;
@@ -317,7 +337,7 @@ export interface AgentBurnRule {
  * turns to be a pattern, uniform sizes, no growing context, and enough burn to
  * be worth interrupting someone over.
  */
-export interface AnomalyRule {
+export interface AnomalyRule extends RuleCommon {
   id: string;
   type: 'anomaly';
   windowMin: number;

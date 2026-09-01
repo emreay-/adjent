@@ -432,7 +432,12 @@ async function start(): Promise<void> {
   // key off it, so no per-window theming code is needed.
   nativeTheme.themeSource = settings.theme;
   const config = await core.loadConfig();
-  monitor = new core.Monitor({ providers: [new core.ClaudeProvider(), new core.CodexProvider()], config });
+  monitor = new core.Monitor({
+    providers: [new core.ClaudeProvider(), new core.CodexProvider()],
+    config,
+    actionsEnabled: settings.actions.enabled,
+    gatePath: core.gatePath(),
+  });
   monitor.router.register(new ToastSink());
   monitor.router.register(new TraySink());
   if (settings.alarmWebhookUrl) monitor.router.register(new core.WebhookSink(settings.alarmWebhookUrl));

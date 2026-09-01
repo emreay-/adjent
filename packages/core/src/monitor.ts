@@ -29,6 +29,7 @@ import { limitBreakdown, limitWindow, type LimitBreakdown } from './quota/breakd
 import { evaluate } from './rules/evaluate.js';
 import { DEFAULT_CONFIG, type AlarmConfig } from './rules/config.js';
 import { SinkRouter } from './sinks/sink.js';
+import { GATE_SCHEMA_VERSION, readGate, writeGate } from './api/gate.js';
 import { STORE_VERSION, Store, type HistorySample } from './persist.js';
 
 /** τ — the measurement lookback for per-agent burn. Not W (GLOSSARY). */
@@ -42,6 +43,14 @@ export interface MonitorOptions {
   now?: () => number;
   /** Durable state. Pass null to run entirely in memory (tests). */
   store?: Store | null;
+  /**
+   * Whether a rule may act — today, set the advisory gate. Off unless the
+   * shell passes `settings.actions.enabled`, and off by default here too, so a
+   * caller that forgets to pass it cannot accidentally enable automation.
+   */
+  actionsEnabled?: boolean;
+  /** Where the gate lives. Injected so tests never touch a real home. */
+  gatePath?: string;
 }
 
 /** Write a utilization sample only on change, or every this often. */
@@ -67,6 +76,8 @@ export class Monitor extends EventEmitter {
   private assessor = new LimitAssessor();
   private readonly fireLog: FireLog = emptyFireLog();
   readonly router: SinkRouter;
+  private readonly actionsEnabled: boolean;
+  private readonly gatePath: string | undefined;
 
   private epsilonEwma: number | null = null;
   private epsilonAt: number | null = null;
@@ -88,6 +99,8 @@ export class Monitor extends EventEmitter {
     this.now = opts.now ?? Date.now;
     this.config = opts.config ?? DEFAULT_CONFIG;
     this.router = new SinkRouter(this.config.routing);
+    this.actionsEnabled = opts.actionsEnabled === true;
+    this.gatePath = opts.gatePath;
     this.store = opts.store === undefined ? new Store() : opts.store;
   }
 
@@ -314,6 +327,7 @@ export class Monitor extends EventEmitter {
       this.alarmHistory.push(...alarms);
       await this.store?.appendAlarms(alarms);
       await this.router.route(alarms);
+      await this.applyActions(alarms, now);
       for (const a of alarms) this.emit('alarm', a);
     }
 
@@ -413,6 +427,45 @@ export class Monitor extends EventEmitter {
   }
 
   /** Downsampled: only on change, or every HISTORY_MIN_INTERVAL_MS. */
+  /**
+   * The one path by which a rule can reach the gate.
+   *
+   * Two properties matter more than the mechanism. **It is off unless turned
+   * on**: `actionsEnabled` defaults to false here as well as in settings, so a
+   * shell that forgets to pass it cannot enable automation by omission. And
+   * **it only ever holds, never releases**: a rule that could release the gate
+   * could undo a hold a person put there deliberately, and Adjent does not get
+   * to overrule you. Releasing is a human act.
+   *
+   * Nothing here signals a process. It writes a file (api/gate.ts).
+   */
+  private async applyActions(alarms: Alarm[], now: number): Promise<void> {
+    if (!this.actionsEnabled || this.gatePath === undefined) return;
+    const byId = new Map(this.config.rules.map((r) => [r.id, r]));
+    for (const a of alarms) {
+      const rule = byId.get(a.ruleId);
+      if (!rule?.actions?.includes('hold')) continue;
+      // Already held: leave the existing reason alone rather than overwriting
+      // whatever a person or an earlier rule recorded.
+      const current = await readGate(now, this.gatePath);
+      if (current.held) return;
+      await writeGate(
+        {
+          schemaVersion: GATE_SCHEMA_VERSION,
+          held: true,
+          reason: a.title,
+          until: null,
+          at: now,
+          source: 'rule',
+          ruleId: a.ruleId,
+        },
+        this.gatePath,
+      );
+      this.emit('gate', { held: true, ruleId: a.ruleId });
+      return;
+    }
+  }
+
   private async recordHistory(limits: QuotaLimit[], now: number): Promise<void> {
     const fresh: HistorySample[] = [];
     for (const w of limits) {

@@ -230,13 +230,37 @@ agent; for limit alarms it lists the top few contributors. The snapshot is writt
 
 ## Delivery
 
-**An alarm tells you something; it never does anything to your agents.** The
-only actions a rule can name today are `notify` and `highlight` — both of which
-change what you see, not what your machine runs. Adjent does not start, stop,
-pause or signal a process, and no planned rule action will: the one capability
-on the roadmap is an advisory gate that a wrapper script of yours may choose to
-honour. See [What Adjent will not do](../README.md#what-adjent-will-not-do).
-Anything that acts on a rule will sit behind a switch that is off by default.
+**An alarm tells you something; it never does anything to your agents.** Adjent
+does not start, stop, pause or signal a process — see
+[What Adjent will not do](../README.md#what-adjent-will-not-do).
+
+The one thing a rule may do besides telling you is **hold the advisory gate**:
+
+```yaml
+  - id: stop-the-fleet
+    type: threshold
+    levels: [95]
+    severity: { 95: critical }
+    actions: [hold]
+```
+
+That writes `held` into `~/.adjent/gate.json`. Nothing is signalled and nothing
+is stopped; a wrapper script or orchestrator *you* control reads it — with
+`adjent gate status`, or `adjent check`, both of which exit 4 when the gate is
+held — and decides what to do. See [API.md](API.md#the-gate) for the contract.
+
+Three properties of that path, each deliberate:
+
+* **It is off unless you turn it on.** `actions.enabled` in
+  `~/.adjent/settings.json` defaults to `false`, and a rule naming `actions:
+  [hold]` does nothing until it is `true`. Automation that can hold your work
+  should be something you enabled, not something you discover.
+* **The switch governs automation, not you.** `adjent gate hold` always works;
+  it is your machine and your decision.
+* **A rule may hold, never release.** Releasing is a human act — a rule that
+  could release the gate could undo a hold you put there deliberately. It also
+  will not overwrite a hold that is already in place, so the reason you gave
+  survives.
 
 Alarms are emitted onto the bus; **sinks** consume them. **Shipped today:**
 `tray` and `toast` (desktop shell), `console` (CLI), and `webhook` (core, once

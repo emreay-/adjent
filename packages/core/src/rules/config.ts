@@ -8,7 +8,7 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import type { BackendId, Rule, Severity } from '../model/types.js';
+import type { BackendId, Rule, RuleAction, Severity } from '../model/types.js';
 // Value import, but no runtime cycle: sinks/sink.ts imports only `type Routing`
 // from here, and type-only imports are erased.
 import { KNOWN_SINK_IDS } from '../sinks/sink.js';
@@ -140,6 +140,20 @@ const minutes = (v: unknown, fallback: number): number => {
   return fallback;
 };
 
+/**
+ * `actions:` — what a rule does besides telling you.
+ *
+ * Only `hold` exists, and it sets the advisory gate. Unknown entries are
+ * dropped (and reported as a diagnostic), never guessed at: a rule that
+ * quietly ignored an action a user asked for would be worse than one that
+ * refuses it loudly, and one that invented an action would be far worse.
+ */
+const KNOWN_ACTIONS: readonly string[] = ['hold'];
+function coerceActions(raw: unknown): RuleAction[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((a): a is RuleAction => typeof a === 'string' && KNOWN_ACTIONS.includes(a));
+}
+
 function coerceRule(raw: unknown): Rule | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as Record<string, unknown>;
@@ -158,6 +172,7 @@ function coerceRule(raw: unknown): Rule | null {
         exhaustionLeadMin: minutes(r['project_exhaustion_lead'], 45),
         cooldownMin: minutes(r['cooldown'], 20),
         severity: sev(r['severity'], 'warn'),
+        actions: coerceActions(r['actions']),
       };
     case 'threshold': {
       const levels = Array.isArray(r['levels']) ? r['levels'].filter((l): l is number => typeof l === 'number') : [];
@@ -175,6 +190,7 @@ function coerceRule(raw: unknown): Rule | null {
         limit: limitOf(scope, r),
         levels: levels.length > 0 ? levels : [25, 50, 80, 95],
         severity: sevMap,
+        actions: coerceActions(r['actions']),
       };
     }
     case 'agent_burn': {
@@ -188,6 +204,7 @@ function coerceRule(raw: unknown): Rule | null {
         absPctPerHour: num(trig['abs_pct_per_hour'], 8),
         cooldownMin: minutes(r['cooldown'], 15),
         severity: sev(r['severity'], 'warn'),
+        actions: coerceActions(r['actions']),
       };
     }
     case 'anomaly': {
@@ -202,6 +219,7 @@ function coerceRule(raw: unknown): Rule | null {
         absPctPerHour: num(trig['abs_pct_per_hour'], 2.0),
         cooldownMin: minutes(r['cooldown'], 30),
         severity: sev(r['severity'], 'warn'),
+        actions: coerceActions(r['actions']),
       };
     }
     default:
@@ -247,13 +265,13 @@ export interface ParsedConfig {
 }
 
 /** Keys each rule type understands. Anything else is almost certainly a typo. */
-const COMMON_KEYS = ['id', 'type', 'scope', 'backend', 'limit', 'severity', 'cooldown'];
+const COMMON_KEYS = ['id', 'type', 'scope', 'backend', 'limit', 'severity', 'cooldown', 'actions'];
 const KNOWN_KEYS: Record<string, string[]> = {
   pace: [...COMMON_KEYS, 'tolerance_pp', 'project_exhaustion_lead', 'window'],
   threshold: [...COMMON_KEYS, 'levels', 'window'],
   // `window` here is a *time span*, not the deprecated scope key (GLOSSARY).
-  agent_burn: ['id', 'type', 'severity', 'cooldown', 'window', 'trigger'],
-  anomaly: ['id', 'type', 'severity', 'cooldown', 'window', 'trigger'],
+  agent_burn: ['id', 'type', 'severity', 'cooldown', 'window', 'trigger', 'actions'],
+  anomaly: ['id', 'type', 'severity', 'cooldown', 'window', 'trigger', 'actions'],
 };
 const SCOPE_KEYS = ['backend', 'limit', 'window'];
 /**
@@ -342,6 +360,23 @@ function validateRule(raw: unknown, at: string, seen: Set<string>, out: Diagnost
   // element; `limit` is the vendors' own word).
   if (type !== 'agent_burn' && type !== 'anomaly' && 'window' in r) {
     out.push(warn(`${at}.window`, 'deprecated — use `limit:`'));
+  }
+
+  if (r['actions'] !== undefined) {
+    if (!Array.isArray(r['actions'])) {
+      out.push(err(`${at}.actions`, 'expected a list of action names'));
+    } else {
+      for (const a of r['actions']) {
+        if (typeof a !== 'string' || !KNOWN_ACTIONS.includes(a)) {
+          out.push(
+            warn(
+              `${at}.actions`,
+              `unknown action ${JSON.stringify(a)} — ignored. Known actions: ${KNOWN_ACTIONS.join(', ')}`,
+            ),
+          );
+        }
+      }
+    }
   }
 
   checkDuration(r, 'cooldown', at, out);

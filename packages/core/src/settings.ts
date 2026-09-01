@@ -37,6 +37,16 @@ export interface Settings {
    * unroutable rather than dropping alarms in silence.
    */
   alarmWebhookUrl: string | null;
+  /**
+   * Whether a *rule* may take an action — today, set the advisory gate.
+   *
+   * Off by default, and the default is the point: automation that can hold
+   * your work should be something you turned on, not something you discover.
+   * **This governs automation only.** A person running `adjent gate hold` is
+   * never subject to it, because the switch exists to bound what Adjent does
+   * on its own, not what you do deliberately (§4 Q1, sub-decision 3).
+   */
+  actions: { enabled: boolean };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +60,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tickIntervalSec: 30,
   alarmsPaused: false,
   alarmWebhookUrl: null,
+  actions: { enabled: false },
 };
 
 export const settingsPath = (): string => path.join(os.homedir(), '.adjent', 'settings.json');
@@ -78,6 +89,9 @@ export function coerceSettings(raw: unknown): Settings {
     alarmWebhookUrl: typeof r['alarmWebhookUrl'] === 'string' && r['alarmWebhookUrl'].trim() !== ''
       ? (r['alarmWebhookUrl'] as string).trim()
       : null,
+    // Anything but an explicit `true` is off. A malformed settings file must
+    // not be a way to enable automation by accident.
+    actions: { enabled: (r['actions'] as Record<string, unknown> | undefined)?.['enabled'] === true },
   };
 }
 
