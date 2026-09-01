@@ -11,7 +11,10 @@
  *
  * Fixtures are synthetic (CLAUDE.md).
  */
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { COMMANDS, type Ctx, type MonitorLike } from '../src/commands.js';
 import { parseArgs, parseDuration, parsePercent } from '../src/args.js';
 import { EXIT } from '../src/exit.js';
@@ -20,6 +23,19 @@ import type { AppState } from '@adjent/core';
 const T0 = 1_700_000_000_000;
 const H = 3600_000;
 const MACHINE = '11111111-2222-4333-8444-555555555555';
+
+/**
+ * `gate` genuinely reads and writes a file, so it needs a real path — but
+ * never a real home. One temp directory serves every test here.
+ */
+let gateDir: string;
+beforeAll(() => {
+  gateDir = mkdtempSync(join(tmpdir(), 'adjent-cli-gate-'));
+});
+afterAll(() => {
+  rmSync(gateDir, { recursive: true, force: true });
+});
+const gateFile = (): string => join(gateDir, 'gate.json');
 
 function state(over: Partial<AppState> = {}): AppState {
   return {
@@ -135,6 +151,7 @@ async function drive(
     machineId: MACHINE,
     configPath: '/fake/alarms.yaml',
     historyPath: '/fake/history.jsonl',
+    gatePath: gateFile(),
     readFile,
     writeFile: async () => {},
     readPreset: (n) => Promise.resolve(`# preset ${n}
@@ -847,6 +864,7 @@ describe('rules init', () => {
       machineId: MACHINE,
       configPath: '/fake/alarms.yaml',
       historyPath: '/fake/history.jsonl',
+      gatePath: gateFile(),
       readFile: () => (existing === null ? Promise.reject(new Error('ENOENT')) : Promise.resolve(existing)),
       writeFile: async (path, content) => {
         written.push({ path, content });
@@ -924,5 +942,88 @@ describe('rules init', () => {
     for (const name of ['default', 'conservative', 'weekly-guard', 'fleet', 'ci-gate']) {
       expect(r.stdout).toContain(name);
     }
+  });
+});
+
+// ---------------------------------------------------------------------- gate
+/**
+ * The advisory gate, at the surface a script actually uses: the exit code.
+ *
+ * Adjent signals no process — this writes a file and `check` reads it. The
+ * property under test is that a script can branch on the code alone.
+ */
+describe('adjent gate', () => {
+  it('starts open and exits 0', async () => {
+    const r = await run('gate', ['release']); // known state, whatever ran before
+    expect(r.code).toBe(EXIT.OK);
+    const s = await run('gate', ['status']);
+    expect(s.code).toBe(EXIT.OK);
+    expect(s.stdout).toContain('open');
+  });
+
+  it('holds, and status then exits 4', async () => {
+    await run('gate', ['hold', '--reason', 'deploying']);
+    const s = await run('gate', ['status']);
+
+    expect(s.code).toBe(EXIT.PREDICATE_FAILED);
+    expect(s.stdout).toContain('held');
+    expect(s.stdout).toContain('deploying');
+    await run('gate', ['release']);
+  });
+
+  it('release restores it', async () => {
+    await run('gate', ['hold']);
+    await run('gate', ['release']);
+    expect((await run('gate', ['status'])).code).toBe(EXIT.OK);
+  });
+
+  it('--json is one object carrying the state', async () => {
+    await run('gate', ['hold', '--reason', 'brief']);
+    const obj = soleJson(await run('gate', ['status', '--json']));
+    expect(obj['held']).toBe(true);
+    expect(obj['reason']).toBe('brief');
+    expect(obj['schemaVersion']).toBe(1);
+    await run('gate', ['release']);
+  });
+
+  it('rejects an unreadable --until rather than holding for ever', async () => {
+    const r = await run('gate', ['hold', '--until', 'whenever']);
+    expect(r.code).toBe(EXIT.USAGE);
+    expect(r.stderr).toMatch(/--until/);
+    expect((await run('gate', ['status'])).code, 'a rejected hold must not take effect').toBe(EXIT.OK);
+  });
+
+  it('rejects an unknown subcommand', async () => {
+    const r = await run('gate', ['halt']);
+    expect(r.code).toBe(EXIT.USAGE);
+    expect(r.stderr).toMatch(/unknown subcommand/);
+  });
+});
+
+describe('check consults the gate', () => {
+  it('fails with the predicate code while the gate is held, whatever the quota says', async () => {
+    await run('gate', ['hold', '--reason', 'deploying']);
+    // 32% used, so a 10% budget would otherwise pass comfortably.
+    const r = await run('check', ['--budget', '10%']);
+
+    expect(r.code).toBe(EXIT.PREDICATE_FAILED);
+    expect(r.stdout).toContain('the gate is held');
+    expect(r.stdout).toContain('deploying');
+    await run('gate', ['release']);
+  });
+
+  it('passes again once released', async () => {
+    await run('gate', ['hold']);
+    await run('gate', ['release']);
+    expect((await run('check', ['--budget', '10%'])).code).toBe(EXIT.OK);
+  });
+
+  it('says so in --json rather than only in prose', async () => {
+    await run('gate', ['hold', '--reason', 'why']);
+    const obj = soleJson(await run('check', ['--budget', '10%', '--json']));
+    expect(obj['ok']).toBe(false);
+    expect(obj['gateHeld']).toBe(true);
+    expect(obj['gateReason']).toBe('why');
+    await run('gate', ['release']);
   });
 });

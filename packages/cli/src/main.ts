@@ -13,6 +13,7 @@ import {
   Monitor,
   WebhookSink,
   configPath,
+  gatePath,
   loadConfig,
   loadSettings,
   readPreset,
@@ -148,6 +149,7 @@ async function main(): Promise<void> {
     machineId: await machineId(),
     configPath: configPath(),
     historyPath: join(storeDir(), 'history.jsonl'),
+    gatePath: gatePath(),
     readFile: (p) => readFile(p, 'utf-8'),
     // Adjent writes only under its own directory, and creates it on demand.
     writeFile: async (p, content) => {

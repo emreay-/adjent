@@ -147,7 +147,9 @@ export class Store {
    * `history.jsonl` is kept deliberately. It is a record of vendor-reported
    * utilization over time, which is *not* re-derivable — the readings are gone
    * once the moment passes — and it was never affected by a token bug.
-   * `alarms.jsonl` is a record too, and stays.
+   * `alarms.jsonl` is a record too, and stays. So does `gate.json`: a hold is a
+   * live instruction someone gave, and silently releasing it during an upgrade
+   * would start work they had stopped.
    *
    * Returns true when something was discarded.
    */

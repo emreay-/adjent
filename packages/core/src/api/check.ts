@@ -30,9 +30,21 @@ export interface CheckOptions {
   limitKey?: string | null;
   /** Reject a reading older than this, in ms. Only applied when given. */
   maxAgeMs?: number | null;
+  /**
+   * Whether the advisory gate is currently held.
+   *
+   * Passed in rather than read here, because this module reads no files — the
+   * caller does the I/O and hands the answer over. A held gate fails the
+   * predicate outright, regardless of how much quota is left: that is the
+   * point of a gate, and a caller who wants to ignore it simply does not pass
+   * it.
+   */
+  gateHeld?: boolean | null;
+  /** Why the gate is held, for the restated predicate and the JSON. */
+  gateReason?: string | null;
 }
 
-export type CheckFailure = 'budget' | 'max-utilization' | 'pace' | 'stale';
+export type CheckFailure = 'budget' | 'max-utilization' | 'pace' | 'stale' | 'gate';
 
 export interface CheckEvaluation {
   backend: string;
@@ -60,6 +72,10 @@ export interface CheckResult {
    * failed condition, and the caller reports it differently.
    */
   noData: boolean;
+  /** True when the advisory gate held, which fails the check on its own. */
+  gateHeld?: boolean;
+  /** Why it was held, when a reason was recorded. */
+  gateReason?: string | null;
 }
 
 /** Which limits a check is about: the named one, or the binding one. */
@@ -97,6 +113,21 @@ function describe(opts: CheckOptions): string {
 export function check(snapshot: Snapshot, opts: CheckOptions, now: number): CheckResult {
   const scoped = limitsInScope(snapshot, opts);
   const predicate = describe(opts);
+
+  // A held gate is a "no" before any limit is consulted, and it answers even
+  // when there is no quota data at all — which is the case an orchestrator
+  // most needs an answer in. Reported as `gateHeld` rather than folded into a
+  // limit's `failed`, because it is not a property of any one limit.
+  if (opts.gateHeld === true) {
+    return {
+      ok: false,
+      predicate,
+      evaluated: [],
+      noData: false,
+      gateHeld: true,
+      gateReason: opts.gateReason ?? null,
+    };
+  }
 
   if (scoped.length === 0) {
     return { ok: false, predicate, evaluated: [], noData: true };

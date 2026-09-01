@@ -33,6 +33,11 @@ import {
   type ReplayResult,
   type CheckOptions,
   type Snapshot,
+  readGate,
+  writeGate,
+  describeGate,
+  GATE_SCHEMA_VERSION,
+  OPEN,
 } from '@adjent/core';
 import { EXIT, type ExitCode } from './exit.js';
 import { parseDuration, parsePercent, type Flags } from './args.js';
@@ -59,6 +64,8 @@ export interface Ctx {
   readFile: (path: string) => Promise<string>;
   /** Where recorded utilization history lives. */
   historyPath: string;
+  /** Where the advisory gate lives. Injected like every other path here. */
+  gatePath: string;
   /** Writes into ~/.adjent only. Injected so tests never touch a real home. */
   writeFile: (path: string, content: string) => Promise<void>;
   /** The shipped YAML for a preset, comments intact. */
@@ -212,6 +219,9 @@ export const check: Command = async (ctx, flags) => {
 
   const state = await ctx.monitor.tick();
   const snapshot = toSnapshot(state, { machineId: ctx.machineId });
+  // The gate is read here, not inside check(): that function reads no files by
+  // design, so the shell does the I/O and passes the answer in.
+  const gate = await readGate(snapshot.generatedAt, ctx.gatePath);
   const opts: CheckOptions = {
     budgetPct,
     maxUtilizationPct,
@@ -219,13 +229,23 @@ export const check: Command = async (ctx, flags) => {
     backend: flags.values['backend'] ?? null,
     limitKey: flags.values['limit'] ?? null,
     maxAgeMs,
+    gateHeld: gate.held,
+    gateReason: gate.reason,
   };
   const result = checkPredicate(snapshot, opts, snapshot.generatedAt);
 
   if (flags.json) {
-    emit(ctx, { ok: result.ok, predicate: result.predicate, evaluated: result.evaluated });
+    emit(ctx, {
+      ok: result.ok,
+      predicate: result.predicate,
+      evaluated: result.evaluated,
+      gateHeld: result.gateHeld === true,
+      gateReason: result.gateReason ?? null,
+    });
   } else if (!flags.quiet) {
-    if (result.noData) {
+    if (result.gateHeld) {
+      ctx.out(`no — the gate is held${result.gateReason ? `: ${result.gateReason}` : ''}`);
+    } else if (result.noData) {
       ctx.out('no limit to check');
     } else {
       ctx.out(`${result.ok ? 'ok' : 'no'} — ${result.predicate}`);
@@ -526,6 +546,82 @@ const rulesPresets: Command = async (ctx, flags) => {
   return EXIT.OK;
 };
 
+/**
+ * `adjent gate` — the advisory signal an orchestrator reads.
+ *
+ * Adjent signals no process and stops nothing; this writes a file, and your
+ * wrapper decides what to do about it. See README § What Adjent will not do.
+ *
+ * `gate status` exits 0 when open and 4 when held, so a script can branch on
+ * the exit code alone without parsing anything.
+ */
+const gateStatus: Command = async (ctx, flags) => {
+  const now = Date.now();
+  const g = await readGate(now, ctx.gatePath);
+  if (flags.json) {
+    emit(ctx, {
+      schemaVersion: g.schemaVersion,
+      held: g.held,
+      reason: g.reason,
+      until: g.until,
+      at: g.at,
+      source: g.source,
+      ruleId: g.ruleId,
+    });
+  } else if (!flags.quiet) {
+    ctx.out(describeGate(g, now));
+  }
+  // The same code a failed budget uses: to a caller asking "may I start work?"
+  // a held gate is the same "no" (docs/API.md § Exit codes).
+  return g.held ? EXIT.PREDICATE_FAILED : EXIT.OK;
+};
+
+const gateHold: Command = async (ctx, flags) => {
+  const now = Date.now();
+  const reason = flags.values['reason'] ?? null;
+  const untilRaw = flags.values['until'];
+  const untilMs = untilRaw === undefined ? null : parseDuration(untilRaw);
+  if (untilRaw !== undefined && untilMs === null) {
+    ctx.err(`--until: cannot read ${JSON.stringify(untilRaw)}`);
+    return EXIT.USAGE;
+  }
+
+  // A human running this command is never gated by settings.actions.enabled:
+  // that switch governs automation, not intent (§4 Q1, sub-decision 3).
+  const state = {
+    schemaVersion: GATE_SCHEMA_VERSION,
+    held: true,
+    reason,
+    until: untilMs === null ? null : now + untilMs,
+    at: now,
+    source: 'human' as const,
+    ruleId: null,
+  };
+  await writeGate(state, ctx.gatePath);
+  if (flags.json) emit(ctx, { ok: true, held: true, reason: state.reason, until: state.until });
+  else if (!flags.quiet) ctx.out(`gate held${reason ? ` — ${reason}` : ''}`);
+  return EXIT.OK;
+};
+
+const gateRelease: Command = async (ctx, flags) => {
+  const now = Date.now();
+  await writeGate({ ...OPEN, at: now }, ctx.gatePath);
+  if (flags.json) emit(ctx, { ok: true, held: false });
+  else if (!flags.quiet) ctx.out('gate released');
+  return EXIT.OK;
+};
+
+/** `gate` is a group, like `rules`. */
+export const gate: Command = async (ctx, flags) => {
+  const sub = flags.positional[0] ?? 'status';
+  if (sub === 'status') return gateStatus(ctx, flags);
+  if (sub === 'hold') return gateHold(ctx, flags);
+  if (sub === 'release') return gateRelease(ctx, flags);
+  ctx.err(`unknown subcommand: gate ${sub}`);
+  ctx.err('usage: adjent gate <status|hold|release> [--reason <text>] [--until <duration>]');
+  return EXIT.USAGE;
+};
+
 /** `rules` is a group, so it dispatches on its first positional. */
 export const rules: Command = async (ctx, flags) => {
   const sub = flags.positional[0];
@@ -544,6 +640,7 @@ export const COMMANDS: Record<string, Command> = {
   agents,
   explain,
   check,
+  gate,
   rules,
 };
 
@@ -555,6 +652,9 @@ export const USAGE = `usage: adjent <command> [options]
   statusline            one line, for Claude Code's statusLine setting
   watch                 continuous loop; --json streams JSONL events
   check                 budget gate for scripts; the exit code is the answer
+  gate status           is work being held? exit 0 open, 4 held
+  gate hold             hold work; --reason <text> --until <duration>
+  gate release          release it
   explain <term>        plain-language definition of any metric shown
 
   rules init            write ~/.adjent/alarms.yaml from a preset

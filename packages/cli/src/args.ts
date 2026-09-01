@@ -38,6 +38,10 @@ export const VALUE_FLAGS = new Set([
   'against',
   'rules',
   'preset',
+  // `gate hold`. Unknown flags are a hard exit-2 error, so a value flag that is
+  // not listed here does not degrade — the command simply refuses to run.
+  'reason',
+  'until',
 ]);
 
 const BOOLEAN_FLAGS = new Set(['json', 'quiet', 'help', 'prime', 'force']);

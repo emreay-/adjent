@@ -1,5 +1,15 @@
 export * from './model/types.js';
 export { agentLabels, projectName } from './model/labels.js';
+export {
+  readGate,
+  writeGate,
+  coerceGate,
+  describeGate,
+  gatePath,
+  GATE_SCHEMA_VERSION,
+  OPEN,
+  type GateState,
+} from './api/gate.js';
 export { ClaudeProvider } from './providers/claude/claude.js';
 export { CodexProvider } from './providers/codex/codex.js';
 export { pidAlive, type ProviderAdapter } from './providers/provider.js';

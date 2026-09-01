@@ -175,3 +175,42 @@ describe('check', () => {
     expect(r.predicate).toContain('binding limit');
   });
 });
+
+/**
+ * The advisory gate, as `check` sees it. The gate is read by the shell and
+ * passed in — this function reads no files (see its header).
+ */
+describe('a held gate', () => {
+  it('fails the check regardless of how much quota is left', () => {
+    const plenty = snap([limit({ utilization: 1 })]);
+    const r = check(plenty, { budgetPct: 10, gateHeld: true, gateReason: 'deploying' }, T0);
+
+    expect(r.ok).toBe(false);
+    expect(r.gateHeld).toBe(true);
+    expect(r.gateReason).toBe('deploying');
+  });
+
+  it('answers even when there is no quota data at all', () => {
+    // The case an orchestrator most needs an answer in: a gate held while
+    // Adjent can see nothing must still say "no", not "I cannot say".
+    const r = check(snap([]), { gateHeld: true }, T0);
+    expect(r.ok).toBe(false);
+    expect(r.gateHeld).toBe(true);
+    expect(r.noData, 'a held gate is an answer, not an absence of one').toBe(false);
+  });
+
+  it('is not reported as a stale-only failure', () => {
+    // staleOnly drives a different exit code; a hold must not be mistaken for
+    // an old reading.
+    const r = check(snap([limit()]), { gateHeld: true }, T0);
+    expect(staleOnly(r)).toBe(false);
+  });
+
+  it('changes nothing when the gate is open', () => {
+    const open = check(snap([limit()]), { budgetPct: 10, gateHeld: false }, T0);
+    const absent = check(snap([limit()]), { budgetPct: 10 }, T0);
+    expect(open.ok).toBe(true);
+    expect(open.ok).toBe(absent.ok);
+    expect(open.gateHeld).toBeUndefined();
+  });
+});
