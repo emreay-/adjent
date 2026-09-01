@@ -306,6 +306,74 @@ intervals. Ctrl-C exits **0** after the line in flight, never a truncated
 object. An `error` line never ends the stream — one failing backend degrades
 itself, not the app.
 
+## The gate
+
+The one thing Adjent offers beyond answers: a **hold/open signal an
+orchestrator reads before starting more work**.
+
+It is advisory by construction. Adjent writes `~/.adjent/gate.json` and does
+nothing else — it starts no process, stops none, and signals none. Your wrapper
+reads the signal and decides. See
+[What Adjent will not do](../README.md#what-adjent-will-not-do).
+
+```sh
+adjent gate status              # exit 0 open, 4 held
+adjent gate hold --reason "deploying" --until 2h
+adjent gate release
+```
+
+`gate status --json` is one object:
+
+```json
+{
+  "schemaVersion": 1,
+  "held": true,
+  "reason": "deploying",
+  "until": 1700000000000,
+  "at": 1699999000000,
+  "source": "human",
+  "ruleId": null
+}
+```
+
+`schemaVersion` is the **gate's own**, not the snapshot's: the two are read by
+different consumers and have no reason to move together. `source` is `human` or
+`rule`, and `ruleId` names the rule when one set it.
+
+### Queueing work instead of launching it
+
+The whole point, in a shell:
+
+```sh
+#!/bin/sh
+# Start a worker only if there is both quota and permission.
+if ! adjent check --budget 15% --limit weekly_all; then
+  echo "not enough quota — queueing" >&2
+  exit 0
+fi
+exec ./run-worker.sh
+```
+
+`check` consults the gate itself, so that one call covers both: a held gate
+fails the predicate regardless of how much quota is left. To ask only about the
+gate — for work that is not quota-bound at all — use `adjent gate status`.
+
+Three behaviours a script author should be able to rely on:
+
+* **A held gate answers even when there is no quota data.** `check` returns
+  *no*, not *I cannot say*, which is the case an orchestrator most needs an
+  answer in.
+* **An unreadable gate file reads as open.** Failing closed would halt your
+  fleet because a JSON file got truncated; the signal is advisory, and one that
+  cannot be read has nothing to advise.
+* **`--until` expires on its own.** An expired hold reads as open without
+  anything having to rewrite the file, so reading never requires write access.
+
+A rule can set the gate too — `actions: [hold]` in `alarms.yaml` — but only
+when `settings.actions.enabled` is `true`, which it is not by default. That
+switch governs automation, never you: `adjent gate hold` always works. A rule
+may hold and never release. See [ALARMS.md](ALARMS.md#delivery).
+
 ## Exit codes
 
 Every CLI command uses one table, so a script can branch on the code without
@@ -317,7 +385,7 @@ parsing output. **Fixed from here on** — a new meaning takes a new number.
 | 1 | Internal error. |
 | 2 | Usage error — unknown command or flag. |
 | 3 | No data — no backend detected, or no quota reported. |
-| 4 | `check` predicate did not hold. |
+| 4 | `check` predicate did not hold, **or the gate is held**. Also `gate status` when held. |
 | 5 | Data staler than `--max-age`, and only when that flag was given. |
 | 6 | Config invalid (`rules validate`). |
 
@@ -331,6 +399,11 @@ Three of these deserve a note, because the distinctions are the point:
 * **5 only ever appears when you asked for it.** Without `--max-age`, stale data
   is returned with its `observedAt` and no complaint — deciding what counts as
   too old is the caller's business, not Adjent's.
+* **4 covers the gate deliberately.** A held gate is not a new kind of outcome:
+  to a caller asking "may I start work?" it is the same *no* a failed budget
+  is. Reusing the code is a restatement of an existing meaning rather than a
+  new one, which is what "fixed from here on" requires. `check --json`
+  distinguishes the two with `gateHeld`, for callers that care why.
 
 **JSON on stdout, everything else on stderr.** A pipe never receives a progress
 line, a warning or a cleared screen, and `--json` implies non-interactive

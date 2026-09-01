@@ -46,7 +46,10 @@ work: **should I change what I am doing right now?**
   a save applies without a restart.
 - **A programmatic surface.** Every command speaks `--json`, `adjent check` is a
   budget gate with meaningful exit codes, and `adjent watch --json` is a JSONL
-  event stream.
+  event stream. `adjent gate` adds an advisory hold your orchestrator can read
+  before launching more work — see
+  [the orchestrator contract](docs/API.md#the-gate). Adjent writes a file and
+  nothing else; the decision stays in your code.
 - **Honest numbers.** Every figure is typed `reported`, `exact` or `derived`.
   Derived values render with `≈`; measured ones never do.
 
@@ -231,9 +234,11 @@ name, and there is no version of Adjent planned that pauses or stops an agent
 itself. Anything that acts on a rule will sit behind a switch that is off by
 default; a human running a command is never gated by it.
 
-**None of the gate exists yet.** Today Adjent observes and tells you. When the
-gate ships it will be documented here and in [docs/API.md](docs/API.md) with its
-exit codes, and it will still not signal anything.
+**The gate now exists**, and it still signals nothing. `adjent gate status`
+exits 0 when open and 4 when held; `adjent check` consults it; the contract and
+a worked example are in [docs/API.md](docs/API.md#the-gate). A rule can set it
+only when you turn `actions.enabled` on, and even then it may hold and never
+release — releasing is yours.
 
 ## Privacy
 
