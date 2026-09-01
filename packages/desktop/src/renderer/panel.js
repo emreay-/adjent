@@ -817,19 +817,41 @@ function projectName(a) {
  * rows would otherwise read alike.
  */
 function agentLabeller(agents) {
-  const counts = new Map();
-  for (const a of agents) {
-    const b = projectName(a) ?? a.label;
-    counts.set(b, (counts.get(b) ?? 0) + 1);
-  }
-  return (a) => {
-    const b = projectName(a);
-    if (b === null) return a.label;
-    if ((counts.get(b) ?? 0) < 2) return b;
-    // a.label is the session name when the vendor gave one, else a short id.
-    const distinct = a.label && a.label !== b ? a.label : String(a.id).split(':').pop().slice(0, 8);
-    return `${b} · ${distinct}`;
+  const idTail = (id) => {
+    const own = String(id).split(':').pop();
+    return own.length <= 8 ? own : own.slice(-8);
   };
+  const base = new Map();
+  for (const a of agents) base.set(a.id, projectName(a) ?? a.label ?? idTail(a.id));
+
+  const out = new Map(base);
+  const colliding = (current) => {
+    const byLabel = new Map();
+    for (const [id, label] of current) {
+      if (byLabel.has(label)) byLabel.get(label).push(id);
+      else byLabel.set(label, [id]);
+    }
+    const dup = new Set();
+    for (const group of byLabel.values()) if (group.length > 1) for (const id of group) dup.add(id);
+    return dup;
+  };
+
+  let ambiguous = colliding(out);
+  if (ambiguous.size > 0) {
+    for (const a of agents) {
+      if (!ambiguous.has(a.id)) continue;
+      const b = base.get(a.id);
+      if (a.label && a.label !== b) out.set(a.id, `${b} · ${a.label}`);
+    }
+  }
+  ambiguous = colliding(out);
+  if (ambiguous.size > 0) {
+    for (const a of agents) {
+      if (!ambiguous.has(a.id)) continue;
+      out.set(a.id, `${base.get(a.id)} · ${idTail(a.id)}`);
+    }
+  }
+  return (a) => out.get(a.id) ?? a.label;
 }
 
 // --------------------------------------------------------------------------

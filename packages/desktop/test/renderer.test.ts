@@ -974,7 +974,33 @@ describe('all agents view', () => {
     expect(list).not.toContain('other · solo');
   });
 
-  it('falls back to a short id when a shared project has no session name', () => {
+  /**
+   * Synthetic regression example: six rows all reading `demo-api · 11111111`. Codex
+   * thread ids are time-ordered, so sessions started close together share a
+   * long prefix, and the provider's fallback label is that prefix.
+   */
+  it('separates sessions whose ids share a prefix', () => {
+    const p = payload() as { state: { agents: Record<string, unknown>[]; agentBurns: unknown[] } };
+    const base = p.state.agents[0]!;
+    p.state.agents = ['aaaa', 'bbbb', 'cccc', 'dddd', 'eeee', 'ffff'].map((tail) => ({
+      ...base,
+      id: `codex:11111111-0000-4000-8000-0000${tail}`,
+      label: '11111111',
+      projectPath: '/w/demo-api',
+    }));
+    p.state.agentBurns = [];
+    h.onState(p);
+    h.fire('liveCount');
+
+    const names = [...h.els.get('agentList')!.innerHTML.matchAll(/<span class="name">([^<]*)<\/span>/g)].map(
+      (m) => m[1],
+    );
+    expect(names).toHaveLength(6);
+    expect(new Set(names).size).toBe(6);
+    for (const n of names) expect(n).not.toBe('demo-api · 11111111');
+  });
+
+  it('falls back to the id tail when a shared project has no session name', () => {
     const p = payload() as { state: { agents: Record<string, unknown>[]; agentBurns: unknown[] } };
     const base = p.state.agents[0]!;
     p.state.agents = [
@@ -990,8 +1016,10 @@ describe('all agents view', () => {
       (m) => m[1],
     );
 
-    expect(names.some((n) => n!.includes('abcdef12'))).toBe(true);
-    expect(names.some((n) => n!.includes('98765432'))).toBe(true);
+    // The tail, not the head — Codex ids are time-ordered, so heads collide.
+    expect(names.some((n) => n!.includes('cdef1234'))).toBe(true);
+    expect(names.some((n) => n!.includes('76543210'))).toBe(true);
+    expect(new Set(names).size).toBe(names.length);
   });
 
   /**

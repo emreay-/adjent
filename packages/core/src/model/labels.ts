@@ -28,37 +28,80 @@ export function projectName(a: Pick<Agent, 'projectPath'>): string | null {
 }
 
 /**
+ * The tail of an agent's id, which is where the entropy lives.
+ *
+ * Codex thread ids are time-ordered and 36 characters long, so their *first*
+ * eight characters are shared by every session started in the same period —
+ * in a synthetic example, six agents can share one 8-character prefix while
+ * their last eight characters are distinct. Both
+ * providers build their fallback `label` from the head, which is why six rows
+ * read `demo-api · 11111111`.
+ */
+const idTail = (id: string, n = 8): string => {
+  const own = id.split(':').pop() ?? id;
+  return own.length <= n ? own : own.slice(-n);
+};
+
+/**
  * id → the label to show, for one set of agents considered together.
  *
- * A map rather than a per-agent function because ambiguity is a property of the
- * set: whether this agent needs its session name depends on the others.
+ * **The returned labels are unique.** That is the contract, and the reason this
+ * is a set operation rather than a per-agent function: whether an agent needs
+ * more than its project name depends entirely on the others. An earlier version
+ * promised only to disambiguate the *project*, which left six rows reading the
+ * same thing when the thing it disambiguated with was itself ambiguous.
+ *
  * Callers must build it from *every* agent they know about, not just the ones
  * that fit on screen, or a row would change its name depending on what else was
  * visible.
+ *
+ * Three passes, each applied only to what is still ambiguous, so nothing gains
+ * detail it does not need (UI.md: cut ruthlessly):
+ *   1. the project's directory name;
+ *   2. plus the vendor's session name, where it says something the project
+ *      does not;
+ *   3. plus the tail of the session id, which is unique when nothing else is.
  */
 export function agentLabels(agents: readonly Agent[]): Map<string, string> {
-  const counts = new Map<string, number>();
-  for (const a of agents) {
-    const key = projectName(a) ?? a.label;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+  const out = new Map<string, string>();
+  const base = new Map<string, string>();
+  for (const a of agents) base.set(a.id, projectName(a) ?? a.label ?? idTail(a.id));
+
+  /** ids whose current label is shared with at least one other agent. */
+  const collidingIds = (current: Map<string, string>): Set<string> => {
+    const byLabel = new Map<string, string[]>();
+    for (const [id, label] of current) {
+      const group = byLabel.get(label);
+      if (group === undefined) byLabel.set(label, [id]);
+      else group.push(id);
+    }
+    const out2 = new Set<string>();
+    for (const group of byLabel.values()) if (group.length > 1) for (const id of group) out2.add(id);
+    return out2;
+  };
+
+  for (const [id, label] of base) out.set(id, label);
+
+  // Pass 2: the session name, for those that still collide.
+  let ambiguous = collidingIds(out);
+  if (ambiguous.size > 0) {
+    for (const a of agents) {
+      if (!ambiguous.has(a.id)) continue;
+      const b = base.get(a.id) as string;
+      if (a.label && a.label !== b) out.set(a.id, `${b} · ${a.label}`);
+    }
   }
 
-  const out = new Map<string, string>();
-  for (const a of agents) {
-    const project = projectName(a);
-    if (project === null) {
-      out.set(a.id, a.label);
-      continue;
+  // Pass 3: the id tail. Ids are unique, so this terminates the problem rather
+  // than moving it — the session name may itself be an ambiguous id fragment,
+  // which is exactly the case that produced six identical rows.
+  ambiguous = collidingIds(out);
+  if (ambiguous.size > 0) {
+    for (const a of agents) {
+      if (!ambiguous.has(a.id)) continue;
+      out.set(a.id, `${base.get(a.id) as string} · ${idTail(a.id)}`);
     }
-    if ((counts.get(project) ?? 0) < 2) {
-      out.set(a.id, project);
-      continue;
-    }
-    // `label` is the vendor's session name where it gave one, and a short id
-    // where it did not — in which case it equals nothing useful, so fall back
-    // to the id's own tail.
-    const distinct = a.label && a.label !== project ? a.label : (a.id.split(':').pop() ?? a.id).slice(0, 8);
-    out.set(a.id, `${project} · ${distinct}`);
   }
+
   return out;
 }
