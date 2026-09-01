@@ -6,6 +6,7 @@
  * limit leads, verdict words carry the meaning rather than colour alone.
  */
 import {
+  agentLabels,
   compareUrgency,
   fmtDur,
   fmtWhen,
@@ -77,6 +78,9 @@ export function renderAgents(state: AppState, limit = 10): string {
   const now = state.generatedAt;
   const burnOf = new Map(state.agentBurns.map((b) => [b.agentId, b.pctPerHour]));
   const live = state.agents.filter((a) => a.state !== 'ended');
+  // Labelled against every agent, not just the ones printed: a row must not
+  // change its name depending on how many happen to fit under `limit`.
+  const labelOf = agentLabels(state.agents);
   const lines = [`Agents (${live.length} live/idle)`];
   if (live.length === 0) lines.push('  (none)');
 
@@ -102,7 +106,7 @@ export function renderAgents(state: AppState, limit = 10): string {
           : 'live';
     // A placeholder is a bucket key, never an answer to "which model".
     const model = [isKnownModel(a.model) ? a.model : '—', a.effort].filter(Boolean).join(' · ');
-    const proj = a.projectPath ? a.projectPath.split(/[\\/]/).pop() : a.label;
+    const proj = labelOf.get(a.id) ?? a.label;
     lines.push(
       `  ${a.state === 'live' ? '●' : '·'} ${String(proj).padEnd(24).slice(0, 24)} ${model
         .padEnd(22)

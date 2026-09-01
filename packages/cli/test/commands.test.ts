@@ -352,6 +352,30 @@ describe('human output', () => {
     expect(r.stdout, 'printed a duration from a missing timestamp').not.toMatch(/\b\d{3,}d\b/);
   });
 
+  /**
+   * The panel got this fix on 2026-08-27 and the CLI did not, so `adjent
+   * agents` went on printing a row per session all reading the same project
+   * name. The logic now lives in core; this asserts the CLI actually uses it.
+   */
+  it('tells two sessions in one project apart', async () => {
+    const base = state().agents[0]!;
+    const crowded = state({
+      agents: [
+        { ...base, id: 'claude:s1', label: 'refactor-pass', projectPath: '/w/adjent' },
+        { ...base, id: 'claude:s2', label: 'docs-sweep', projectPath: '/w/adjent' },
+        { ...base, id: 'claude:s3', label: 'solo', projectPath: '/w/other' },
+      ],
+      agentBurns: [],
+    });
+    const r = await run('agents', [], crowded);
+
+    expect(r.stdout).toContain('refactor-pass');
+    expect(r.stdout).toContain('docs-sweep');
+    // The uncrowded project keeps its bare name.
+    expect(r.stdout).toContain('other');
+    expect(r.stdout).not.toContain('other · solo');
+  });
+
   it('explain rejects an unknown term with a usage code', async () => {
     const r = await run('explain', ['nonsense']);
     expect(r.code).toBe(EXIT.USAGE);

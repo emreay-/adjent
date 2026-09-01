@@ -807,15 +807,14 @@ function projectName(a) {
 /**
  * What to call an agent in a list.
  *
- * The project basename is the right label almost always — it is what you
- * recognise a session by. But two sessions in one repo then render as two rows
- * reading the same word, which is what a user reported on 2026-08-27: they look
- * like duplicates, or like subagents leaking into a list that should not have
- * them.
+ * **Mirrors `agentLabels` in core** (`packages/core/src/model/labels.ts`),
+ * which carries the reasoning and is the canonical version — this renderer is a
+ * plain browser script and cannot import from core, the same arrangement
+ * `isKnownModel` above already has. **Change both together**: the CLI went a
+ * week printing four identical rows because this fix landed here only.
  *
- * So disambiguate only when it is actually ambiguous (UI.md: cut ruthlessly).
- * When two rows would read alike, the vendor-supplied session name separates
- * them; failing that, a short id. A single agent in a project is unaffected.
+ * In short: the project basename, disambiguated by session name only when two
+ * rows would otherwise read alike.
  */
 function agentLabeller(agents) {
   const counts = new Map();
