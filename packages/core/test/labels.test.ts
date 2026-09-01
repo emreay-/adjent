@@ -32,6 +32,9 @@ const agent = (over: Partial<Agent> & { id: string }): Agent =>
 
 describe('projectName', () => {
   it('takes the directory name, on either separator', () => {
+    // `<user>` rather than a plausible username: the repo forbids home paths in
+    // tracked files, and the CI guard cannot tell an invented one from a real
+    // one. The placeholder keeps the POSIX-absolute shape this case is about.
     expect(projectName({ projectPath: '/home/<user>/work/adjent' })).toBe('adjent');
     expect(projectName({ projectPath: 'C:\\dev\\adjent' })).toBe('adjent');
   });
