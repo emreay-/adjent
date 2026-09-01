@@ -277,8 +277,15 @@ $$T_i = \frac{100 - u_i}{r_i} \quad \text{(time to exhaustion; } \infty \text{ i
 A limit can only stop you if it runs out before it resets — that is, if
 $T_i < R_i$. So:
 
-1. **If the vendor names it, use that.** Claude's `limits[]` carries `is_active`
-   on the limit currently binding. Vendor-reported beats anything we compute.
+1. **If a vendor names one of its own windows, that is the window that speaks
+   for that vendor.** Claude's `limits[]` carries `is_active` on the limit
+   currently binding *for Claude*. Vendor-reported beats anything we compute —
+   **about that vendor's own windows.** It is not a claim that the vendor is the
+   one you are using, and it does not outrank another backend: a user running
+   only Codex found the hero pinned to `Claude · 5h` at 0%, marked idle, while a
+   busy `Codex · 7d` sat in the collapsed list below it. An
+   authenticated-but-unused vendor would otherwise hold the hero for ever.
+   Across backends, steps 2 and 3 decide.
 2. Otherwise, among windows with $T_i < R_i$, take the one with the **smallest
    $T_i$** — the one that stops you soonest.
 3. If no limit is projected to run out, nothing is binding. Fall back to the
@@ -297,6 +304,11 @@ selection is hysteretic: a challenger limit must win the test above for **three
 consecutive polls** before it takes the slot, and the outgoing limit stays
 visible in the collapsed list. Window rollovers are exempt: when a limit resets,
 its claim genuinely vanishes and the switch is immediate.
+
+A vendor-named limit used to be exempt too, switching instantly. That made sense
+while `is_active` was read as an outright winner; now that it only chooses
+between one vendor's own windows, the exemption would just let an idle vendor
+seize the hero on a single poll, so hysteresis applies uniformly.
 
 ### The collapsed list is a ranking
 

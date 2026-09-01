@@ -208,25 +208,44 @@ export class LimitAssessor {
 
   /**
    * Binding-limit selection (docs/UI.md § Choosing the binding limit):
-   *  1. vendor is_active wins outright;
-   *  2. else smallest time-to-exhaustion among windows exhausting before reset;
+   *  1. a vendor's `is_active` decides which of **that vendor's own** windows
+   *     can represent it;
+   *  2. across vendors, smallest time-to-exhaustion among windows exhausting
+   *     before reset;
    *  3. else highest utilization.
    * With 3-poll hysteresis; immediate switch on rollover (claim vanishes).
+   *
+   * **`is_active` is a within-vendor signal, not a cross-vendor one.** It was
+   * treated as an outright winner until 2026-09-01, when a user running only
+   * Codex found the hero pinned to `Claude · 5h` at 0% and marked idle, while a
+   * busy `Codex · 7d` sat in the collapsed list below it. Claude's endpoint
+   * says which of *Claude's* windows currently binds; it does not claim Claude
+   * is the backend you are using, and an authenticated-but-unused vendor would
+   * otherwise hold the hero for ever. Its answer is still authoritative for its
+   * own windows — that is what step 1 keeps.
    */
   private selectBinding(assessments: LimitAssessment[], now: number): void {
     if (assessments.length === 0) return;
     const keyOf = (a: LimitAssessment) => `${a.limit.backend}:${a.limit.key}`;
 
-    let winner: LimitAssessment | null = assessments.find((a) => a.limit.vendorActive) ?? null;
-    if (!winner) {
-      const exhausting = assessments.filter(
-        (a) => a.exhaustsAt !== null && a.limit.resetsAt !== null && a.exhaustsAt < a.limit.resetsAt,
-      );
-      if (exhausting.length > 0) {
-        winner = exhausting.reduce((best, a) => ((a.exhaustsAt as number) < (best.exhaustsAt as number) ? a : best));
-      } else {
-        winner = assessments.reduce((best, a) => (a.limit.utilization > best.limit.utilization ? a : best));
-      }
+    // Where a vendor names one of its own windows, that window is the only one
+    // eligible to speak for that vendor. Vendors that name none offer all of
+    // theirs.
+    const namedByBackend = new Map<string, string>();
+    for (const a of assessments) if (a.limit.vendorActive) namedByBackend.set(a.limit.backend, a.limit.key);
+    const candidates = assessments.filter((a) => {
+      const named = namedByBackend.get(a.limit.backend);
+      return named === undefined || a.limit.key === named;
+    });
+
+    let winner: LimitAssessment;
+    const exhausting = candidates.filter(
+      (a) => a.exhaustsAt !== null && a.limit.resetsAt !== null && a.exhaustsAt < a.limit.resetsAt,
+    );
+    if (exhausting.length > 0) {
+      winner = exhausting.reduce((best, a) => ((a.exhaustsAt as number) < (best.exhaustsAt as number) ? a : best));
+    } else {
+      winner = candidates.reduce((best, a) => (a.limit.utilization > best.limit.utilization ? a : best));
     }
 
     const winnerKey = keyOf(winner);
@@ -238,7 +257,10 @@ export class LimitAssessor {
     } else if (winnerKey !== this.bindingKey) {
       if (this.challenger?.key === winnerKey) this.challenger.polls += 1;
       else this.challenger = { key: winnerKey, polls: 1 };
-      if (this.challenger.polls >= HYSTERESIS_POLLS || winner.limit.vendorActive) {
+      // Hysteresis applies uniformly now. It used to be bypassed whenever the
+      // winner was vendor-active, which under the old cross-vendor reading let
+      // an idle vendor seize the hero instantly.
+      if (this.challenger.polls >= HYSTERESIS_POLLS) {
         this.bindingKey = winnerKey;
         this.challenger = null;
       }

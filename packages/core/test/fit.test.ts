@@ -129,7 +129,36 @@ describe('LimitAssessor', () => {
     expect(binding?.limit.key).toBe('5h'); // exhausting before reset → binds despite lower %
   });
 
-  it('vendor is_active wins outright', () => {
+  /**
+   * Reported 2026-09-01: only Codex in use, yet the hero was pinned to
+   * `Claude · 5h` at 0% and marked idle while a busy `Codex · 7d` sat below it.
+   *
+   * `is_active` is Claude's answer about which of *Claude's* windows binds. It
+   * was being read as "Claude binds", so an authenticated-but-unused vendor
+   * held the hero indefinitely.
+   */
+  it('a vendor naming its own window does not outrank another vendor that is actually being used', () => {
+    const assessor = new LimitAssessor();
+    const claude5h: QuotaLimit = { ...quotaWindow(0, T0), vendorActive: true };
+    const codex7d: QuotaLimit = {
+      ...quotaWindow(1, T0),
+      backend: 'codex',
+      key: 'codex:7d',
+      label: 'Codex · 7d',
+      windowMinutes: 10_080,
+      resetsAt: T0 + 7 * 24 * 60 * MIN,
+    };
+
+    const result = assessor.assess([claude5h, codex7d], T0);
+    expect(result.find((a) => a.binding)?.limit.label).toBe('Codex · 7d');
+  });
+
+  it("vendor is_active picks between that vendor's own windows", () => {
+    // The half of the rule that is correct and stays: Claude's 60% scoped
+    // window beats Claude's own 90% one, because Claude says the scoped one is
+    // what currently binds for Claude. Renamed from "wins outright" on
+    // 2026-09-01 — outright was the bug.
+
     const assessor = new LimitAssessor();
     const scoped: QuotaLimit = {
       ...quotaWindow(60, T0),
