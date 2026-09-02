@@ -10,6 +10,20 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+/**
+ * How plainly to say which vendor a row belongs to.
+ *
+ * With one backend installed this is noise, which is why `none` is the
+ * default; with both, "which of these is Codex?" is a question the agents list
+ * could not answer at all — a limit's label carries the vendor, but an agent
+ * row never did.
+ *
+ * `icon` draws Adjent's own small monograms, not the vendors' logos: nothing
+ * is fetched at runtime (README: local-first, sends nothing anywhere), and no
+ * third-party trademark is redistributed.
+ */
+export type VendorDisplay = 'none' | 'name' | 'icon';
+
 /** Which tray glyph to draw. See brand/assets/tray for the vector masters. */
 export type TrayStyle = 'robot' | 'ring' | 'a-mark';
 export type Theme = 'system' | 'light' | 'dark';
@@ -47,6 +61,8 @@ export interface Settings {
    * on its own, not what you do deliberately (§4 Q1, sub-decision 3).
    */
   actions: { enabled: boolean };
+  /** How plainly to mark which vendor a row belongs to. */
+  vendorDisplay: VendorDisplay;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -61,6 +77,7 @@ export const DEFAULT_SETTINGS: Settings = {
   alarmsPaused: false,
   alarmWebhookUrl: null,
   actions: { enabled: false },
+  vendorDisplay: 'none',
 };
 
 export const settingsPath = (): string => path.join(os.homedir(), '.adjent', 'settings.json');
@@ -92,6 +109,8 @@ export function coerceSettings(raw: unknown): Settings {
     // Anything but an explicit `true` is off. A malformed settings file must
     // not be a way to enable automation by accident.
     actions: { enabled: (r['actions'] as Record<string, unknown> | undefined)?.['enabled'] === true },
+    vendorDisplay:
+      r['vendorDisplay'] === 'name' || r['vendorDisplay'] === 'icon' ? r['vendorDisplay'] : 'none',
   };
 }
 

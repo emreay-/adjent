@@ -310,6 +310,33 @@ while `is_active` was read as an outright winner; now that it only chooses
 between one vendor's own windows, the exemption would just let an idle vendor
 seize the hero on a single poll, so hysteresis applies uniformly.
 
+### Saying which vendor a row belongs to
+
+A limit's label carries its vendor — `Claude · 5h`, `Codex · 7d` — but an agent
+row never did, and neither did an alarm. With one backend installed that is
+fine; with two, "which of these is Codex?" was a question the agents list could
+not answer.
+
+**Settings → Show the vendor**, three modes:
+
+| Mode | What it draws | For |
+| --- | --- | --- |
+| `none` *(default)* | nothing | one backend installed, where the mark is noise |
+| `name` | the vendor's name, small caps, in its colour | scanning a mixed list |
+| `icon` | a two-letter monogram chip | the same, in less width |
+
+Off by default on the standing rule that the resting surface earns its
+elements: a user running only Claude gains nothing from being told so on every
+row.
+
+**The icons are Adjent's own monograms, not the vendors' logos.** Two reasons,
+both firm. The panel makes no network requests of any kind — that is what lets
+the README promise Adjent sends nothing anywhere, and an icon fetched on open
+would break it, fail offline, and announce to a third party that you are
+running this tool. And redistributing a vendor's trademark in an MIT repository
+is a licensing decision the project has not taken. Swapping in official artwork
+is a change to one table in `panel.js` if that decision is ever made.
+
 ### The collapsed list is a ranking
 
 The three lines under the hero are ordered by **urgency**, by the same rule that

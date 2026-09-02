@@ -268,6 +268,7 @@ function render(payload) {
       : '';
 
   // other limits (≤3), binding first excluded
+  const vmode = vendorMode();
   const others = state.limits.filter((w) => !w.binding).slice(0, 3);
   $('limits').innerHTML =
     others
@@ -285,7 +286,7 @@ function render(payload) {
         // like the row had less to say.
         const tok = a.tokens ? sumKinds(a.tokens) : 0;
         const tokStr = ` · ${tok > 0 ? fmtTok(tok) : '—'}`;
-        return `<div class="row" data-tip="${tip}" data-limit="${esc(limitKeyOf(a.limit))}"><span class="dot" style="background:${vv.color}"></span><span class="name">${esc(a.limit.label)}</span><span class="meta"><b>${Math.round(a.limit.utilization)}%</b>${a.limit.severity === 'warning' ? ' ⚠' : ''}${esc(tokStr)}</span></div>`;
+        return `<div class="row" data-tip="${tip}" data-limit="${esc(limitKeyOf(a.limit))}"><span class="dot" style="background:${vv.color}"></span>${vendorTag(a.limit.backend, vmode)}<span class="name">${esc(a.limit.label)}</span><span class="meta"><b>${Math.round(a.limit.utilization)}%</b>${a.limit.severity === 'warning' ? ' ⚠' : ''}${esc(tokStr)}</span></div>`;
       })
       .join('') || '<div class="empty">None</div>';
 
@@ -307,7 +308,7 @@ function render(payload) {
       const alarm = alarmed.get(a.id);
       const cls = alarm ? 'row alarmed' : 'row';
       const dot = alarm ? 'var(--warn)' : status.color;
-      return `<div class="${cls}" data-agent="${esc(a.id)}"><span class="dot" style="background:${dot}"></span><span class="name">${esc(proj)}</span><span class="meta"${noModelAttr(a.model)}>${esc(model)} · ${status.label}</span></div>`;
+      return `<div class="${cls}" data-agent="${esc(a.id)}"><span class="dot" style="background:${dot}"></span>${vendorTag(a.backend, vmode)}<span class="name">${esc(proj)}</span><span class="meta"${noModelAttr(a.model)}>${esc(model)} · ${status.label}</span></div>`;
     });
   $('agents').innerHTML = rows.join('') || '<div class="empty">None</div>';
 
@@ -694,7 +695,7 @@ function renderNotifications() {
     out.push(
       `<div class="notif" data-alarm="${i}">` +
         `<span class="sev" style="background:${SEV[a.severity] || SEV.info}"></span>` +
-        `<span class="body"><span class="t">${esc(a.title)}</span>` +
+        `<span class="body"><span class="t">${vendorTag(a.backend, vendorMode())}${esc(a.title)}</span>` +
         `<span class="b">${esc(a.body)}</span>` +
         `<span class="when">${esc(clockOf(a.firedAt))} · ${esc(a.severity)}${more}</span></span>` +
       `</div>`,
@@ -798,6 +799,36 @@ function liveAgentAlarms(history, now) {
   return out;
 }
 
+/**
+ * Which vendor a row belongs to, as the user asked to see it.
+ *
+ * Three modes, from `settings.vendorDisplay`: `none` (the default — with one
+ * backend installed the answer is never in doubt and the mark is noise),
+ * `name`, and `icon`.
+ *
+ * The icons are **Adjent's own monograms, not the vendors' logos.** Nothing is
+ * fetched: the panel makes no network requests at all, which is what lets the
+ * README say Adjent sends nothing anywhere. Drawing our own also avoids
+ * redistributing a third-party trademark. Swapping in official artwork later
+ * is a change to this one map.
+ */
+const VENDORS = {
+  claude: { name: 'Claude', mark: 'Cl' },
+  codex: { name: 'Codex', mark: 'Cx' },
+};
+
+function vendorTag(backend, mode) {
+  const v = VENDORS[backend];
+  if (!v || mode === 'none' || !mode) return '';
+  if (mode === 'name') {
+    return `<span class="vname ${esc(backend)}" title="${esc(v.name)}">${esc(v.name)}</span>`;
+  }
+  return `<span class="vmark ${esc(backend)}" title="${esc(v.name)}">${esc(v.mark)}</span>`;
+}
+
+/** The mode currently chosen, from whichever payload last arrived. */
+const vendorMode = () => lastPayload?.settings?.vendorDisplay ?? 'none';
+
 /** Directory name of an agent's project, or null when it has no path. */
 function projectName(a) {
   if (!a.projectPath) return null;
@@ -866,6 +897,7 @@ function renderAgents() {
   const burnOf = new Map(state.agentBurns.map((b) => [b.agentId, b.pctPerHour]));
   const labelOf = agentLabeller(state.agents);
   const alarmed = liveAgentAlarms(alarmHistory, now);
+  const vmode = vendorMode();
   const rows = [...state.agents]
     .sort(byCost(burnOf))
     .map((a) => {
@@ -885,6 +917,7 @@ function renderAgents() {
       return (
         `<div class="agentRow${alarm ? ' alarmed' : ''}" data-agent="${esc(a.id)}"><div class="top">` +
         `<span class="dot" style="background:${alarm ? 'var(--warn)' : status.color}"></span>` +
+        vendorTag(a.backend, vmode) +
         `<span class="name">${esc(proj)}</span>` +
         `<span class="meta">${alarm ? esc(alarm.title) : status.label}</span></div>` +
         `<span class="sub">${esc(sub)}</span></div>`
@@ -1294,6 +1327,9 @@ function syncSettingsUI(s) {
   $('widgetOn').checked = !!s.widgetEnabled;
   $('widgetTask').checked = !!s.widgetTaskbarButton;
   $('pauseAlarms').checked = !!s.alarmsPaused;
+  for (const b of document.querySelectorAll('#vendorDisplay button')) {
+    b.classList.toggle('on', b.dataset.vendor === (s.vendorDisplay ?? 'none'));
+  }
   for (const b of document.querySelectorAll('#trayStyle button')) {
     b.classList.toggle('on', b.dataset.style === s.trayStyle);
   }
@@ -1377,6 +1413,9 @@ document.querySelectorAll('[data-tick]').forEach((b) =>
     const next = steps[Math.min(steps.length - 1, Math.max(0, base + (b.dataset.tick === '+' ? 1 : -1)))];
     set({ tickIntervalSec: next });
   }),
+);
+document.querySelectorAll('#vendorDisplay button').forEach((b) =>
+  b.addEventListener('click', () => set({ vendorDisplay: b.dataset.vendor })),
 );
 document.querySelectorAll('#trayStyle button').forEach((b) =>
   b.addEventListener('click', () => set({ trayStyle: b.dataset.style })),

@@ -10,11 +10,15 @@
     --bg:#F3F5F7; --surface:#FFFFFF; --line:#D9DFE6; --ink:#12171D; --ink2:#3C4752; --muted:#65727F;
     --good:#5ea30c; --warn:#ff8f00; --crit:#b3181f;
     --good-bg:#EDF4DF; --warn-bg:#FBF0D8; --crit-bg:#F7E2E2; --idle:#808890;
+    /* Vendor marks. Adjent's own monograms, not the vendors' logos — chosen to
+       be told apart at 10px rather than to resemble anything. */
+    --v-claude:#7A5AF8; --v-codex:#0E8A6E; --v-bg:#00000010;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg:#0D1116; --surface:#151B22; --line:#2A333D; --ink:#E3E9EF; --ink2:#B4BFCA; --muted:#8593A0;
       --good-bg:#1C2611; --warn-bg:#2C2411; --crit-bg:#2E1817;
+      --v-claude:#A78BFA; --v-codex:#34D399; --v-bg:#FFFFFF14;
     }
   }
   * { box-sizing:border-box; margin:0; }
@@ -195,6 +199,15 @@
   .row.alarmed, .agentRow.alarmed { background:var(--warn-bg); }
   .alarmNote { margin-top:6px; padding:6px 8px; border-radius:4px;
                background:var(--warn-bg); color:var(--ink2); font-size:11px; line-height:1.45; }
+  /* Vendor mark: a monogram chip, or the vendor's name in small caps. */
+  .vmark { flex:none; display:inline-flex; align-items:center; justify-content:center;
+           font-family:Consolas, monospace; font-size:8.5px; font-weight:700; letter-spacing:.02em;
+           width:16px; height:14px; border-radius:3px; background:var(--v-bg); }
+  .vmark.claude { color:var(--v-claude); }
+  .vmark.codex  { color:var(--v-codex); }
+  .vname { flex:none; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+  .vname.claude { color:var(--v-claude); }
+  .vname.codex  { color:var(--v-codex); }
   .row[data-limit], h2[data-limit-all] { cursor:pointer; }
   .row[data-limit]:hover { background:var(--surface); }
   .heroMeta[data-limit] { cursor:pointer; }
@@ -415,6 +428,12 @@
         <label>Tray glyph</label>
         <div class="seg" id="trayStyle">
           <button data-style="robot">Robot</button><button data-style="ring">Gauge</button><button data-style="a-mark">A-mark</button>
+        </div>
+      </div>
+      <div class="setRow">
+        <label>Show the vendor<small>Which backend each agent, limit and alarm belongs to</small></label>
+        <div class="seg" id="vendorDisplay">
+          <button data-vendor="none">Off</button><button data-vendor="name">Name</button><button data-vendor="icon">Icon</button>
         </div>
       </div>
 

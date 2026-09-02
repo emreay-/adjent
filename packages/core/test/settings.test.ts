@@ -66,3 +66,22 @@ describe('explanations', () => {
     expect(coerceSettings({}).theme).toBe('system');
   });
 });
+
+describe('vendorDisplay', () => {
+  it('is off by default', () => {
+    expect(DEFAULT_SETTINGS.vendorDisplay).toBe('none');
+  });
+
+  it('accepts the two modes that mean something', () => {
+    expect(coerceSettings({ vendorDisplay: 'name' }).vendorDisplay).toBe('name');
+    expect(coerceSettings({ vendorDisplay: 'icon' }).vendorDisplay).toBe('icon');
+  });
+
+  it('falls back to off for anything else', () => {
+    // A value from a newer version, or a typo, must not leave the panel
+    // rendering a mode it has no markup for.
+    expect(coerceSettings({ vendorDisplay: 'logos' }).vendorDisplay).toBe('none');
+    expect(coerceSettings({ vendorDisplay: 3 }).vendorDisplay).toBe('none');
+    expect(coerceSettings({}).vendorDisplay).toBe('none');
+  });
+});

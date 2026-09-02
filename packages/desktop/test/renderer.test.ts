@@ -1079,6 +1079,64 @@ describe('all agents view', () => {
     expect(tip).toContain('near-identical turns');
   });
 
+  /**
+   * Requested 2026-09-02: with two backends installed, an agent row never said
+   * which vendor it belonged to. Three modes, and `none` is the default —
+   * with one backend the answer is never in doubt and the mark is noise.
+   */
+  function withVendorMode(mode: string) {
+    const p = payload() as Record<string, unknown>;
+    const st = p['state'] as { agents: Record<string, unknown>[] };
+    st.agents = [
+      { ...st.agents[0]!, id: 'claude:a1', backend: 'claude', projectPath: '/w/one' },
+      { ...st.agents[0]!, id: 'codex:a2', backend: 'codex', projectPath: '/w/two' },
+    ];
+    p['settings'] = { ...(p['settings'] as Record<string, unknown>), vendorDisplay: mode };
+    return p;
+  }
+
+  it('says nothing about the vendor by default', () => {
+    h.onState(withVendorMode('none'));
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+    expect(list).not.toContain('vmark');
+    expect(list).not.toContain('vname');
+  });
+
+  it('names the vendor when asked', () => {
+    h.onState(withVendorMode('name'));
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+    expect(list).toContain('Claude');
+    expect(list).toContain('Codex');
+    expect(list).toContain('vname');
+  });
+
+  it('marks the vendor with a monogram when asked for icons', () => {
+    h.onState(withVendorMode('icon'));
+    h.fire('liveCount');
+    const list = h.els.get('agentList')!.innerHTML;
+    expect(list).toContain('vmark');
+    expect(list).toContain('Cl');
+    expect(list).toContain('Cx');
+  });
+
+  it('reaches the dashboard rows too, not only the agents view', () => {
+    h.onState(withVendorMode('icon'));
+    expect(h.els.get('agents')!.innerHTML).toContain('vmark');
+  });
+
+  it('never requests anything over the network for an icon', () => {
+    // The panel makes no network requests at all, which is what lets the
+    // README promise Adjent sends nothing anywhere. The marks are drawn from
+    // a local table, so nothing in the output may reference a remote asset.
+    h.onState(withVendorMode('icon'));
+    h.fire('liveCount');
+    const html = h.els.get('agentList')!.innerHTML + h.els.get('agents')!.innerHTML;
+    expect(html).not.toMatch(/https?:/);
+    expect(html).not.toContain('<img');
+  });
+
   it('lists every agent, not just the four the dashboard shows', () => {
     h.onState(manyAgents());
     h.fire('liveCount');
