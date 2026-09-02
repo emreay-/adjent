@@ -182,6 +182,9 @@
   }
   .notif .body { flex:1; min-width:0; }
   .notif .t { font-weight:600; font-size:12px; display:block; }
+  /* Everywhere else the vendor tag sits in a flex row and inherits its gap.
+     Here it is inline inside the title, so it needs its own breathing room. */
+  .notif .t .vname, .notif .t .vmark { margin-right:7px; vertical-align:1px; }
   .notif .b { font-size:11.5px; color:var(--ink2); display:block; margin-top:1px; }
   .notif .when {
     font-family:Consolas, monospace; font-size:10px; color:var(--muted);
