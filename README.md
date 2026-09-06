@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/emreay-/adjent/actions/workflows/ci.yml/badge.svg)](https://github.com/emreay-/adjent/actions/workflows/ci.yml)
 
-**Observability and advisory orchestration for AI work — for humans and agents.**
+**Monitor Claude Code and Codex usage, spot looping agents, and give automation a quota gate.**
 People use the tray-resident monitor; agents and orchestrators use headless
 interfaces to the same underlying state. Adjent answers:
 
@@ -21,10 +21,12 @@ today; agent-driven orchestration is a central direction for the future.
 Adjent watches [Claude Code](https://claude.com/claude-code) and
 [OpenAI Codex](https://openai.com/codex), read-only, on Windows and Linux.
 
-<img src="docs/assets/panel.png" width="380" alt="The actual Adjent panel with synthetic projects and usage">
+<img src="docs/assets/demo.svg" width="960" alt="30-second synthetic walkthrough: inspect the tray panel, catch a looping subagent, check quota headroom, and respect an advisory hold. Text and runnable commands follow below.">
 
-*The actual panel, rendered with invented data. Regenerate it after building with
-`node scripts/screenshot.mjs`; the monitor is not started.*
+*30-second walkthrough, repeating. The panel is the actual UI with invented data;
+the CLI excerpts come from verified synthetic runs. These are separate examples,
+not a recording of a shared live session. [Read the walkthrough or reproduce it](docs/articles/README.md#the-30-second-demo).
+[View the still panel](docs/assets/panel.png).*
 
 ---
 
@@ -141,6 +143,9 @@ There is nothing to configure. Adjent finds `~/.claude` and `~/.codex` if they
 are there, and reports what it can if they are not.
 
 ## Understanding the numbers
+
+For the reasoning and worked examples, start with
+[Why token counts don't tell you your remaining subscription quota](docs/articles/token-counts-and-quota.md).
 
 - **Reported quota:** the vendor's reading, with its observation time. The hero
   shows the binding limit; burn and reset time help assess urgency.
@@ -298,6 +303,15 @@ Review and redact before sharing. Snapshot machine identity is randomly generate
 not derived from a hostname or username. See [SECURITY.md](SECURITY.md).
 
 ## Documentation
+
+### Start with a worked example
+
+- [Why token counts don't tell you your remaining subscription quota](docs/articles/token-counts-and-quota.md)
+- [Detecting looping coding agents from metadata](docs/articles/detecting-agent-loops.md)
+- [Giving an agent orchestrator a quota gate](docs/articles/orchestrator-quota-gate.md)
+
+These articles introduce the ideas; the full design, derivations and limitations
+remain in the reference documents below.
 
 | Doc | What it covers |
 | --- | --- |

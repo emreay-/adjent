@@ -60,6 +60,9 @@ jobs:
       - name: Smoke — run the built CLI against a fixture HOME
         run: node packages/cli/test/smoke.mjs
 
+      - name: Verify the public walkthrough against the built CLI
+        run: node scripts/demo-discovery.mjs
+
       - name: Smoke — real renderer with synthetic data (Windows)
         if: runner.os == 'Windows'
         run: node scripts/screenshot.mjs
