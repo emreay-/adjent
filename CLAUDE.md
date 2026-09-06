@@ -1,19 +1,24 @@
 # Adjent — agent instructions
 
-Cross-platform (Windows/Linux) tray-resident app that monitors local AI coding
-agents (Claude Code, Codex): live agents, models, projects, quota utilization,
-and rule-driven alarms. Design-first repo: read the docs before writing code.
+Cross-platform (Windows/Linux) observability and advisory orchestration for AI
+work. People use the tray-resident monitor; agents and orchestrators use the
+headless contracts. Both consume live agent, model, project, quota and alarm
+data for local coding agents (Claude Code, Codex). Agent-driven orchestration
+is a central future direction; human supervision is not a runtime requirement.
+Enforcement remains with the caller, as described in README.md.
+Design-first repo: read the docs before writing code.
 
 ## Doc map — read in this order for context
 
 | Doc | Authority on |
 | --- | --- |
-| [README.md](README.md) | principles; the six rules everything else follows |
+| [README.md](README.md) | principles; public setup and project constraints |
+| [docs/API.md](docs/API.md) | machine-facing contracts for agents, orchestrators and integrations |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | stack, module layout, provider interface, packaging |
 | [docs/DATA-SOURCES.md](docs/DATA-SOURCES.md) | verified vendor on-disk formats and the quota endpoint |
 | [docs/GLOSSARY.md](docs/GLOSSARY.md) | terminology; the exchange-rate model, derived step by step |
 | [docs/UI.md](docs/UI.md) | form factor, component budget, hero number, mockups |
-| [docs/ALARMS.md](docs/ALARMS.md) | the three rule types, config schema, sinks |
+| [docs/ALARMS.md](docs/ALARMS.md) | the four rule types, config schema, sinks |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | milestones, expansion, risks |
 | [docs/PACKAGING.md](docs/PACKAGING.md) | distribution channels, sandboxing, signing, update policy |
 
@@ -54,8 +59,9 @@ Nothing from the development machine may enter version control:
   regenerate IDs, zero the paths, invent the numbers, keep only the *shape*.
 - Before any commit: scan the diff for the above. When in doubt, leave it out.
 
-(Existing docs predating this rule contain illustrative examples from the
-design investigation; do not add more, and scrub them if they are ever edited.)
+Historical revisions contain examples predating this rule. Current examples
+must be synthetic; publication requires a separate history audit (see
+[docs/PUBLICATION.md](docs/PUBLICATION.md)).
 
 ## Working alongside other agents
 
@@ -111,6 +117,11 @@ apply the moment a second worktree exists:
 
 ## Conventions
 
+- Treat humans and agents as first-class consumers. Keep machine contracts
+  independent of desktop presentation and explicit about missing or stale data.
+- Preserve the teaching value of the docs: retain derivations, reasoning and
+  worked examples; replace private data with synthetic data and clearly label
+  proposed behavior instead of removing explanations.
 - TypeScript strict; pnpm workspaces (`core/`, `cli/`, `desktop/` under
   `packages/`) per ARCHITECTURE.md.
 - Vocabulary in code follows GLOSSARY.md: `utilization`, `limit`,

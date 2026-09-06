@@ -1,7 +1,14 @@
 # The Adjent API
 
-Adjent has two consumers: the desktop panel, and whatever you write. This
-document is the contract for the second one.
+Adjent serves both humans and agents. This document defines the machine-facing
+contract for agents, orchestrators and integrations; the desktop panel is the
+human-facing surface over the same core. The headless contract is a first-class
+part of the product and does not require the tray or human interaction.
+
+Callers use observations, events and advisory gates to inform their own
+scheduling and work policies. Freshness, provenance, missing data and exit codes
+are decision inputs, not just display details. A caller chooses when human
+review is needed and owns enforcement; Adjent does not launch or stop agents.
 
 The unit is the **snapshot** — one JSON object describing everything Adjent
 knows at an instant. Every surface serves the same shape: the CLI's `--json`

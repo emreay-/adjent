@@ -40,6 +40,9 @@ jobs:
       # Build before typechecking: the desktop and CLI packages typecheck
       # against @adjent/core's *built* declarations, so on a clean checkout
       # `typecheck` alone fails with "has no exported member".
+      - run: node scripts/check-version.mjs
+      - run: node --test scripts/test/*.test.mjs
+
       - name: Build
         run: pnpm -r build
 
@@ -57,32 +60,25 @@ jobs:
       - name: Smoke — run the built CLI against a fixture HOME
         run: node packages/cli/test/smoke.mjs
 
+      - name: Smoke — real renderer with synthetic data (Windows)
+        if: runner.os == 'Windows'
+        run: node scripts/screenshot.mjs
+
+      - name: Smoke — real renderer with synthetic data (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum node scripts/screenshot.mjs
+
   hygiene:
     name: no personal data
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # CLAUDE.md makes this a hard rule; a rule nothing checks is a wish.
-      # Scans tracked files only — ignored working files are not our business.
-      - name: Scan tracked files for personal or secret data
-        run: |
-          set -uo pipefail
-          pattern='[a-z]:[\\/]+users[\\/]+[a-z0-9._-]+|/home/[a-z0-9._-]+|sk-[a-z0-9]{16,}|ghp_[a-z0-9]{20,}|xox[baprs]-[a-z0-9-]{10,}'
-          # Placeholders are the whole point of the rule, so they are allowed,
-          # as are CI's own paths and shell/CI variable references.
-          allow='<user>|\$\{|%USERNAME%|/home/runner|USERPROFILE'
-          hits=$(git ls-files -z \
-            | xargs -0 grep -IniE "$pattern" 2>/dev/null \
-            | grep -viE "$allow" || true)
-          if [ -n "$hits" ]; then
-            echo "::error::Personal or secret data found in tracked files (CLAUDE.md hard rule)."
-            echo "$hits"
-            echo
-            echo "Use placeholders instead: ~, <user>, C:\\Users\\<user>\\..."
-            exit 1
-          fi
-          echo "Clean: no usernames, home paths or key-shaped strings in tracked files."
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Scan working files without logging sensitive values
+        run: node scripts/repo-hygiene.mjs
 
       # LF is enforced by .gitattributes; a CRLF file that slips in breaks the
       # renderer tests on one platform only, which is a miserable way to find out.

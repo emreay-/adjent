@@ -83,8 +83,8 @@ export class CodexProvider implements ProviderAdapter {
       version,
       plan: this.plan,
       rateLimitTier: this.plan, // Codex exposes plan_type only; tier == plan
-      health: 'ok',
-      healthDetail: null,
+      health: this.tail.skippedLines ? 'degraded' : 'ok',
+      healthDetail: this.tail.skippedLines ? 'Oversized transcript records were skipped; token totals may be incomplete.' : null,
     };
   }
 

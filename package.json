@@ -2,10 +2,10 @@
   "name": "adjent-monorepo",
   "private": true,
   "version": "0.1.0",
-  "description": "Tray-resident monitor for local AI coding agents: live agents, models, quota utilization, and pace alarms.",
+  "description": "Observability and advisory orchestration for AI work, with a human tray UI and headless agent interfaces.",
   "license": "MIT",
   "engines": {
-    "node": ">=22.5"
+    "node": ">=22.12"
   },
   "packageManager": "pnpm@9.15.9",
   "scripts": {

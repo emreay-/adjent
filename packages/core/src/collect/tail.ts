@@ -9,7 +9,15 @@ import { promises as fs } from 'node:fs';
 export interface TailState {
   /** absolute path → byte offset already consumed */
   offsets: Record<string, number>;
+  /** Oversized records skipped in this process; providers expose degraded health. */
+  skippedLines?: number;
 }
+
+const READ_BYTES = 64 * 1024;
+/** Return roughly this much complete-line data per tick, rather than a whole history. */
+export const TAIL_BATCH_BYTES = 1024 * 1024;
+/** A pathological transcript record must not exhaust the monitor's memory. */
+export const MAX_LINE_BYTES = 16 * 1024 * 1024;
 
 export const emptyTailState = (): TailState => ({ offsets: {} });
 
@@ -22,32 +30,64 @@ export interface TailResult {
 /** Read complete lines appended since the recorded offset. Never throws on FS races. */
 export async function tailFile(state: TailState, path: string): Promise<TailResult> {
   let handle: fs.FileHandle | null = null;
+  const lines: string[] = [];
+  let restarted = false;
   try {
     handle = await fs.open(path, 'r');
     const stat = await handle.stat();
     let start = state.offsets[path] ?? 0;
-    let restarted = false;
     if (stat.size < start) {
       start = 0; // rewritten / truncated (compaction)
       restarted = true;
     }
-    if (stat.size === start) return { lines: [], restarted: false };
-
-    const length = stat.size - start;
-    const buf = Buffer.alloc(Number(length));
-    await handle.read(buf, 0, buf.length, start);
-
-    // Only consume up to the last newline — a partially-written trailing line
-    // is left for the next tail.
-    const lastNl = buf.lastIndexOf(0x0a);
-    if (lastNl === -1) return { lines: [], restarted };
-    state.offsets[path] = start + lastNl + 1;
-
-    const text = buf.subarray(0, lastNl).toString('utf-8');
-    const lines = text.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l)).filter((l) => l.length > 0);
+    // Persist the rewind even if a truncated file contains no complete line yet.
+    if (restarted) state.offsets[path] = 0;
+    if (stat.size === start) return { lines: [], restarted };
+    let chunks: Buffer[] = [];
+    let lineBytes = 0;
+    let batchBytes = 0;
+    let oversized = false;
+    let position = start;
+    while (position < stat.size) {
+      const buf = Buffer.alloc(Math.min(READ_BYTES, stat.size - position));
+      const { bytesRead } = await handle.read(buf, 0, buf.length, position);
+      if (bytesRead === 0) break; // file changed after stat
+      let from = 0;
+      while (from < bytesRead) {
+        const found = buf.indexOf(0x0a, from);
+        const newline = found >= 0 && found < bytesRead ? found : -1;
+        const end = newline < 0 ? bytesRead : newline;
+        lineBytes += end - from;
+        if (lineBytes > MAX_LINE_BYTES) {
+          oversized = true;
+          chunks = [];
+        } else if (!oversized) {
+          chunks.push(buf.subarray(from, end));
+        }
+        if (newline < 0) break;
+        if (oversized) {
+          state.skippedLines = (state.skippedLines ?? 0) + 1;
+        } else {
+          const text = Buffer.concat(chunks, lineBytes).toString('utf-8');
+          const line = text.endsWith('\r') ? text.slice(0, -1) : text;
+          if (line.length > 0) lines.push(line);
+        }
+        state.offsets[path] = position + newline + 1;
+        batchBytes += lineBytes + 1;
+        chunks = [];
+        lineBytes = 0;
+        oversized = false;
+        if (batchBytes >= TAIL_BATCH_BYTES) return { lines, restarted };
+        from = newline + 1;
+      }
+      position += bytesRead;
+    }
+    // A partial final record remains behind the offset for the next tick.
     return { lines, restarted };
   } catch {
-    return { lines: [], restarted: false };
+    // Offsets already advanced over these complete records. Returning an empty
+    // batch after a later read race would silently lose their usage forever.
+    return { lines, restarted };
   } finally {
     await handle?.close().catch(() => {});
   }

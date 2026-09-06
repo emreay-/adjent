@@ -1,5 +1,12 @@
 # Information design
 
+This document specifies Adjent's **human-facing desktop surface**. Agents and
+orchestrators are an equally intended audience for the product and use the
+headless contract in [API.md](API.md). The component budget and editorial cuts
+below govern presentation, not the machine contract. Both surfaces draw on the
+same core; a person can inspect the evidence behind work decisions, while a
+headless workflow can run without anyone watching the panel.
+
 The competitive problem is not data access — the last two docs show the data is
 sitting there. It is that existing tools either surface something you cannot act
 on, or surface everything and make you study it. Adjent's differentiator is
@@ -15,20 +22,20 @@ defined in [GLOSSARY.md](GLOSSARY.md).
 Decisions, not options. Each is stated with its reason so it can be revisited
 deliberately.
 
-**Adjent is a tray-resident desktop application.** One background process,
-started at login, living in the Windows notification area / Linux system tray.
-It is not a limit you launch and close — the process is always on, because the
+**Adjent's human-facing shell is a tray-resident desktop application.** One background process,
+optionally started by the user at login, living in the Windows notification area / Linux system tray.
+It is not a window you launch and close — the process is always on, because the
 collectors and the alarm engine must run whether or not you are looking.
 
 **Nothing but the tray icon is visible by default.** No taskbar entry, no dock
-icon, no limit at rest. The reasoning: Adjent's job is to interrupt you *only*
+icon, no window at rest. The reasoning: Adjent's job is to interrupt you *only*
 when something needs deciding. A permanently visible dashboard trains you to
 stop seeing it — the alarm engine, not your peripheral vision, is what watches.
 The tray icon is the one always-on surface, and it is exactly one arc in one
 status colour, so a glance answers "anything wrong?" without a click.
 
 **The panel opens on one click, anchored to the tray icon.** Frameless,
-380×560, closes on focus loss like a volume or wifi popover — not a limit you
+380×560, closes on focus loss like a volume or wifi popover — not a window you
 manage, a question you ask. Left-click opens the panel; right-click a short
 menu (pause alarms, pin widget, settings, quit).
 
@@ -50,18 +57,18 @@ gives exactly that. Settings links straight to the Windows page via
 `ms-settings:taskbar`.
 
 **Sizing is a setting, not a constant.** `uiScale` (0.8–2.0) drives the
-renderer zoom factor *and* the limit dimensions together, so the panel grows
+renderer zoom factor *and* the window dimensions together, so the panel grows
 with its type rather than clipping it. The tray glyph is separate: Windows
 fixes the slot at 16 logical px, so "bigger" there means rendering at a higher
 scale factor for crispness and letting `trayThickness` (0.18–0.5 of radius)
 and `trayStyle` (`ring` | `disc`) use more of the slot. Appearance is a third
 setting — auto (follow the OS), light, or dark — applied through Electron's
 `nativeTheme.themeSource`, so the existing `prefers-color-scheme` stylesheets
-respond with no per-limit theming code. All of it lives in
+respond with no per-window theming code. All of it lives in
 `~/.adjent/settings.json` and applies live.
 
 **Notifications are native OS toasts, routed by severity.** Windows Action
-Center / libnotify — never a custom pop-over limit, so they obey your OS's
+Center / libnotify — never a custom pop-over window, so they obey your OS's
 do-not-disturb, focus assist, and notification history for free. Severity
 routing (from [ALARMS.md](ALARMS.md)): `info` never toasts, it only tints the
 tray; `warn` toasts; `critical` toasts persistently. Every toast carries at
@@ -79,9 +86,7 @@ most two actions.
 
 ## Mockups
 
-All project names and figures below are synthetic.
-
-Layout mockups, not pixel art — spacing and hierarchy are indicative, the
+All project names and figures below are synthetic. Layout mockups, not pixel art — spacing and hierarchy are indicative, the
 component inventory is normative. The rendered versions live in the design
 brief artifact.
 
@@ -112,7 +117,7 @@ brief artifact.
 ├──────────────────────────────────────┤
 │  ▲ demo-api   opus-5·xhigh ≈12.0%/h │
 │  ● adjent      opus-5·high   ≈5.0%/h │
-│  ● demo-web   gpt-5.6·med   ≈3.0%/h │
+│  ● demo-web   model-y·med   ≈3.0%/h │
 │  · demo-cli  idle 14m           —  │
 └──────────────────────────────────────┘
 ```
@@ -129,8 +134,9 @@ line → other windows → agent rows. Nothing else is present at rest.
 ```
 
 The arc's fill is the binding limit's utilization; its colour is the verdict.
-Fill says how much, colour says whether that is a problem — 70% six hours into
-a weekly limit draws a mostly-full *green* arc.
+Fill says how much, colour says whether that is a problem — 40% three hours into
+a synthetic five-hour limit is below linear pace, while the same utilization
+after one hour is ahead of pace. The arc fill is identical; the color differs.
 
 ### Toasts (native, so styling is the OS's; content is ours)
 
@@ -140,13 +146,13 @@ a weekly limit draws a mostly-full *green* arc.
 │ Claude 5h at 72% with 2h 30m left.  │       │ Projected to run out 1d 09h before   │
 │ At this rate it runs out at 20:24.  │       │ reset. demo-api is 67% of the burn. │
 │                                     │       │                                      │
-│ [ Open panel ]      [ Snooze 1h ]   │       │ [ Open panel ]  [ Pause demo-api* ] │
+│ [ Open panel ]      [ Snooze 1h ]   │       │ [ Open panel ]  [ Snooze 1h ] │
 └─────────────────────────────────────┘       └──────────────────────────────────────┘
 ```
 
 Copy follows the alarm grammar: what happened, then what it means, then at most
-two actions. `info` alarms never produce a toast. (*Pause-agent is an M4+
-action — until then the second button is `Snooze`.)
+two actions. `info` alarms never produce a toast. Adjent never pauses or signals agents; actions are limited to opening the panel
+and snoozing alarms where supported by the shell.
 
 ### Pinned widget (opt-in)
 
@@ -292,9 +298,8 @@ $T_i < R_i$. So:
    **highest $u_i$**, which is the conventional "how am I doing" answer and
    cannot mislead when nothing is at risk.
 
-This is why the fullest limit is not automatically the hero. A weekly limit at
-76% with six days left has a large $R$ and loses to a 5-hour limit at 60% with
-forty minutes left.
+This is why the fullest limit is not automatically the hero. Remaining time and utilization alone cannot rank the limits: their burn rates
+also determine which one is projected to exhaust first.
 
 ### The hero must hold still
 
@@ -330,10 +335,9 @@ elements: a user running only Claude gains nothing from being told so on every
 row.
 
 **The icons are Adjent's own monograms, not the vendors' logos.** Two reasons,
-both firm. The panel makes no network requests of any kind — that is what lets
-the README promise Adjent sends nothing anywhere, and an icon fetched on open
-would break it, fail offline, and announce to a third party that you are
-running this tool. And redistributing a vendor's trademark in an MIT repository
+both firm. The renderer loads bundled assets; fetching an icon on open would
+fail offline and disclose app use to another service. Claude quota requests
+belong to the provider in the main process, not the renderer. And redistributing a vendor's trademark in an MIT repository
 is a licensing decision the project has not taken. Swapping in official artwork
 is a change to one table in `panel.js` if that decision is ever made.
 
@@ -521,16 +525,17 @@ the hero figure.
 ```
 ▲  demo-api      opus-5 · xhigh    ≈12.0 %/h
 ✓  adjent         opus-5 · high      ≈5.0 %/h
-✓  demo-web      gpt-5.6-sol · med  ≈3.0 %/h
+✓  demo-web      model-y · med  ≈3.0 %/h
 ·  demo-cli     idle 14m                 —
 ```
 
 `≈12.0 %/h` is only expressible because of the learned exchange rate, and it is
-the line that makes the tool worth opening. "This agent wrote 900k tokens" is a
-fact; "this agent is eating 16% of your five-hour limit every hour" is a
+the line that makes the tool worth opening. "This agent wrote 1M tokens" is a
+fact; "this agent is eating 12% of your five-hour limit every hour" is a
 decision.
 
-The rows should also roughly **add up to the hero rate** — 12.0 + 4.1 + 3.4 ≈ 24
+For this example, all three spending agents use the hero's vendor and allowance.
+Their rows should roughly **add up to the hero rate** — 12.0 + 5.0 + 3.0 = 20
 here — once the hero rate is corrected for tokens aging out of the rolling
 limit (early in a limit, as in this example, nothing has aged out yet and the
 two match directly). That is not decoration: the vendor-reported side and the

@@ -18,8 +18,8 @@ import * as path from 'node:path';
  * could not answer at all — a limit's label carries the vendor, but an agent
  * row never did.
  *
- * `icon` draws Adjent's own small monograms, not the vendors' logos: nothing
- * is fetched at runtime (README: local-first, sends nothing anywhere), and no
+ * `icon` draws Adjent's own small monograms, not the vendors' logos: no icon
+ * is fetched at runtime, and no
  * third-party trademark is redistributed.
  */
 export type VendorDisplay = 'none' | 'name' | 'icon';

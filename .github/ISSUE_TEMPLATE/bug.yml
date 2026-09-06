@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a problem using sanitized details and synthetic examples.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For vulnerabilities, follow SECURITY.md. Do not upload credentials, full transcripts, real account IDs, paths, or unredacted snapshots. Inspect screenshots before attaching them.
+  - type: input
+    id: revision
+    attributes:
+      label: Adjent version or commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Platform and runtime
+      description: OS, desktop environment if relevant, Node and pnpm versions. No machine name or username.
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and client version
+      description: Claude Code, Codex, both, or neither. Do not include account details.
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Prefer the synthetic demo or an invented minimal fixture.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I checked this report and its attachments for personal data and credentials.
+          required: true

@@ -2,15 +2,13 @@
  * Electron main: tray glyph, popover panel, optional always-on-top widget,
  * native toasts. Form factor per docs/UI.md.
  *
- * Two stated deviations from ARCHITECTURE.md, both contained:
- *  - the renderer is plain HTML/JS rather than React+Vite; the IPC contract
- *    (one AppState push) is unchanged, so swapping later is local.
- *  - this package is CJS because Electron's require hook needs it; the ESM
- *    core is reached through a dynamic import().
+ * The renderer is plain HTML/JS. This shell is CJS; the ESM core is
+ * reached through a dynamic import().
  */
 import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, screen, shell } from 'electron';
 import type { BrowserWindow as BrowserWindowType, Tray as TrayType } from 'electron';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import type {
   Alarm,
@@ -23,6 +21,7 @@ import type {
   Sink,
 } from '@adjent/core' with { 'resolution-mode': 'import' };
 import { makeTrayIcon } from './trayicon.js';
+import { trustedIpc } from './security.js';
 
 const coreImport = import('@adjent/core');
 
@@ -43,6 +42,15 @@ let tray: TrayType | null = null;
 let configWatcher: ConfigWatcher | null = null;
 let panel: BrowserWindowType | null = null;
 let widget: BrowserWindowType | null = null;
+const ipc = trustedIpc(ipcMain, () => {
+  const windows: Array<[BrowserWindowType | null, string]> = [[panel, 'panel.html'], [widget, 'widget.html']];
+  return windows.flatMap(([window, file]) => {
+    return window && !window.isDestroyed() ? [{
+      contents: window.webContents,
+      url: pathToFileURL(path.join(__dirname, 'renderer', file)).href,
+    }] : [];
+  });
+});
 let monitor: Monitor;
 let settings: Settings;
 let core: Awaited<typeof coreImport>;
@@ -196,6 +204,13 @@ function inspect(text: string | null): {
 // ---------------------------------------------------------------------------
 // Panel
 // ---------------------------------------------------------------------------
+function validRulesText(text: unknown): string {
+  if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > 1024 * 1024) {
+    throw new Error('Rules must be text no larger than 1 MiB');
+  }
+  return text;
+}
+
 function createPanel(): BrowserWindowType {
   const win = new BrowserWindow({
     icon: APP_ICON,
@@ -208,10 +223,13 @@ function createPanel(): BrowserWindowType {
     alwaysOnTop: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  win.webContents.on('will-navigate', (event) => event.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   void win.loadFile(path.join(__dirname, 'renderer', 'panel.html'));
   win.webContents.on('did-finish-load', () => {
     win.webContents.setZoomFactor(settings.uiScale);
@@ -267,10 +285,13 @@ function createWidget(): BrowserWindowType {
     title: 'Adjent',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  win.webContents.on('will-navigate', (event) => event.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   void win.loadFile(path.join(__dirname, 'renderer', 'widget.html'));
   win.webContents.on('did-finish-load', () => {
     win.webContents.setZoomFactor(settings.uiScale);
@@ -470,15 +491,17 @@ async function start(): Promise<void> {
     pushState();
   });
 
-  ipcMain.on('panel:close', () => panel?.hide());
-  ipcMain.on('panel:refresh', () => void tickNow());
-  ipcMain.on('widget:open-panel', () => togglePanel());
-  ipcMain.on('settings:set', (_e, patch: Partial<Settings>) => void applySettings(patch));
+  ipc.on('panel:close', () => panel?.hide());
+  ipc.on('panel:refresh', () => void tickNow());
+  ipc.on('widget:open-panel', () => togglePanel());
+  ipc.on('settings:set', (_e, patch: Partial<Settings>) => {
+    if (patch && typeof patch === 'object' && !Array.isArray(patch)) void applySettings(patch);
+  });
   // Tier 3 (docs/UI.md § Any limit, on demand): the panel pulls one limit's
   // history and exact token split when the user opens it. Pull, not push —
   // shipping every limit's breakdown on every tick would be most of a
   // megabyte of JSON a second for something usually not on screen.
-  ipcMain.handle('limit:detail', (_e, key: string) => monitor?.limitDetail(key) ?? null);
+  ipc.handle('limit:detail', (_e, key: string) => typeof key === 'string' && key.length <= 512 ? monitor?.limitDetail(key) ?? null : null);
 
   // ------------------------------------------------------------------------
   // The alarm rules, editable in the panel.
@@ -493,7 +516,7 @@ async function start(): Promise<void> {
   // model. What the panel adds is the part a text editor cannot: the
   // diagnostics and the effective rule set, live, before the file is saved.
   // ------------------------------------------------------------------------
-  ipcMain.handle('rules:load', async () => {
+  ipc.handle('rules:load', async () => {
     const file = core.configPath();
     let text: string | null = null;
     try {
@@ -505,13 +528,14 @@ async function start(): Promise<void> {
     }
     return { path: file, exists: text !== null, text, ...inspect(text) };
   });
-  ipcMain.handle('rules:check', (_e, text: string) => inspect(text));
-  ipcMain.handle('rules:preset', async (_e, name: string) => {
+  ipc.handle('rules:check', (_e, text: string) => inspect(validRulesText(text)));
+  ipc.handle('rules:preset', async (_e, name: string) => {
     if (!core.isPresetName(name)) return null;
     const text = await core.readPreset(name);
     return { text, ...inspect(text) };
   });
-  ipcMain.handle('rules:save', async (_e, text: string) => {
+  ipc.handle('rules:save', async (_e, text: string) => {
+    text = validRulesText(text);
     const checked = inspect(text);
     // Refuse to write a file with an error in it. Saving it would be legal —
     // the loader is lenient and the watcher keeps the running rules — but it
@@ -524,13 +548,13 @@ async function start(): Promise<void> {
     }
     return { ok: true, ...checked };
   });
-  ipcMain.handle('rules:presets', () =>
+  ipc.handle('rules:presets', () =>
     core.PRESET_NAMES.map((name) => ({ name, summary: core.PRESET_SUMMARY[name] })),
   );
-  ipcMain.on('alarms:clear', () => {
+  ipc.on('alarms:clear', () => {
     void monitor.clearAlarmHistory().then(pushState);
   });
-  ipcMain.on('help:taskbar', () => {
+  ipc.on('help:taskbar', () => {
     // Windows owns tray-icon promotion; deep-link to the exact settings page.
     if (process.platform === 'win32') void shell.openExternal('ms-settings:taskbar');
   });

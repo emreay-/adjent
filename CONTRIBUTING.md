@@ -16,13 +16,16 @@ under MIT. It is not a copyright assignment.
 
 ## Getting set up
 
-Node 22.5+ and pnpm 9.
+Node 22.12+ and pnpm 9. Electron 44 requires this Node baseline for development.
 
 ```sh
 pnpm install
 pnpm -r build        # build first: packages typecheck against each other's dist
 pnpm -r typecheck
 pnpm -r test
+node --test scripts/test/*.test.mjs
+node scripts/repo-hygiene.mjs
+node packages/cli/test/smoke.mjs
 ```
 
 CI runs exactly that on Windows and Linux for every pull request, so running it
@@ -53,7 +56,7 @@ These are not style preferences; each exists because breaking it caused a real
 problem. [CLAUDE.md](CLAUDE.md) is the long version.
 
 **Read-only toward vendors.** Never write under `~/.claude` or `~/.codex`, never
-touch credentials, never trigger an OAuth refresh. Adjent writes only under
+modify credentials, never trigger an OAuth refresh. Adjent writes only under
 `~/.adjent/`. A `401` is a normal state to back off from, not an error to fix.
 
 **Metadata only.** Parsers extract token counts, model ids, paths and
@@ -83,7 +86,8 @@ span.
 
 ## No personal data in the repository
 
-Nothing from your machine may enter version control, and CI enforces it:
+Nothing private from your machine may enter version control. CI flags some
+patterns; manual review is required for usage figures, images and history:
 
 - No usernames, home directories, hostnames or machine names. Use `~`,
   `<user>`, `C:\Users\<user>\...`.
@@ -101,12 +105,18 @@ miserable way to find out.
 
 ## The API is a promise
 
-Anything in [docs/API.md](docs/API.md) is a contract with people writing
-scripts. Inside a `schemaVersion`, changes are additive only; a removal or a
+Anything in [docs/API.md](docs/API.md) is a contract with agents, orchestrators
+and people building integrations. Both humans and machines are first-class
+consumers; desktop presentation must not determine what a headless caller can
+understand. Inside a `schemaVersion`, changes are additive only; a removal or a
 rename is a version bump plus a migration note in the same commit. The contract
 test will stop you by accident — please do not route around it.
 
+Preserve the detailed reasoning, derivations and worked examples in the docs.
+Use synthetic data and correct or label stale claims while keeping the
+explanations that teach how the system works.
+
 ## Reporting a security issue
 
-Please do not open a public issue. Email the maintainer through the address on
-the GitHub profile instead, and allow a reasonable window before disclosure.
+Follow [SECURITY.md](SECURITY.md) for a private reporting route. Do not publish
+vulnerability details or sensitive diagnostics in an issue.

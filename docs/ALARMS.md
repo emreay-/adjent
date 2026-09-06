@@ -87,7 +87,7 @@ to look abnormal against.
 
 The other three ask *how much*. This one asks *what does the work look like* —
 which is how it catches a worker that is cheap per turn and ruinous over an
-hour, and it is the only rule here that no comparable tool ships.
+hour, and complements the burn thresholds without reading message content.
 
 Over a lookback window $	au$ (default 15 m), per worker, from usage events
 alone:

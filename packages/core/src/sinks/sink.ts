@@ -5,6 +5,7 @@
  */
 import type { Alarm } from '../model/types.js';
 import type { Routing } from '../rules/config.js';
+import { withDeadline } from '../collect/deadline.js';
 
 export interface Sink {
   id: string;
@@ -38,10 +39,15 @@ export class WebhookSink implements Sink {
   ) {}
   async deliver(a: Alarm): Promise<void> {
     try {
-      await this.fetchFn(this.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(a),
+      await withDeadline(async (signal) => {
+        const response = await this.fetchFn(this.url, {
+          signal,
+          redirect: 'error',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(a),
+        });
+        await response.body?.cancel();
       });
     } catch {
       /* a failing sink never breaks the loop */

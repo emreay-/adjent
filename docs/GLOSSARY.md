@@ -1,5 +1,9 @@
 # Glossary
 
+All account-like figures and worked tables are synthetic illustrations, not
+measurements or empirical evidence. The derivation explains the model; notes
+distinguish implemented behavior from proposed diagnostics.
+
 Two kinds of vocabulary here, and it matters which is which.
 
 **Spec words** are for us, writing the design down. They never appear on screen.
@@ -13,7 +17,7 @@ The panel shows "resets in 2h 41m", not "the countdown in the primary read".
 
 | Term | Plain meaning |
 | --- | --- |
-| **Panel** | The small limit that opens when you click the tray icon. |
+| **Panel** | The small window that opens when you click the tray icon. |
 | **At rest** | What the panel shows before you click anything. The opposite of "behind a click". |
 | **Primary read** | The top block: verdict, big number, rate, countdown, chart. The part you see in the first second. It has a name only so we can put a hard cap on what goes in it. |
 | **Hero number** | The single biggest number on the panel; there is exactly one. In Adjent it is always the same metric: **vendor-reported utilization of the binding limit** — measured, never derived, so it survives total failure of the modelling layer. Its rate and reset countdown sit beside it as modifiers, not rivals. See [UI.md](UI.md#the-hero-number-exactly). |
@@ -95,7 +99,7 @@ widening what `subId` is allowed to do.
 | **EWMA** | Exponentially weighted moving average — a cheap way to smooth a jittery series. See [smoothing](#why-smoothing-is-required-not-cosmetic). |
 | **Cold start** | The state before Adjent has enough observations to fit anything. See [Cold start](#cold-start-what-adjent-knows-and-when). |
 | **Fit residual** ( $e_n$ ) | How much the model's prediction misses the measurement by, on one poll. Signed. Small *and unbiased across subgroups* means the model is right — see [the miss](#the-miss-and-why-it-is-the-most-useful-number-here). |
-| **Consistency residual** ( $\varepsilon$ ) | The gap between gross burn as the vendor reports it (change plus aging-out) and gross burn summed over agents. Catches missed or double-counted consumption, which the fit residual structurally cannot. Drives the confidence indicator — see [the free consistency check](#the-free-consistency-check). |
+| **Consistency residual** ( $\varepsilon$ ) | The gap between gross burn as the vendor reports it (change plus aging-out) and gross burn summed over agents. Helps investigate missing or double-counted consumption; it cannot detect a pure reassignment that preserves totals. Distinct from fit confidence — see [the free consistency check](#the-free-consistency-check). |
 | **Confidence** | How much to trust a derived number, from sample count and residual size. Shown as low / medium / high. |
 
 ---
@@ -215,11 +219,15 @@ percent *per request* instead of percent per token.
 
 The model does not change at all — it is still a weighted sum of measured
 quantities. Only the reading of $k$ widens: from "a token bucket" to **any
-billable quantity the vendor meters**. In a synthetic example both counters may be zero; carrying the columns
-still avoids silently mis-attributing a later non-token charge to nearby tokens.
+billable quantity the vendor meters**. Server-tool columns are a proposed
+extension, not currently fitted. The reason to retain the design is that an
+unmodelled charge can otherwise be mis-attributed to nearby token consumption.
 
 ### Turning the last assumption into a measurement
 
+The request count is retained as metadata and is included as its own column
+at the kind and model/kind resolutions. Its prior weight is zero; observations
+can move that coefficient away from zero. The blended fit combines token costs.
 The no-intercept assumption is the shakiest of the four, and also the cheapest to
 stop assuming. Add one more column to $X$: the number of requests in the
 interval. Its fitted weight is then the per-request fixed cost, and the
@@ -403,9 +411,10 @@ share of cost per token.
 
 #### The falsification test
 
-All of the above assumes the vendor meters quota on tokens, not on effort
-directly. We do not have to assume it — the [fit residual](#the-miss-and-why-it-is-the-most-useful-number-here)
-tests it for free. Group the polls by the effort of the turns they contain and
+The stratified diagnostic below is a proposed check, not a shipped automatic
+test. All of the above assumes the vendor meters quota on token quantities, not
+on effort directly. The [fit residual](#the-miss-and-why-it-is-the-most-useful-number-here)
+provides the observations with which to test it. Group the polls by the effort of the turns they contain and
 take the mean residual of each group:
 
 $$\bar{e}_{\,\text{eff}} = \operatorname{mean}\big(\, e_n \;\big|\; \text{turns in } (t_{n-1},\, t_n] \text{ ran at effort } \text{eff} \,\big)$$
@@ -423,11 +432,12 @@ because it might matter — instrument for it, and let the residual decide.*
 
 Not in $K$, but three places:
 
-* **On the agent row**, because it is the single best predictor of whether a burn
-  rate will persist — an `xhigh` session will keep burning at that rate.
-* **In the projection**, for the same reason.
-* **As the cheapest lever** in the actions expansion: downshifting effort cuts
-  burn without stopping the work.
+* **On the agent row**, as context for interpreting the current burn. Effort
+  alone cannot guarantee the next turn will spend at the same rate.
+* **In a future projection model**, if observations justify it. The current
+  projection extrapolates measured burn without an effort-specific multiplier.
+* **As a lever for the user or external orchestrator** considering lower effort.
+  Adjent supplies information; it never changes an agent's model or effort.
 
 **Identifiability.** Even with all this, $\hat{\mathbf{w}}$ is uniquely
 determined only if $X$ has full column rank — that is, if your usage mix actually
@@ -524,9 +534,9 @@ grows 4×, every weight is suddenly wrong by exactly 4×.
 
 When does that actually happen? Rarely, but each is real:
 
-* **You change subscription tier.** Pro → Max 5× → Max 20×. This is the big one,
-  and it is visible: `.credentials.json` carries `rateLimitTier`
-  (synthetic example: `demo-tier`) and Codex's rollouts carry
+* **You change subscription tier.** For example, an allowance changes from one
+  synthetic tier to a larger one. This change can be visible: `.credentials.json` carries `rateLimitTier`
+  (`demo-tier` in synthetic fixtures) and Codex's rollouts carry
   `plan_type`. Watch the string; when it changes, re-bootstrap.
 * **The vendor reprices the plan.** Same tier string, silently different
   allowance — vendors adjust subscription limits over time. Invisible in
@@ -607,9 +617,9 @@ real and must not be averaged away.
 The recursion above advances on observations, so a limit that stops producing
 them keeps whatever rate it last had — indefinitely. That is not hypothetical:
 Codex publishes its rate limits inside transcript lines, so when nothing is
-running no reading arrives and $t$ freezes. For a synthetic illustration, a 7-day limit with no active agents might
-keep reporting $+3.0$ %/h from a reading taken the previous night, projecting
-a future wall from a rate that is no longer current.
+running no reading arrives and $t$ freezes. For a synthetic example, a weekly limit last recorded at 60% with a rate of
++2 percentage points per hour would keep projecting exhaustion 20 hours after
+that observation, even if local work had stopped.
 
 The fix follows from what silence actually is. Adjent reads the same files the
 spend is written to, so a frozen reading and no spend are the *same event*: had
@@ -670,6 +680,13 @@ directly comparable to each other and to every alarm threshold.
 
 ## The free consistency check
 
+**Design versus implementation.** The equations below specify a gross-consumption
+comparison over matching intervals and one vendor allowance. The current monitor
+displays a simpler EWMA of the difference between the binding net rate and summed
+agent rates. That heuristic does not implement the full aging-out correction and
+can be misleading when rates from different vendors are mixed. Fit confidence is
+computed separately. Completing the scoped gross comparison remains work.
+
 The intuition first, because it is almost right and the "almost" matters: *over
 some interval, the per-agent burns should add up to the overall change the
 vendor reported.* That is the idea — with one correction.
@@ -709,9 +726,11 @@ What each failure smells like:
 
 The per-poll $\varepsilon_n$ is noisy (one poll spans a whole-percent-rounded
 $\Delta u$), so the UI consumes it as an EWMA, exactly like the burn rate. A
-small, stable $\bar{\varepsilon}$ is what decays $\lambda$ — the data has
-earned the right to override the prior — and it costs nothing to compute and
-needs no ground truth, which is rare enough to be worth building around.
+small, stable residual is evidence for trusting the fitted attribution. The
+current implementation decays $\lambda$ with sample count (the formula above);
+using the consistency residual to modulate that decay is a design extension.
+This diagnostic can be computed from the observations already collected, without
+a separate ground-truth dataset.
 
 ### Two residuals, doing two different jobs
 
@@ -722,17 +741,18 @@ The document uses two, and they are not interchangeable:
 | $e_n$ — **fit residual** | $\Delta u_n - \mathbf{x}_n^\top \hat{\mathbf{w}}$ | whether the **pricing** is right. One signed number per poll, internal to the fit. Because it is signed and per-poll, it can be stratified to find *which* assumption broke. |
 | $\varepsilon_n$ — **consistency residual** | gross burn per the vendor vs. gross burn summed over agents (see above) | whether the **coverage and attribution** are right as well. |
 
-The second is worth having because of a blind spot in the first. The fit only
-ever sees account-level totals, so if Adjent credited a subagent's tokens to the
-wrong parent, every $e_n$ would stay perfectly small — the account arithmetic
-still balances. $\varepsilon$ compares a per-agent reconstruction against a
-measurement the model played no part in, so mis-attribution has somewhere to
-show up.
+The second makes coverage and aggregation explicit: which agents, which vendor
+allowance, and which interval were included? That is useful when diagnosing
+missing or duplicate consumption. But it does not create independent evidence
+from the same totals. A pure reassignment of a subagent's tokens to the wrong
+parent leaves the aggregate sum unchanged, so **neither residual can detect that
+error**. Identity and parent-attribution tests are required as well.
 
-They are not statistically independent; both ultimately compare measured
-utilization against the model. But they fail differently, and the per-agent
-numbers are exactly what mis-attribution would ruin — so it is the error worth
-spending a second check on.
+Both residuals depend on the fitted weights and reported utilization. With the
+same complete coverage and interval, the gross-versus-net rearrangement may even
+reduce to the same arithmetic up to sign and aggregation. Keep both views for
+the questions they explain, not as statistically independent proof that every
+per-agent number is correct.
 
 Derived numbers are always shown with `≈`. The hero number never is, because it
 is measured.

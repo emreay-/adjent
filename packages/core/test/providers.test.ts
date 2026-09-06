@@ -3,12 +3,15 @@
  * Fixture values are invented; shapes mirror docs/DATA-SOURCES.md.
  * (CLAUDE.md: fixtures keep only the shape of real vendor files.)
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { ClaudeProvider } from '../src/providers/claude/claude.js';
 import { CodexProvider } from '../src/providers/codex/codex.js';
+import { Monitor } from '../src/monitor.js';
+import type { ProviderAdapter } from '../src/providers/provider.js';
+import { DEFAULT_CONFIG } from '../src/rules/config.js';
 
 const T0 = 1_700_000_000_000;
 let root: string;
@@ -17,6 +20,7 @@ beforeEach(() => {
   root = mkdtempSync(path.join(tmpdir(), 'adjent-test-'));
 });
 afterEach(() => {
+  vi.useRealTimers();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -136,6 +140,44 @@ describe('ClaudeProvider', () => {
     clock += 90_000; // past MIN_POLL but inside backoff
     await p.quota();
     expect(calls).toBe(1);
+  });
+
+  it.each(['headers', 'body'])('a stalled %s read preserves stale quota and lets the next provider update', async (stage) => {
+    seedClaude();
+    writeFileSync(path.join(root, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'synthetic-token' } }));
+    vi.useFakeTimers();
+    let clock = T0;
+    let call = 0;
+    let started!: () => void;
+    const fetching = new Promise<void>((resolve) => { started = resolve; });
+    let signal: AbortSignal | undefined;
+    const fetchFn = (async (_url, init) => {
+      if (call++ === 0) return new Response(JSON.stringify({ five_hour: { utilization: 25 } }));
+      signal = init?.signal ?? undefined;
+      started();
+      if (stage === 'headers') return new Promise<Response>(() => {});
+      return { ok: true, status: 200, json: () => new Promise(() => {}) } as Response;
+    }) as typeof fetch;
+    const claude = new ClaudeProvider({ root, now: () => clock, fetchFn });
+    const fresh = await claude.quota();
+    clock += 61_000;
+    const next: ProviderAdapter = {
+      id: 'codex', supportedVersions: 'synthetic',
+      detect: async () => ({ id: 'codex', displayName: 'Codex', version: null, plan: null, rateLimitTier: null, health: 'ok', healthDetail: null }),
+      collectUsage: async () => [], listAgents: async () => [],
+      quota: vi.fn(async () => []), getTailOffsets: () => ({}), setTailOffsets: () => {},
+    };
+    const monitor = new Monitor({ providers: [claude, next], now: () => clock,
+      store: null, config: { ...DEFAULT_CONFIG, rules: [] } });
+    const tick = monitor.tick();
+    await fetching;
+    await vi.advanceTimersByTimeAsync(5_000);
+    const state = await tick;
+    expect(signal?.aborted).toBe(true);
+    expect(next.quota).toHaveBeenCalledOnce();
+    expect(state.limits[0]?.limit).toEqual(fresh[0]);
+    expect(state.limits[0]?.limit.observedAt).toBe(T0);
+    expect(state.backends.map((b) => b.id)).toEqual(['claude', 'codex']);
   });
 });
 

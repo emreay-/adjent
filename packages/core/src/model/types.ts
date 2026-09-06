@@ -17,9 +17,9 @@ export interface Backend {
   id: BackendId;
   displayName: string;
   version: string | null;
-  /** e.g. 'max', 'pro' — plan identification, never a token. */
+  /** Plan identification (synthetic example: 'demo-plan'), never a token. */
   plan: string | null;
-  /** e.g. 'demo-tier'. Watched for change → re-bootstrap the fit. */
+  /** Tier identifier (synthetic example: 'demo-tier'). Changes re-bootstrap the fit. */
   rateLimitTier: string | null;
   health: Health;
   /** Human-readable reason when health !== 'ok'. */

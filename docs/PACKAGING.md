@@ -93,7 +93,7 @@ behind the manager's back: Flatpak, WinGet and Scoop each own their upgrade
 path, and an app that rewrites its own files under them produces a version the
 manager cannot reason about.
 
-So the updater is compiled in but gated on install provenance — a build-time
+When implemented, the updater must be gated on install provenance — a build-time
 channel marker, or the absence of the manager's own marker file. Where the
 updater is off, the correct behaviour is to *say so*: "update available — run
 `flatpak update`", not a silent no-op and not a download button that fails.
@@ -102,20 +102,23 @@ updater is off, the correct behaviour is to *say so*: "update available — run
 
 Linux needs none of this. Windows does.
 
-Unsigned, every release triggers SmartScreen's "unrecognised app" full-screen
-warning, and reputation accrues per signing identity — so an unsigned app never
-stops warning, no matter how many downloads it gets. That is survivable for an
-early developer-audience release and fatal for a mainstream one.
+Unsigned Windows builds may trigger SmartScreen or organizational application
+control policies. Exact behavior depends on the machine and reputation; do not
+promise that every user can bypass a warning. The first downloadable prerelease
+must clearly state whether its artifacts are signed.
 
-Two routes: a traditional OV certificate (roughly $100–400/yr, and since 2023
-the private key must live on a hardware token or an HSM, which complicates CI),
-or **Azure Trusted Signing** (~$10/month, cloud-based, signs cleanly from CI, but
-requires an organisation with a verifiable identity). Trusted Signing is the
-better fit for a project that wants CI to do the signing — and note that even
-signed, a *new* identity carries no SmartScreen reputation for its first weeks.
+There are two broad signing approaches: manage a certificate/key through an
+appropriate hardware or hosted key service, or integrate a managed signing
+service into CI. The first brings key-custody and runner-access work; the second
+brings service eligibility, identity verification and provider integration. Both
+need investigation, and neither makes a new application immediately trusted on
+every Windows machine.
 
-This is a commercial decision, not a technical blocker. The sequencing below
-assumes it happens after there is something worth installing.
+Signing and automatic updates are future work. Evaluate current availability,
+eligibility, cost and CI support when choosing a service. The original design
+considered Azure-hosted signing for its CI fit; that is a candidate, not a promise
+of eligibility or a current price quote. Keep this decision separate from
+whether an early, clearly labelled source release is useful.
 
 ## Cutting a release
 
@@ -126,8 +129,8 @@ built by hand.
 ### 1. Choose the version
 
 One version number spans the whole workspace. The root manifest and all three
-package manifests carry it, and they must agree — CI does not check this, so it
-is the one step worth reading twice.
+package manifests carry it, and they must agree. CI and release builds enforce agreement with
+`node scripts/check-version.mjs`; tag builds also validate the exact tag.
 
 Adjent is pre-1.0, which under semver means the minor version carries breaking
 changes:
@@ -160,7 +163,7 @@ filenames disagree with the release:
 
 ```sh
 git diff --stat        # expect exactly four package.json files
-grep '"version"' package.json packages/*/package.json
+node scripts/check-version.mjs
 ```
 
 Commit the bump on its own: `Release v<version>`.
@@ -173,10 +176,13 @@ the binary smoke test:
 ```sh
 pnpm install --frozen-lockfile
 pnpm -r build && pnpm -r typecheck && pnpm -r test
+node --test scripts/test/*.test.mjs
+node scripts/repo-hygiene.mjs
+node scripts/check-version.mjs
 node packages/cli/test/smoke.mjs
 ```
 
-All four must pass locally. CI runs them again on the tag, but finding a
+All checks must pass locally. CI runs them again on the tag, but finding a
 failure after the tag is public means either deleting a tag people may have
 fetched or burning a version number.
 
@@ -184,7 +190,7 @@ fetched or burning a version number.
 
 The tag name is `v` followed by the exact manifest version — `v0.1.0`, not
 `0.1.0` and not `V0.1.0`. `release.yml` triggers on `v*`, so a misspelled tag
-either does nothing or builds the wrong thing.
+either does nothing or fails the version check before packaging.
 
 ```sh
 git tag -a v0.1.0 -m 'Adjent v0.1.0'
@@ -197,11 +203,13 @@ the one failure here that is awkward to unwind.
 
 **To rehearse without publishing anything**, run the Release workflow manually
 from the Actions tab (`workflow_dispatch`) instead of tagging. It builds and
-uploads artefacts, and leaves the draft alone.
+uploads workflow artifacts only; it cannot create or update a release. Supply an
+existing `tag` to check out that exact tag, or leave it empty to build the selected
+ref. Both modes check workspace versions, and a tag must match them.
 
 ### 5. Promote the draft
 
-The workflow leaves a **draft** release carrying the installers for both
+A tag push leaves a **draft prerelease** carrying the installers for both
 platforms and a `SHA256SUMS` file. It is deliberately not published, because an
 unsigned Windows build trips SmartScreen and a person should decide when that is
 ready to be seen.
@@ -238,9 +246,11 @@ personal to one maintainer.
 
 ### If something goes wrong
 
-**Before the draft is published**, a release is fully reversible: delete the
-draft, delete the tag locally and on the remote (`git push origin :v0.1.0`),
-fix, and tag again with the same number.
+**If a draft already exists**, the workflow fails instead of overwriting its
+assets. Inspect the failed run and the existing release. A maintainer may remove
+an unpublished draft and rerun the same tag to recover a partial upload. Never
+replace a tag with a different commit once others may have fetched it; use a new
+version for changed source.
 
 **After publishing, a version number is spent.** People have the artefacts and
 package managers may have pinned the hashes. Do not retag; fix forward with a
@@ -265,10 +275,9 @@ patch release, and delete the broken release only if it is actively harmful.
    unsigned Windows build trips SmartScreen and a person should decide when
    that is ready to be seen.
 
-   Packaging is verified, not assumed: a Windows build produces a working NSIS
-   installer and portable `.exe`, and the `@adjent/core` workspace dependency
-   resolves into the asar correctly despite pnpm's symlinked layout — the usual
-   failure mode for pnpm plus electron-builder.
+   Every candidate still needs manual Windows and Linux installer validation.
+   Unit tests and CLI smoke tests do not prove the packaged desktop app launches
+   or that workspace dependencies resolve inside the asar.
 2. **Scoop manifest + AppImage.** The two channels that need no permission from
    anyone. This is a complete distribution story for the launch audience.
 3. **Flathub submission.** The manifest, the read-only grants, and a check that

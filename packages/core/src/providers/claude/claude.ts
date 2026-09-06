@@ -15,6 +15,7 @@ import type { Agent, Backend, QuotaLimit, TokenTotals, UsageEvent } from '../../
 import { ZERO_TOTALS, isKnownModel } from '../../model/types.js';
 import { asNum, asObj, asStr, parseLine, tailChunk, tailFile, type TailState } from '../../collect/tail.js';
 import { pidAlive, type ProviderAdapter } from '../provider.js';
+import { withDeadline } from '../../collect/deadline.js';
 
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 /** Poll at most once a minute, and only while something is live (docs/DATA-SOURCES.md). */
@@ -107,8 +108,8 @@ export class ClaudeProvider implements ProviderAdapter {
       version: null, // filled from session records when one is live
       plan: creds?.subscriptionType ?? null,
       rateLimitTier: creds?.rateLimitTier ?? null,
-      health: 'ok',
-      healthDetail: null,
+      health: this.tail.skippedLines ? 'degraded' : 'ok',
+      healthDetail: this.tail.skippedLines ? 'Oversized transcript records were skipped; token totals may be incomplete.' : null,
     };
   }
 
@@ -429,12 +430,21 @@ export class ClaudeProvider implements ProviderAdapter {
     this.lastPollAt = now;
 
     try {
-      const res = await this.fetchFn(USAGE_URL, {
-        headers: {
-          Authorization: `Bearer ${creds.accessToken}`,
-          Accept: 'application/json',
-          'User-Agent': 'adjent/0.1',
-        },
+      const { res, body } = await withDeadline(async (signal) => {
+        const res = await this.fetchFn(USAGE_URL, {
+          signal,
+          redirect: 'error',
+          headers: {
+            Authorization: `Bearer ${creds.accessToken}`,
+            Accept: 'application/json',
+            'User-Agent': 'adjent/0.1',
+          },
+        });
+        if (!res.ok) {
+          await res.body?.cancel();
+          return { res, body: null };
+        }
+        return { res, body: asObj(await res.json()) };
       });
       if (res.status === 401 || res.status === 429) {
         // Normal states: Claude Code will refresh the token on its next use.
@@ -442,7 +452,6 @@ export class ClaudeProvider implements ProviderAdapter {
         return this.lastQuota;
       }
       if (!res.ok) return this.lastQuota;
-      const body = asObj(await res.json());
       if (!body) return this.lastQuota;
       this.lastQuota = this.parseUsageBody(body, now);
       return this.lastQuota;
