@@ -6,6 +6,13 @@ How a person who has never seen this repository ends up with Adjent running.
 NSIS + portable on Windows, AppImage + `.deb` on Linux. This document answers
 the next question — through which channel, and in what order to build them.
 
+The desktop manifest explicitly supplies `electron-builder-squirrel-windows`
+at the version required by `electron-builder`'s packaging library. Keep the pair
+aligned when upgrading: pnpm can otherwise retain an older automatically
+installed peer and pull the old packaging toolchain back into the lockfile.
+This satisfies a build-tool peer; the Windows distribution targets remain NSIS
+and portable. Audit the complete dependency graph, including development tools.
+
 ## The shape of the answer
 
 **GitHub Releases is the source of truth. Every other channel is a mirror of

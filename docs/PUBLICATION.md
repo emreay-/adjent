@@ -60,6 +60,14 @@ private until GitHub Support has handled the remaining objects and the old
 document is no longer retrievable. Follow the
 [sensitive-data removal procedure](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository).
 
+An alternative that does not wait for a server-side purge is to retain the
+original repository as a private archive and publish the verified rewritten
+history into a freshly created repository. This can preserve all sanitized
+development commits; it need not be a single source snapshot. Push only the
+reviewed branch/tag refs, never a mirror of the old remote's PR or internal refs.
+Verify the new repository's identity and a fresh clone, and confirm that requests
+for the old sensitive commit fail there before making it public.
+
 The original Actions runs were archived privately and deleted with approval.
 Recovery bundles and audit files under ignored `scratch/` contain the old private
 history: never publish them. Other pre-rewrite clones must not merge or push old
