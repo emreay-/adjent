@@ -15,7 +15,14 @@ node scripts/check-version.mjs
 node scripts/repo-hygiene.mjs
 node packages/cli/test/smoke.mjs
 node scripts/demo-loop.mjs
+pnpm audit --prod
+pnpm audit
 ```
+
+Review both audit scopes. Electron, the test runner and the packaging tools are
+declared as development dependencies, so a clean production-only audit does not
+cover the desktop runtime or build pipeline. Resolve or explicitly assess each
+advisory before trusting that pipeline with release credentials or artifacts.
 
 The README screenshot is rendered from synthetic state by
 `node scripts/screenshot.mjs` after building. It loads the actual panel without
@@ -38,12 +45,17 @@ The pre-publication review found account-derived examples in historical design
 documents, home-directory paths, and private project/session labels in regression
 fixtures. Those values were replaced throughout reachable development history,
 preserving the commit graph, attribution, timestamps and documentation sections.
-A fresh clone passed both the pattern scanner and a check for the known private
-values. Pattern checks remain an aid, not proof that every value is synthetic.
+A fresh clone of `main` passed the pattern scanner; the rewritten history also
+passed a check for the known private values. This does not cover GitHub-managed
+pull-request refs. Pattern checks remain an aid, not proof that every value is
+synthetic.
 
 **GitHub object cleanup remains separate.** After the rewrite, GitHub still served
 an old sensitive document when addressed by its original commit ID. A force-push
-does not purge cached views or unreachable server objects. Keep the repository
+does not purge cached views or unreachable server objects. Closed automated
+update PRs created during the rewrite also retained old ancestry in read-only
+`refs/pull/*` refs. Include those refs in the Support request: deleting a branch
+or closing a PR does not remove its GitHub-managed history. Keep the repository
 private until GitHub Support has handled the remaining objects and the old
 document is no longer retrievable. Follow the
 [sensitive-data removal procedure](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository).
