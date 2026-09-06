@@ -59,8 +59,9 @@ Nothing from the development machine may enter version control:
   regenerate IDs, zero the paths, invent the numbers, keep only the *shape*.
 - Before any commit: scan the diff for the above. When in doubt, leave it out.
 
-Historical revisions contain examples predating this rule. Current examples
-must be synthetic; publication requires a separate history audit (see
+History has been rewritten to replace private examples with synthetic ones.
+Do not merge or push pre-sanitization history back into the repository.
+Publication still requires a separate history and remote-object audit (see
 [docs/PUBLICATION.md](docs/PUBLICATION.md)).
 
 ## Working alongside other agents

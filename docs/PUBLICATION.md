@@ -35,10 +35,25 @@ account-derived figures or prove that a fixture was invented. It does not fetch
 remote refs, inspect unreachable objects, OCR images, or inspect GitHub logs.
 
 The pre-publication review found account-derived examples in historical design
-documents and home-directory paths in older file versions. Cleaning the current
-files does not remove those versions from history.
+documents, home-directory paths, and private project/session labels in regression
+fixtures. Those values were replaced throughout reachable development history,
+preserving the commit graph, attribution, timestamps and documentation sections.
+A fresh clone passed both the pattern scanner and a check for the known private
+values. Pattern checks remain an aid, not proof that every value is synthetic.
 
-Before changing visibility, choose and review one approach:
+**GitHub object cleanup remains separate.** After the rewrite, GitHub still served
+an old sensitive document when addressed by its original commit ID. A force-push
+does not purge cached views or unreachable server objects. Keep the repository
+private until GitHub Support has handled the remaining objects and the old
+document is no longer retrievable. Follow the
+[sensitive-data removal procedure](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository).
+
+The original Actions runs were archived privately and deleted with approval.
+Recovery bundles and audit files under ignored `scratch/` contain the old private
+history: never publish them. Other pre-rewrite clones must not merge or push old
+history back into this repository.
+
+For a repository that has not yet been sanitized, choose and review one approach:
 
 - Preserve development history after a deliberate sanitization of every affected
   reachable branch and tag; verify a fresh clone of the intended public history.

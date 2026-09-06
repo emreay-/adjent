@@ -15,7 +15,7 @@ const env = { ...process.env, ADJENT_PREVIEW_DATA: temp, ADJENT_PREVIEW_OUTPUT: 
 delete env.ELECTRON_RUN_AS_NODE;
 await mkdir(path.dirname(output), { recursive: true });
 try {
-  const code = await new Promise((resolve, reject) => {
+  const result = await new Promise((resolve, reject) => {
     const child = spawn(electron, [path.join(root, 'scripts', 'screenshot-runtime.cjs')], {
       env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -23,14 +23,17 @@ try {
     child.stdout.resume();
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk) => {
+      if (/SUID sandbox helper binary|No usable sandbox/i.test(chunk)) {
+        console.error('Electron could not initialize its Linux sandbox; check the sandbox helper permissions.');
+      }
       const message = chunk.split('\n').find((line) => line.startsWith('PREVIEW_ERROR:'));
       if (message) console.error(message.replaceAll(temp, '<temporary>').replaceAll(root, '<repository>'));
     });
     const timer = setTimeout(() => { child.kill(); reject(new Error('Screenshot timed out')); }, 30_000);
     child.on('error', (error) => { clearTimeout(timer); reject(error); });
-    child.on('exit', (status) => { clearTimeout(timer); resolve(status); });
+    child.on('exit', (code, signal) => { clearTimeout(timer); resolve({ code, signal }); });
   });
-  if (code !== 0) throw new Error(`Synthetic renderer check failed (${code})`);
+  if (result.code !== 0) throw new Error(`Synthetic renderer check failed (${result.signal ?? result.code})`);
   console.log('Rendered docs/assets/panel.png using synthetic data; panel and IPC checks passed.');
 } finally {
   await rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
