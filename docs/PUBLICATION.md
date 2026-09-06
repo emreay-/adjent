@@ -3,6 +3,12 @@
 Publishing the source and publishing installers are separate decisions. This
 checklist covers the source repository; [PACKAGING.md](PACKAGING.md) covers releases.
 
+Publication uses a fresh GitHub repository containing the sanitized development
+history. The original development repository, including its old cached objects
+and GitHub-managed refs, remains in a separate private archive. The history
+discussion below records why rewriting the original repository alone was not
+sufficient.
+
 ## Local verification
 
 ```sh
@@ -50,12 +56,13 @@ passed a check for the known private values. This does not cover GitHub-managed
 pull-request refs. Pattern checks remain an aid, not proof that every value is
 synthetic.
 
-**GitHub object cleanup remains separate.** After the rewrite, GitHub still served
+**GitHub object cleanup remains separate.** After the rewrite of the original
+development repository, GitHub still served
 an old sensitive document when addressed by its original commit ID. A force-push
 does not purge cached views or unreachable server objects. Closed automated
 update PRs created during the rewrite also retained old ancestry in read-only
 `refs/pull/*` refs. Include those refs in the Support request: deleting a branch
-or closing a PR does not remove its GitHub-managed history. Keep the repository
+or closing a PR does not remove its GitHub-managed history. Keep that original repository
 private until GitHub Support has handled the remaining objects and the old
 document is no longer retrievable. Follow the
 [sensitive-data removal procedure](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository).
