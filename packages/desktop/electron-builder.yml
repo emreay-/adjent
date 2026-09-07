@@ -26,3 +26,5 @@ linux:
   category: Utility
 deb:
   packageName: adjent
+  # Keep the scoped workspace name out of the output path as well.
+  artifactName: adjent-${version}-${arch}.${ext}

@@ -16,6 +16,8 @@ and portable. Audit the complete dependency graph, including development tools.
 Linux packaging explicitly names the executable and system package `adjent`.
 The internal workspace name `@adjent/desktop` is retained for pnpm; deriving an
 executable from it produces an invalid name in current Electron Builder.
+The Debian artifact filename also uses an explicit `adjent` prefix so the
+workspace scope cannot create a nested output path that the upload glob misses.
 Debian metadata uses the public repository homepage and the existing public
 GitHub noreply identity for the maintainer. Support belongs in repository issues.
 
