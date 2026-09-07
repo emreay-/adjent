@@ -16,6 +16,10 @@ nsis:
   oneClick: true
   perMachine: false
 linux:
+  # The scoped workspace name is not a valid Linux executable/package name.
+  executableName: adjent
+  packageName: adjent
+  maintainer: Adjent contributors <6861956+emreay-@users.noreply.github.com>
   icon: icons/icon.png
   target:
     - AppImage

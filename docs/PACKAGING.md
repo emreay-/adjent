@@ -13,6 +13,12 @@ installed peer and pull the old packaging toolchain back into the lockfile.
 This satisfies a build-tool peer; the Windows distribution targets remain NSIS
 and portable. Audit the complete dependency graph, including development tools.
 
+Linux packaging explicitly names the executable and system package `adjent`.
+The internal workspace name `@adjent/desktop` is retained for pnpm; deriving an
+executable from it produces an invalid name in current Electron Builder.
+Debian metadata uses the public repository homepage and the existing public
+GitHub noreply identity for the maintainer. Support belongs in repository issues.
+
 ## The shape of the answer
 
 **GitHub Releases is the source of truth. Every other channel is a mirror of
