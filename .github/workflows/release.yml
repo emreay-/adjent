@@ -37,7 +37,7 @@ jobs:
             artifacts: |
               packages/desktop/release/*.exe
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
       - uses: pnpm/action-setup@v4
